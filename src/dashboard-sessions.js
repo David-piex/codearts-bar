@@ -340,7 +340,7 @@ function saveBulkMetaSheet(){
   setRefreshState(TXT.savedLocal);
   clearTimeout(lastToastTimer);
   lastToastTimer = setTimeout(() => setRefreshState(''), 900);
-  if(snapshot?.ok) render(snapshot);
+  if(snapshot?.ok) render(snapshot, { windowLayout: false, instantChart: true, partial: true });
 }
 async function saveRenameSheet(){
   const item = sessionByKey(renameSessionKey);
@@ -350,5 +350,5 @@ async function saveRenameSheet(){
   await ipcRenderer.invoke('dashboard:renameSession', item, next);
   renameSessionKey = '';
   renameDraft = '';
-  await refreshNow();
+  await refreshNow({ windowLayout: false, instantChart: true, partial: true });
 }

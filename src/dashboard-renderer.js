@@ -1,4 +1,4 @@
-﻿const { ipcRenderer } = require('electron');
+const { ipcRenderer } = require('electron');
 
 let snapshot = null;
 let copyResetTimer = null;
@@ -375,7 +375,7 @@ const TXT = {
 };
 const RANGE_LABELS = { today: TXT.today, '1d': '1d', '3d': '3d', '7d': '7d', '14d': '14d', '30d': '30d', '60d': '60d', '90d': '90d', '180d': '180d', '365d': '365d', custom: '\u81ea\u5b9a\u4e49', all: '\u5168\u90e8' };
 const RANGE_OPTIONS = [['today', TXT.today], ['1d', '1d'], ['3d', '3d'], ['7d', '7d'], ['14d', '14d'], ['30d', '30d'], ['60d', '60d'], ['90d', '90d'], ['180d', '180d'], ['365d', '365d'], ['all', '\u5168\u90e8']];
-eval(['dashboard-state.js','dashboard-date-range.js','dashboard-analytics.js','dashboard-chart.js','dashboard-sessions.js'].map(readRendererPart).join('\n'));
+eval(['dashboard-state.js','dashboard-date-range.js','dashboard-analytics.js','dashboard/chart/chart-series.js','dashboard/chart/chart-legend.js','dashboard/chart/chart-canvas.js','dashboard/chart/chart-tooltip.js','dashboard/chart/chart-hover.js','dashboard-chart.js','dashboard-sessions.js'].map(readRendererPart).join('\n'));
 function renderError(s){
   const message = esc(s?.error || TXT.noData);
   const app = document.getElementById('app');
@@ -454,9 +454,12 @@ function render(s, opts = {}){
     return;
   }
   if(workspaceMode === 'sessions'){
-    commitAppHtml(app, `${headerHtml(false)}${filtersHtml(s)}${renderSessionWorkspace(s)}`);
+    const domStartedAt = perfNow();
+    const patched = opts.partial === true && !modeChanged && patchSessionView(s, opts);
+    if(!patched) commitAppHtml(app, `${headerHtml(false)}${filtersHtml(s)}${renderSessionWorkspace(s)}`);
+    markPerfStage('domCommitMs', perfNow() - domStartedAt);
     syncFooter();
-    markRenderCost(renderStartedAt, 'sessions', sessionTableItems.length);
+    markRenderCost(renderStartedAt, patched ? 'sessions:partial' : 'sessions', sessionTableItems.length);
     requestAnimationFrame(() => { app?.classList.remove('view-switching'); bindIncrementalTables(); });
     return;
   }
@@ -522,5 +525,5 @@ function applyCustomDateInputs(){
 }
 function setupAutoRefresh(){ if(autoRefreshTimer) clearInterval(autoRefreshTimer); const sec = Math.max(5, Number(refreshEvery) || 30); autoRefreshTimer = setInterval(refreshNow, sec * 1000); }
 async function load(){ setRefreshState(TXT.refresh); const first = await ipcRenderer.invoke('dashboard:getSnapshot'); render(first); if(!first?.ok) await refreshNow(); setupAutoRefresh(); }
-async function refreshNow(){ setRefreshState(TXT.refresh); render(await ipcRenderer.invoke('dashboard:refresh')); setRefreshState(TXT.refreshed); setTimeout(() => setRefreshState(''), 800); }
+async function refreshNow(opts = {}){ setRefreshState(TXT.refresh); render(await ipcRenderer.invoke('dashboard:refresh'), opts && opts.type ? {} : opts); setRefreshState(TXT.refreshed); setTimeout(() => setRefreshState(''), 800); }
 eval(readRendererPart('dashboard/dashboard-events.js'));

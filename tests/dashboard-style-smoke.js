@@ -1,4 +1,4 @@
-﻿"use strict";
+"use strict";
 
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
@@ -28,6 +28,11 @@ const rendererFiles = [
   "dashboard-state.js",
   "dashboard-date-range.js",
   "dashboard-analytics.js",
+  "dashboard/chart/chart-series.js",
+  "dashboard/chart/chart-legend.js",
+  "dashboard/chart/chart-canvas.js",
+  "dashboard/chart/chart-tooltip.js",
+  "dashboard/chart/chart-hover.js",
   "dashboard-chart.js",
   "dashboard-sessions.js",
   "dashboard/sessions/session-inspector.js",

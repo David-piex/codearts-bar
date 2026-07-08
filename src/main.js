@@ -22,6 +22,7 @@ let watchPollTimer = null;
 let watchFingerprint = '';
 let isQuitting = false;
 let forcedExitTimer = null;
+let trayHintShown = false;
 
 function colorForLevel(level) { return level === 'danger' ? '#ff4d4f' : level === 'warning' ? '#faad14' : '#16a34a'; }
 function makeTrayIcon(snapshot) {
@@ -43,6 +44,35 @@ function makeTrayIcon(snapshot) {
 }
 function menuItem(label, sublabel) { return { label: sublabel ? `${label}    ${sublabel}` : label, enabled: false }; }
 function trim(text, max) { text = String(text || '').replace(/\s+/g, ' ').trim(); return text.length > max ? `${text.slice(0, max - 1)}…` : text; }
+function safeUserDataPath() {
+  try { return app.getPath('userData'); } catch { return os.tmpdir(); }
+}
+function logPath() {
+  return path.join(safeUserDataPath(), 'codearts-bar.log');
+}
+function appendLog(level, scope, message, detail = null) {
+  try {
+    fs.mkdirSync(path.dirname(logPath()), { recursive: true });
+    const line = JSON.stringify({
+      time: new Date().toISOString(),
+      level,
+      scope,
+      message: String(message || ''),
+      detail,
+    });
+    fs.appendFileSync(logPath(), `${line}\n`, 'utf8');
+  } catch {}
+}
+function openLogFile() {
+  try {
+    fs.mkdirSync(path.dirname(logPath()), { recursive: true });
+    if (!fs.existsSync(logPath())) fs.writeFileSync(logPath(), '', 'utf8');
+  } catch {}
+  return shell.openPath(logPath());
+}
+function openReleaseFolder() {
+  return shell.openPath(path.join(__dirname, '..', 'dist'));
+}
 
 function buildMenu(snapshot) {
   if (!snapshot || !snapshot.ok) {
@@ -78,6 +108,37 @@ function buildMenu(snapshot) {
   template.push({ type: 'separator' });
   template.push({ label: '退出', click: quitApp });
   return Menu.buildFromTemplate(template);
+}
+function refreshTrayMenu() {
+  if (!tray) return null;
+  const menu = buildMenu(lastSnapshot);
+  tray.setContextMenu(menu);
+  return menu;
+}
+function showTrayMenu() {
+  if (!tray) return;
+  const menu = refreshTrayMenu();
+  try { tray.popUpContextMenu(menu || undefined); } catch { tray.popUpContextMenu(); }
+}
+function restoreDashboardWindow() {
+  if (!dashboardWindow || dashboardWindow.isDestroyed()) {
+    openDashboardWindow();
+    return;
+  }
+  try { dashboardWindow.setSkipTaskbar(false); } catch {}
+  if (dashboardWindow.isMinimized()) dashboardWindow.restore();
+  dashboardWindow.show();
+  dashboardWindow.focus();
+}
+function hideDashboardToTray() {
+  if (!dashboardWindow || dashboardWindow.isDestroyed()) return;
+  try { dashboardWindow.setSkipTaskbar(true); } catch {}
+  dashboardWindow.hide();
+  refreshTrayMenu();
+  if (!trayHintShown && Notification.isSupported()) {
+    trayHintShown = true;
+    new Notification({ title: '码道 Bar', body: '已最小化到托盘，右键托盘图标可打开菜单。' }).show();
+  }
 }
 
 function cleanupRuntime() {
@@ -205,7 +266,7 @@ function openSettingsWindow() {
   settingsWindow.on('closed', () => { settingsWindow = null; });
 }
 function openDashboardWindow() {
-  if (dashboardWindow && !dashboardWindow.isDestroyed()) { dashboardWindow.show(); dashboardWindow.focus(); return; }
+  if (dashboardWindow && !dashboardWindow.isDestroyed()) { restoreDashboardWindow(); return; }
   const nativeSurface = process.platform === 'darwin'
     ? { titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 14, y: 15 }, vibrancy: 'under-window', visualEffectState: 'active', transparent: true, roundedCorners: true }
     : {};
@@ -227,6 +288,7 @@ function openDashboardWindow() {
   dashboardWindow.setMenuBarVisibility(false);
   dashboardWindow.once('ready-to-show', () => {
     if (dashboardWindow && !dashboardWindow.isDestroyed()) {
+      try { dashboardWindow.setSkipTaskbar(false); } catch {}
       dashboardWindow.show();
       dashboardWindow.focus();
     }
@@ -244,7 +306,12 @@ function openDashboardWindow() {
     console.error('[dashboard] unresponsive');
   });
   dashboardWindow.loadFile(path.join(__dirname, 'dashboard.html'));
-  dashboardWindow.on('close', (event) => { if (!isQuitting) { event.preventDefault(); dashboardWindow.hide(); } });
+  dashboardWindow.on('minimize', (event) => {
+    if (isQuitting) return;
+    event.preventDefault();
+    hideDashboardToTray();
+  });
+  dashboardWindow.on('close', (event) => { if (!isQuitting) { event.preventDefault(); hideDashboardToTray(); } });
   dashboardWindow.on('closed', () => { dashboardWindow = null; });
 }
 function setDashboardLayoutMode(mode = 'dashboard') {
@@ -275,11 +342,75 @@ function pushDashboard() {
 async function refreshOfficialInBackground() {
   return;
 }
+function pageBounds(payload = {}) {
+  const limit = Math.max(1, Math.min(500, Number(payload.limit || 100)));
+  const offset = Math.max(0, Number(payload.offset || 0));
+  return { limit, offset };
+}
+function normalizePageRange(range = {}) {
+  const start = Number(range.start || 0);
+  const end = Number(range.end || 0);
+  return {
+    start: Number.isFinite(start) && start > 0 ? start : 0,
+    end: Number.isFinite(end) && end > 0 ? end : 0,
+  };
+}
+function matchesPageFilters(item, payload = {}) {
+  if (!item) return false;
+  if (payload.source && payload.source !== 'all' && String(item.source || '') !== String(payload.source)) return false;
+  const { start, end } = normalizePageRange(payload.range);
+  const time = Number(item.time || item.updatedAt || item.createdAt || 0);
+  if (start && time && time < start) return false;
+  if (end && time && time > end) return false;
+  const query = String(payload.query || '').trim().toLowerCase();
+  if (query) {
+    const text = [
+      item.id,
+      item.sessionId,
+      item.sessionTitle,
+      item.title,
+      item.directory,
+      item.provider,
+      item.model,
+      item.sourceLabel,
+      item.source,
+    ].filter(Boolean).join(' ').toLowerCase();
+    if (!text.includes(query)) return false;
+  }
+  return true;
+}
+function paginateSnapshotList(list, payload = {}) {
+  const { limit, offset } = pageBounds(payload);
+  const filtered = (list || []).filter((item) => matchesPageFilters(item, payload));
+  return {
+    ok: true,
+    limit,
+    offset,
+    total: filtered.length,
+    hasMore: offset + limit < filtered.length,
+    items: filtered.slice(offset, offset + limit),
+    snapshotTimestamp: lastSnapshot?.timestamp || 0,
+  };
+}
 ipcMain.handle('settings:get', () => loadSettings());
 ipcMain.handle('settings:set', async (_event, next) => { const saved = saveSettings(next); scheduleRefresh(); scheduleDbWatch(); await refreshNow(); return saved; });
 ipcMain.handle('diagnose:get', async () => diagnose());
 ipcMain.handle('auth:get', async () => ({}));
 ipcMain.handle('dashboard:getSnapshot', () => lastSnapshot || errorSnapshot(new Error('尚未刷新')));
+ipcMain.handle('dashboard:getRequestsPage', (_event, payload = {}) => paginateSnapshotList((lastSnapshot && lastSnapshot.requestLog) || [], payload));
+ipcMain.handle('dashboard:getSessionsPage', (_event, payload = {}) => paginateSnapshotList((lastSnapshot && lastSnapshot.sessions) || [], payload));
+ipcMain.handle('dashboard:getDiff', (_event, payload = {}) => {
+  const since = Number(payload.since || 0);
+  const snap = lastSnapshot || errorSnapshot(new Error('尚未刷新'));
+  if (!snap.ok) return snap;
+  return {
+    ok: true,
+    timestamp: snap.timestamp || 0,
+    changed: !since || Number(snap.timestamp || 0) > since,
+    requests: (snap.requestLog || []).filter((item) => Number(item.time || 0) > since),
+    sessions: (snap.sessions || []).filter((item) => Number(item.updatedAt || 0) > since),
+  };
+});
 ipcMain.handle('dashboard:refresh', async () => { await refreshNow(); return lastSnapshot; });
 ipcMain.handle('dashboard:settings', () => openSettingsWindow());
 ipcMain.handle('dashboard:setLayoutMode', (_event, mode) => setDashboardLayoutMode(mode));
@@ -312,8 +443,10 @@ if (singleInstance()) {
     app.setAppUserModelId('CodeArtsBar');
     tray = new Tray(makeTrayIcon(null));
     tray.setToolTip('码道 Bar 正在启动…');
-    tray.on('click', () => openDashboardWindow());
-    tray.on('right-click', () => tray.popUpContextMenu());
+    tray.on('click', () => restoreDashboardWindow());
+    tray.on('double-click', () => restoreDashboardWindow());
+    tray.on('right-click', () => showTrayMenu());
+    refreshTrayMenu();
     refreshNow();
     scheduleRefresh();
     scheduleDbWatch();

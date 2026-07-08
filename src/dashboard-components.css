@@ -57,3 +57,107 @@ input:disabled {
 .perf-panel b { font-family:var(--native-font-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif); font-size:12px; }
 .perf-panel span { display:flex; justify-content:space-between; color:#475467; }
 .perf-panel em { margin-top:2px; color:#98a2b3; font-style:normal; }
+
+/* Native polish pass: shared radius, elevation and control rhythm. */
+.icon-group,
+.select,
+.range,
+.date-range-control,
+.session-filter,
+.session-sort,
+.session-tag-select,
+.session-project-select,
+.session-quick button,
+.session-primary-filters button,
+.table-tabs button,
+.compact-panel-actions button {
+  min-height: var(--control-height-lg);
+  border-color: var(--border-soft);
+  border-radius: var(--radius-md);
+  background: var(--surface-panel);
+  box-shadow: var(--shadow-control);
+}
+
+button,
+.icon-chip,
+.range button,
+.series-chip,
+.session-row-actions button,
+.inspector-actions button,
+.session-bulk button,
+.saved-view-composer button {
+  min-height: var(--control-height);
+  border-radius: var(--radius-sm);
+  transition:
+    background .14s ease,
+    border-color .14s ease,
+    box-shadow .14s ease,
+    transform .12s ease,
+    color .14s ease;
+}
+
+button:active,
+.icon-chip:active,
+.range button:active,
+.series-chip:active,
+.session-row-actions button:active,
+.inspector-actions button:active {
+  transform: translateY(1px);
+}
+
+.summary-card,
+.chart-card,
+.table-card,
+.session-simple-shell,
+.session-advanced-shell,
+.session-inspector,
+.request-inspector,
+.usage-total-board,
+.agent-rhythm-card,
+.cache-insights,
+.cache-governance {
+  border-color: var(--border-hairline);
+  border-radius: var(--radius-lg);
+  background: var(--surface-card);
+  box-shadow: var(--shadow-card);
+}
+
+.date-range-popover,
+.chart-tip,
+.rename-sheet {
+  border-color: var(--border-soft);
+  border-radius: var(--radius-xl);
+  background: rgba(255,255,255,.92);
+  box-shadow: var(--shadow-popover);
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+}
+
+table th {
+  color: #7a8291;
+  font-weight: 820;
+}
+
+table td {
+  border-color: rgba(229,233,241,.72);
+}
+
+tr:hover td,
+.session-row:hover td,
+.request-row:hover td {
+  background: rgba(10,132,255,.035);
+}
+
+.tab.active,
+.icon-chip.active,
+.range button.active,
+.series-chip.active,
+.session-primary-filters button.active,
+.table-tabs button.active {
+  background: #0a84ff;
+  box-shadow: 0 1px 0 rgba(255,255,255,.22) inset,0 8px 18px rgba(10,132,255,.14);
+}
+
+.session-bulk-slot:empty {
+  display: none;
+}
