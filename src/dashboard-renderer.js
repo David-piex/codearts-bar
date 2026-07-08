@@ -48,6 +48,7 @@ let chartAnimationFrame = null;
 let chartHoverFrame = null;
 let chartHover = { idx: -1, x: NaN, y: NaN, tx: NaN, ty: NaN, focusKey: '', pulse: 0 };
 let chartPinnedIndex = -1;
+let lastChartTipKey = '';
 let sessionTableItems = [];
 let lastToastTimer = null;
 let lastWindowLayoutApplied = '';
@@ -56,6 +57,11 @@ let suppressChartIntro = false;
 let resizeFrame = null;
 let queryRenderTimer = null;
 let analyticsDeferredToken = 0;
+let requestTableRenderLimit = 100;
+let sessionTableRenderLimit = 80;
+let lastRenderPerf = null;
+let currentRenderPerf = null;
+let tableScrollBindFrame = null;
 let visibleSeries = new Set((localStorage.getItem('chartSeries') || 'total,input,output,cacheHitRate').split(',').filter(Boolean));
 let sessionMeta = {};
 const prefersReducedMotion = Boolean(window.matchMedia?.('(prefers-reduced-motion: reduce)').matches);
@@ -415,6 +421,10 @@ function viewModeKey(){ return layoutMode === 'compact' ? `compact:${compactPane
 let lastCommittedHtml = '';
 let lastRenderCost = 0;
 function perfNow(){ try { return performance.now(); } catch { return Date.now(); } }
+function perfBucket(label){ currentRenderPerf = { label, startedAt: perfNow(), filterMs: 0, chartDrawMs: 0, domCommitMs: 0, tableRenderMs: 0, lowerRenderMs: 0, rows: 0 }; return currentRenderPerf; }
+function markPerfStage(key, ms){ if(!currentRenderPerf || !Number.isFinite(ms)) return; currentRenderPerf[key] = Math.round((currentRenderPerf[key] || 0) + ms); }
+function finishPerfBucket(rows = 0){ if(!currentRenderPerf) return null; currentRenderPerf.totalMs = Math.round(perfNow() - currentRenderPerf.startedAt); currentRenderPerf.rows = rows; lastRenderPerf = currentRenderPerf; currentRenderPerf = null; try { window.__dashboardPerf = (window.__dashboardPerf || []).concat(lastRenderPerf).slice(-40); document.body?.dataset && (document.body.dataset.renderMs = String(lastRenderPerf.totalMs)); } catch {} return lastRenderPerf; }
+function resetIncrementalRenderLimits(scope = 'all'){ if(scope === 'all' || scope === 'requests') requestTableRenderLimit = 100; if(scope === 'all' || scope === 'sessions') sessionTableRenderLimit = 80; }
 function commitAppHtml(app, html){
   if(lastCommittedHtml === html && app.innerHTML === html) return false;
   lastCommittedHtml = html;
@@ -422,11 +432,13 @@ function commitAppHtml(app, html){
   return true;
 }
 function markRenderCost(start, label, rows = 0){
-  lastRenderCost = Math.round(perfNow() - start);
+  const perf = finishPerfBucket(rows);
+  lastRenderCost = perf ? perf.totalMs : Math.round(perfNow() - start);
   try { document.body?.style?.setProperty?.('--last-render-ms', `${lastRenderCost}ms`); } catch {}
-  if(lastRenderCost > 180){
-    console.debug(`[dashboard] ${label} render ${lastRenderCost}ms rows=${rows}`);
-    try { ipcRenderer.invoke('dashboard:log', { level: 'debug', scope: 'renderer', message: `${label} render ${lastRenderCost}ms rows=${rows}` }); } catch {}
+  const detail = perf ? ` filter=${perf.filterMs || 0}ms chart=${perf.chartDrawMs || 0}ms dom=${perf.domCommitMs || 0}ms table=${perf.tableRenderMs || 0}ms lower=${perf.lowerRenderMs || 0}ms` : '';
+  if(lastRenderCost > 120 || label === 'switch'){
+    console.debug(`[dashboard] ${label} render ${lastRenderCost}ms rows=${rows}${detail}`);
+    try { ipcRenderer.invoke('dashboard:log', { level: 'debug', scope: 'renderer-perf', message: `${label} render ${lastRenderCost}ms rows=${rows}${detail}` }); } catch {}
   }
 }
 function analyticsEmptyState(rows){
@@ -436,6 +448,7 @@ function analyticsEmptyState(rows){
 
 function render(s, opts = {}){
   const renderStartedAt = perfNow();
+  perfBucket(viewModeKey());
   rangeFilter = normalizeRangeFilter(rangeFilter);
   snapshot = s;
   sessionTableItems = [];
@@ -452,7 +465,9 @@ function render(s, opts = {}){
   const sourceOpts = sourceOptions(s);
   if(sourceFilter !== 'all' && !sourceOpts.some((x) => x[0] === sourceFilter)) sourceFilter = 'all';
   if(modelFilter !== 'all' && !modelOptions(s).includes(modelFilter)) modelFilter = 'all';
+  const filterStartedAt = perfNow();
   const rows = filterRows(s);
+  markPerfStage('filterMs', perfNow() - filterStartedAt);
   if(layoutMode === 'compact'){
     commitAppHtml(app, `${headerHtml(true)}${filtersHtml(s)}${renderCompactMenu(s, rows)}`);
     syncFooter();
@@ -465,25 +480,58 @@ function render(s, opts = {}){
     commitAppHtml(app, `${headerHtml(false)}${filtersHtml(s)}${renderSessionWorkspace(s)}`);
     syncFooter();
     markRenderCost(renderStartedAt, 'sessions', sessionTableItems.length);
-    requestAnimationFrame(() => app?.classList.remove('view-switching'));
+    requestAnimationFrame(() => { app?.classList.remove('view-switching'); bindIncrementalTables(); });
     return;
   }
   const deferHeavy = opts.deferHeavy === true;
-  const renderLower = () => `${renderAgentRhythm(s)}${renderTable(rows, s)}${renderAnalyticsAdvanced(rows, s)}`;
+  const renderLower = () => { const t = perfNow(); const html = `${renderAgentRhythm(s)}${renderTable(rows, s)}${renderAnalyticsAdvanced(rows, s)}`; markPerfStage('lowerRenderMs', perfNow() - t); return html; };
   const token = ++analyticsDeferredToken;
+  const domStartedAt = perfNow();
   commitAppHtml(app, `${headerHtml(false)}${filtersHtml(s)}${renderSummary(rows, s)}${analyticsEmptyState(rows)}${renderChart(rows, s)}${deferHeavy ? '<div id="analyticsDeferred" class="analytics-deferred"><span>\u6b63\u5728\u66f4\u65b0\u660e\u7ec6...</span></div>' : renderLower()}`);
+  markPerfStage('domCommitMs', perfNow() - domStartedAt);
   syncFooter();
   const instant = opts.instantChart === true || modeChanged || suppressChartIntro;
   requestAnimationFrame(() => {
     bindChart(rows, s, { instant });
     app?.classList.remove('view-switching');
     markRenderCost(renderStartedAt, 'analytics', rows.length);
+    bindIncrementalTables();
     if(deferHeavy){
       setTimeout(() => {
         if(token !== analyticsDeferredToken || snapshot !== s || layoutMode !== 'dashboard' || workspaceMode !== 'analytics') return;
         const holder = document.getElementById('analyticsDeferred');
         if(holder) holder.outerHTML = renderLower();
+        bindIncrementalTables();
       }, 35);
+    }
+  });
+}
+
+function bindIncrementalTables(){
+  if(tableScrollBindFrame) cancelAnimationFrame(tableScrollBindFrame);
+  tableScrollBindFrame = requestAnimationFrame(() => {
+    tableScrollBindFrame = null;
+    const requestScroller = document.querySelector('.request-main .table-scroll');
+    if(requestScroller && !requestScroller.dataset.incrementalBound){
+      requestScroller.dataset.incrementalBound = '1';
+      requestScroller.addEventListener('scroll', () => {
+        if(workspaceMode !== 'analytics' || tableTab !== 'requests' || !snapshot?.ok) return;
+        if(requestScroller.scrollTop + requestScroller.clientHeight < requestScroller.scrollHeight - 180) return;
+        const before = requestTableRenderLimit;
+        requestTableRenderLimit = Math.min(requestTableRenderLimit + 100, 5000);
+        if(requestTableRenderLimit !== before) render(snapshot, { windowLayout:false, instantChart:true, deferHeavy:false });
+      }, { passive:true });
+    }
+    const sessionScroller = document.querySelector('.session-scroll');
+    if(sessionScroller && !sessionScroller.dataset.incrementalBound){
+      sessionScroller.dataset.incrementalBound = '1';
+      sessionScroller.addEventListener('scroll', () => {
+        if(workspaceMode !== 'sessions' || !snapshot?.ok) return;
+        if(sessionScroller.scrollTop + sessionScroller.clientHeight < sessionScroller.scrollHeight - 180) return;
+        const before = sessionTableRenderLimit;
+        sessionTableRenderLimit = Math.min(sessionTableRenderLimit + 80, 5000);
+        if(sessionTableRenderLimit !== before) render(snapshot, { windowLayout:false, instantChart:true });
+      }, { passive:true });
     }
   });
 }
@@ -873,11 +921,11 @@ document.addEventListener('click', async (e) => {
   const rangeApply = e.target.closest('[data-range-apply]');
   const tab = e.target.closest('[data-table]');
   if(rangeApply){ applyCustomDateInputs(); if(snapshot?.ok) render(snapshot, { windowLayout: false, instantChart: true, deferHeavy: true }); return; }
-  if(src){ sourceFilter = src.dataset.source; localStorage.setItem('statsSource', sourceFilter); if(snapshot?.ok) render(snapshot, { windowLayout: false, instantChart: true, deferHeavy: true }); }
-  if(tab){ tableTab = tab.dataset.table; localStorage.setItem('statsTableTab', tableTab); if(tableTab === 'sessions'){ workspaceMode = 'sessions'; localStorage.setItem('workspaceMode', workspaceMode); } else { workspaceMode = 'analytics'; localStorage.setItem('workspaceMode', workspaceMode); } if(tab.closest('.compact-panel-actions')){ layoutMode = 'dashboard'; localStorage.setItem('layoutMode', layoutMode); } if(snapshot?.ok) render(snapshot); }
+  if(src){ resetIncrementalRenderLimits('all'); sourceFilter = src.dataset.source; localStorage.setItem('statsSource', sourceFilter); if(snapshot?.ok) render(snapshot, { windowLayout: false, instantChart: true, deferHeavy: true }); }
+  if(tab){ resetIncrementalRenderLimits('all'); tableTab = tab.dataset.table; localStorage.setItem('statsTableTab', tableTab); if(tableTab === 'sessions'){ workspaceMode = 'sessions'; localStorage.setItem('workspaceMode', workspaceMode); } else { workspaceMode = 'analytics'; localStorage.setItem('workspaceMode', workspaceMode); } if(tab.closest('.compact-panel-actions')){ layoutMode = 'dashboard'; localStorage.setItem('layoutMode', layoutMode); } if(snapshot?.ok) render(snapshot); }
 });
-document.addEventListener('change', (e) => { const dateInput = e.target.closest('[data-date-range-date], [data-date-range-time]'); if(dateInput){ const which = dateInput.dataset.dateRangeDate || dateInput.dataset.dateRangeTime; const part = dateInput.dataset.dateRangeDate ? 'date' : 'time'; updateDateRangeDraft(which, part, dateInput.value); if(snapshot?.ok) render(snapshot, { windowLayout: false, instantChart: true, deferHeavy: true }); return; } const follow = e.target.closest('[data-date-range-follow]'); if(follow){ dateRangeFollowNow = follow.checked; if(dateRangeFollowNow) dateRangeDraftEnd = Number(snapshot?.timestamp || Date.now()); localStorage.setItem('dateRangeFollowNow', dateRangeFollowNow ? '1' : '0'); if(snapshot?.ok) render(snapshot, { windowLayout: false, instantChart: true, deferHeavy: true }); return; } const tags = e.target.closest('[data-session-tags]'); if(tags){ const key = tags.dataset.sessionTags; sessionMeta[key] = { ...(sessionMeta[key] || {}), tags: normalizeTags(tags.value) }; saveSessionMeta(); setRefreshState(TXT.savedLocal); clearTimeout(lastToastTimer); lastToastTimer = setTimeout(() => setRefreshState(''), 900); if(snapshot?.ok) render(snapshot); return; } const sel = e.target.closest('[data-select]'); if(!sel) return; if(sel.dataset.select === 'source'){ sourceFilter = sel.value; localStorage.setItem('statsSource', sourceFilter); if(snapshot?.ok) render(snapshot, { windowLayout: false, instantChart: true, deferHeavy: true }); } if(sel.dataset.select === 'model'){ modelFilter = sel.value; localStorage.setItem('statsModel', modelFilter); if(snapshot?.ok) render(snapshot, { windowLayout: false, instantChart: true, deferHeavy: true }); } if(sel.dataset.select === 'refresh'){ refreshEvery = sel.value; localStorage.setItem('statsRefreshEvery', refreshEvery); setupAutoRefresh(); } if(sel.dataset.select === 'range'){ rangeFilter = normalizeRangeFilter(sel.value); const days = Number(String(rangeFilter).replace('d', '')); if(Number.isFinite(days)) localStorage.setItem('customRangeDays', String(days)); localStorage.setItem('statsRange', rangeFilter); if(snapshot?.ok) render(snapshot, { windowLayout: false, instantChart: true, deferHeavy: true }); } if(sel.dataset.select === 'sessionSort'){ sessionSort = sel.value; localStorage.setItem('sessionSort', sessionSort); if(snapshot?.ok) render(snapshot); } if(sel.dataset.select === 'sessionTag'){ sessionTagFilter = sel.value; localStorage.setItem('sessionTagFilter', sessionTagFilter); if(snapshot?.ok) render(snapshot); } if(sel.dataset.select === 'sessionProject'){ sessionProjectFilter = sel.value; localStorage.setItem('sessionProjectFilter', sessionProjectFilter); if(snapshot?.ok) render(snapshot); } });
-document.addEventListener('input', (e) => { const bulkTags = e.target.closest('[data-bulk-meta-tags]'); if(bulkTags){ bulkMetaTagsDraft = bulkTags.value; return; } const bulkNote = e.target.closest('[data-bulk-meta-note]'); if(bulkNote){ bulkMetaNoteDraft = bulkNote.value; return; } const savedViewName = e.target.closest('[data-saved-session-name]'); if(savedViewName){ savedSessionViewNameDraft = savedViewName.value; return; } const note = e.target.closest('[data-session-note]'); if(note){ const key = note.dataset.sessionNote; sessionMeta[key] = { ...(sessionMeta[key] || {}), note: note.value }; saveSessionMeta(); setRefreshState(TXT.savedLocal); clearTimeout(lastToastTimer); lastToastTimer = setTimeout(() => setRefreshState(''), 800); return; } const rename = e.target.closest('[data-rename-input]'); if(rename){ renameDraft = rename.value; return; } const q = e.target.closest('[data-query]'); if(!q) return; const scope = q.dataset.query === 'sessions' ? 'sessions' : 'analytics'; if(scope === 'sessions'){ sessionQuery = q.value; localStorage.setItem('statsSessionQuery', sessionQuery); } else { analyticsQuery = q.value; localStorage.setItem('statsAnalyticsQuery', analyticsQuery); } const app = document.getElementById('app'); app?.classList.add('is-typing'); clearTimeout(queryRenderTimer); queryRenderTimer = setTimeout(() => { queryRenderTimer = null; if(snapshot?.ok) render(snapshot, { windowLayout: false, instantChart: true }); requestAnimationFrame(() => { const next = document.querySelector(`[data-query="${scope}"]`); if(next){ next.focus(); next.setSelectionRange(next.value.length, next.value.length); } app?.classList.remove('is-typing'); }); }, 140); });
+document.addEventListener('change', (e) => { const dateInput = e.target.closest('[data-date-range-date], [data-date-range-time]'); if(dateInput){ const which = dateInput.dataset.dateRangeDate || dateInput.dataset.dateRangeTime; const part = dateInput.dataset.dateRangeDate ? 'date' : 'time'; updateDateRangeDraft(which, part, dateInput.value); if(snapshot?.ok) render(snapshot, { windowLayout: false, instantChart: true, deferHeavy: true }); return; } const follow = e.target.closest('[data-date-range-follow]'); if(follow){ dateRangeFollowNow = follow.checked; if(dateRangeFollowNow) dateRangeDraftEnd = Number(snapshot?.timestamp || Date.now()); localStorage.setItem('dateRangeFollowNow', dateRangeFollowNow ? '1' : '0'); if(snapshot?.ok) render(snapshot, { windowLayout: false, instantChart: true, deferHeavy: true }); return; } const tags = e.target.closest('[data-session-tags]'); if(tags){ const key = tags.dataset.sessionTags; sessionMeta[key] = { ...(sessionMeta[key] || {}), tags: normalizeTags(tags.value) }; saveSessionMeta(); setRefreshState(TXT.savedLocal); clearTimeout(lastToastTimer); lastToastTimer = setTimeout(() => setRefreshState(''), 900); if(snapshot?.ok) render(snapshot); return; } const sel = e.target.closest('[data-select]'); if(!sel) return; if(sel.dataset.select === 'source'){ resetIncrementalRenderLimits('all'); sourceFilter = sel.value; localStorage.setItem('statsSource', sourceFilter); if(snapshot?.ok) render(snapshot, { windowLayout: false, instantChart: true, deferHeavy: true }); } if(sel.dataset.select === 'model'){ resetIncrementalRenderLimits('all'); modelFilter = sel.value; localStorage.setItem('statsModel', modelFilter); if(snapshot?.ok) render(snapshot, { windowLayout: false, instantChart: true, deferHeavy: true }); } if(sel.dataset.select === 'refresh'){ refreshEvery = sel.value; localStorage.setItem('statsRefreshEvery', refreshEvery); setupAutoRefresh(); } if(sel.dataset.select === 'range'){ resetIncrementalRenderLimits('all'); rangeFilter = normalizeRangeFilter(sel.value); const days = Number(String(rangeFilter).replace('d', '')); if(Number.isFinite(days)) localStorage.setItem('customRangeDays', String(days)); localStorage.setItem('statsRange', rangeFilter); if(snapshot?.ok) render(snapshot, { windowLayout: false, instantChart: true, deferHeavy: true }); } if(sel.dataset.select === 'sessionSort'){ resetIncrementalRenderLimits('sessions'); sessionSort = sel.value; localStorage.setItem('sessionSort', sessionSort); if(snapshot?.ok) render(snapshot); } if(sel.dataset.select === 'sessionTag'){ resetIncrementalRenderLimits('sessions'); sessionTagFilter = sel.value; localStorage.setItem('sessionTagFilter', sessionTagFilter); if(snapshot?.ok) render(snapshot); } if(sel.dataset.select === 'sessionProject'){ resetIncrementalRenderLimits('sessions'); sessionProjectFilter = sel.value; localStorage.setItem('sessionProjectFilter', sessionProjectFilter); if(snapshot?.ok) render(snapshot); } });
+document.addEventListener('input', (e) => { const bulkTags = e.target.closest('[data-bulk-meta-tags]'); if(bulkTags){ bulkMetaTagsDraft = bulkTags.value; return; } const bulkNote = e.target.closest('[data-bulk-meta-note]'); if(bulkNote){ bulkMetaNoteDraft = bulkNote.value; return; } const savedViewName = e.target.closest('[data-saved-session-name]'); if(savedViewName){ savedSessionViewNameDraft = savedViewName.value; return; } const note = e.target.closest('[data-session-note]'); if(note){ const key = note.dataset.sessionNote; sessionMeta[key] = { ...(sessionMeta[key] || {}), note: note.value }; saveSessionMeta(); setRefreshState(TXT.savedLocal); clearTimeout(lastToastTimer); lastToastTimer = setTimeout(() => setRefreshState(''), 800); return; } const rename = e.target.closest('[data-rename-input]'); if(rename){ renameDraft = rename.value; return; } const q = e.target.closest('[data-query]'); if(!q) return; const scope = q.dataset.query === 'sessions' ? 'sessions' : 'analytics'; if(scope === 'sessions'){ sessionQuery = q.value; localStorage.setItem('statsSessionQuery', sessionQuery); } else { analyticsQuery = q.value; localStorage.setItem('statsAnalyticsQuery', analyticsQuery); } const app = document.getElementById('app'); app?.classList.add('is-typing'); clearTimeout(queryRenderTimer); queryRenderTimer = setTimeout(() => { queryRenderTimer = null; resetIncrementalRenderLimits(scope === 'sessions' ? 'sessions' : 'requests'); if(snapshot?.ok) render(snapshot, { windowLayout: false, instantChart: true }); requestAnimationFrame(() => { const next = document.querySelector(`[data-query="${scope}"]`); if(next){ next.focus(); next.setSelectionRange(next.value.length, next.value.length); } app?.classList.remove('is-typing'); }); }, 140); });
 document.addEventListener('keydown', async (e) => { if(dateRangeOpen && e.key === 'Escape'){ dateRangeOpen = false; if(snapshot?.ok) render(snapshot, { windowLayout: false, instantChart: true, deferHeavy: true }); return; } if(e.key === 'Enter' && e.target.closest('[data-saved-session-name]')){ saveCurrentSessionView(); if(snapshot?.ok) render(snapshot); return; } if(bulkMetaOpen && e.key === 'Escape'){ bulkMetaOpen = false; bulkMetaTagsDraft = ''; bulkMetaNoteDraft = ''; if(snapshot?.ok) render(snapshot); return; } if(!renameSessionKey) return; if(e.key === 'Escape'){ renameSessionKey = ''; renameDraft = ''; if(snapshot?.ok) render(snapshot); } if(e.key === 'Enter' && e.target.closest('[data-rename-input]')){ await saveRenameSheet(); } });
 ipcRenderer.on('dashboard:snapshot', (_e, s) => { suppressChartIntro = true; render(s, { instantChart: true, windowLayout: false }); suppressChartIntro = false; setRefreshState(TXT.realtime); setTimeout(() => setRefreshState(''), 900); });
 window.addEventListener('resize', () => {

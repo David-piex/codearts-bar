@@ -1,0 +1,36 @@
+/* 1.19.0 denser commercial table, hover and state polish */
+.table-scroll table tr,
+.session-table.simple tr {
+  transition:background-color .12s ease, box-shadow .12s ease;
+}
+.table-scroll tbody td,
+.session-table.simple tbody td {
+  padding-top:9px;
+  padding-bottom:9px;
+}
+.table-scroll tbody tr:hover td,
+.session-table.simple tbody tr:hover td {
+  background:rgba(10,132,255,.045);
+}
+.table-limit-note {
+  margin-top:10px;
+  padding:9px 12px;
+  border-radius:var(--radius-sm);
+  color:#667085;
+  background:rgba(255,255,255,.68);
+  border:1px solid rgba(210,218,230,.58);
+}
+.chart-tip {
+  will-change:transform;
+  contain:layout paint style;
+}
+.chart-hover-meta,
+.chart-hover-scrubber {
+  contain:layout paint style;
+}
+button:disabled,
+select:disabled,
+input:disabled {
+  cursor:default;
+}
+

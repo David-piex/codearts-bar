@@ -4,7 +4,16 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 
-const html = fs.readFileSync(path.join(__dirname, "..", "src", "dashboard.html"), "utf8");
+const dashboardSourceFiles = [
+  "dashboard.html",
+  "dashboard.css",
+  "dashboard-native.css",
+  "dashboard-layout.css",
+  "dashboard-components.css",
+];
+const html = dashboardSourceFiles
+  .map((file) => fs.readFileSync(path.join(__dirname, "..", "src", file), "utf8"))
+  .join("\n");
 const rendererFiles = [
   "dashboard-renderer.js",
   "dashboard-state.js",
@@ -160,6 +169,25 @@ assert.match(renderer, /createRadialGradient/);
 assert.match(renderer, /animatePinnedHover/);
 assert.match(html, /chartPinnedScrub/);
 assert.match(html, /scrubber-focus/);
+
+
+assert.match(html, /1\.19\.0 performance and native visual unification pass/);
+assert.match(html, /1\.19\.0 local rendering layout pass/);
+assert.match(html, /1\.19\.0 denser commercial table, hover and state polish/);
+assert.match(html, /href="dashboard\.css"/);
+assert.match(html, /href="dashboard-native\.css"/);
+assert.match(html, /href="dashboard-layout\.css"/);
+assert.match(html, /href="dashboard-components\.css"/);
+assert.match(renderer, /requestTableRenderLimit = 100/);
+assert.match(renderer, /sessionTableRenderLimit = 80/);
+assert.match(renderer, /renderer-perf/);
+assert.match(renderer, /filterMs/);
+assert.match(renderer, /chartDrawMs/);
+assert.match(renderer, /domCommitMs/);
+assert.match(renderer, /tableRenderMs/);
+assert.match(renderer, /bindIncrementalTables/);
+assert.match(renderer, /lastChartTipKey/);
+assert.match(renderer, /contentChanged/);
 
 console.log("ok - dashboard style smoke");
 

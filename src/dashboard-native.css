@@ -1,0 +1,31 @@
+/* 1.19.0 performance and native visual unification pass */
+:root {
+  --radius-sm:10px;
+  --radius-md:14px;
+  --radius-lg:18px;
+  --radius-xl:24px;
+  --shadow-card:0 1px 0 rgba(255,255,255,.86) inset,0 12px 30px rgba(24,39,65,.058);
+  --shadow-card-hover:0 1px 0 rgba(255,255,255,.9) inset,0 14px 34px rgba(24,39,65,.072);
+  --shadow-control:inset 0 1px 0 rgba(255,255,255,.72),0 4px 10px rgba(24,39,65,.026);
+  --control-height:34px;
+  --control-radius:10px;
+  --surface-soft:rgba(255,255,255,.72);
+  --surface-strong:rgba(255,255,255,.88);
+  --hairline:rgba(210,218,230,.72);
+}
+:where(button, input, select, textarea) {
+  min-height:var(--control-height);
+  border-radius:var(--control-radius);
+}
+:where(.summary-card,.chart-card,.table-card,.source-card,.session-simple-shell,.session-advanced-shell,.session-essential-inspector,.request-inspector,.session-inspector,.cache-governance,.usage-total-board,.agent-rhythm-card) {
+  border-color:var(--hairline) !important;
+  box-shadow:var(--shadow-card) !important;
+}
+:where(.summary-card,.source-card,.chart-snapshot-card,.session-row-actions button,.icon-chip,.series-chip,.range button):hover {
+  transform:translateY(-.5px);
+  box-shadow:var(--shadow-card-hover);
+}
+@media (prefers-reduced-motion: reduce) {
+  :where(.summary-card,.source-card,.chart-snapshot-card,.session-row-actions button,.icon-chip,.series-chip,.range button):hover { transform:none; }
+}
+

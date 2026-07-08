@@ -1,4 +1,3 @@
-const SESSION_TABLE_RENDER_LIMIT = 120;
 function sessionKeyFor(session){ return `${session.source || ''}:${session.id || ''}`; }
 function metaForSession(item){ return sessionMeta[sessionKeyFor(item)] || { tags: [], note: '' }; }
 function normalizeTags(value){ return String(value || '').split(/[,，]/u).map((x) => x.trim()).filter(Boolean).slice(0, 8); }
@@ -308,8 +307,10 @@ function addSessionUsage(acc, u){
   return acc;
 }
 function sessionTable(s){
+  const tableStartedAt = perfNow();
   const filtered = sortSessions((s.sessions || []).filter(sessionMatches));
-  const list = filtered.slice(0, SESSION_TABLE_RENDER_LIMIT);
+  const limit = Math.max(80, Number(sessionTableRenderLimit || 80));
+  const list = filtered.slice(0, limit);
   sessionTableItems = list;
   for(const key of [...selectedSessionKeys]) if(!list.some((x) => sessionKeyFor(x) === key)) selectedSessionKeys.delete(key);
   saveSelectedSessions();
@@ -333,8 +334,10 @@ function sessionTable(s){
     return `${commonStart}<td><b>${n(u.total)}</b></td><td class="${x.archived ? 'muted' : 'ok'}">${x.archived ? TXT.archived : TXT.active}</td><td class="session-actions-cell"><div class="session-row-actions"><button data-session-action="copy-summary" data-session-key="${esc(key)}" title="${TXT.copySummary}">${TXT.copy}</button><button data-session-action="open" data-session-key="${esc(key)}" title="${TXT.open}">${TXT.open}</button><button data-session-action="archive" data-session-key="${esc(key)}" data-archive="${x.archived ? 'false' : 'true'}" title="${x.archived ? TXT.restore : TXT.archive}">${x.archived ? TXT.restore : TXT.archive}</button></div></td></tr>`;
   }).join('') : emptyRow(detailed ? 15 : 9);
   const clipped = filtered.length > list.length;
-  const rows = `<div class="table-scroll session-scroll"><table class="session-table ${detailed ? 'detailed' : 'simple'}"><thead>${head}</thead><tbody>${body}</tbody></table></div>${clipped ? `<div class="table-limit-note">\u5df2\u5148\u6e32\u67d3 ${n(list.length)} / ${n(filtered.length)} \u884c\uff0c\u7ee7\u7eed\u641c\u7d22\u6216\u7b5b\u9009\u53ef\u7f29\u5c0f\u8303\u56f4\u3002</div>` : ''}`;
-  return `<div class="session-manager"><div class="session-main">${rows}</div>${renderSessionInspector()}</div>`;
+  const rows = `<div class="table-scroll session-scroll"><table class="session-table ${detailed ? 'detailed' : 'simple'}"><thead>${head}</thead><tbody>${body}</tbody></table></div>${clipped ? `<div class="table-limit-note">\u5df2\u5148\u6e32\u67d3 ${n(list.length)} / ${n(filtered.length)} \u884c\uff0c\u6eda\u52a8\u5230\u5e95\u90e8\u7ee7\u7eed\u52a0\u8f7d\uff0c\u6216\u7ee7\u7eed\u641c\u7d22 / \u7b5b\u9009\u7f29\u5c0f\u8303\u56f4\u3002</div>` : ''}`;
+  const html = `<div class="session-manager"><div class="session-main">${rows}</div>${renderSessionInspector()}</div>`;
+  markPerfStage('tableRenderMs', perfNow() - tableStartedAt);
+  return html;
 }
 function labelForQuickFilterValue(value){
   const map = { all: TXT.viewAll, pinned: TXT.pinnedOnly, tagged: TXT.taggedOnly, cacheHigh: TXT.cacheHigh, cacheLow: TXT.cacheLow, recent: TXT.recentActiveView };

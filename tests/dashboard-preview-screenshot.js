@@ -375,7 +375,7 @@ function screenshot(chrome, htmlPath, pngPath){
 }
 (async () => {
   fs.mkdirSync(outDir, { recursive:true });
-  const baseHtml = fs.readFileSync(path.join(root, "src", "dashboard.html"), "utf8").replaceAll("../assets/", "../../assets/");
+  const baseHtml = fs.readFileSync(path.join(root, "src", "dashboard.html"), "utf8").replaceAll("../assets/", "../../assets/").replaceAll('href="dashboard', 'href="../../src/dashboard');
   const sessionHtml = buildPreviewHtml(baseHtml, (await renderAppHtml("sessions")).replaceAll("../assets/", "../../assets/"));
   const analyticsAppHtml = (await renderAppHtml("analytics")).replaceAll("../assets/", "../../assets/");
   const analyticsTotalHtml = buildPreviewHtml(baseHtml, analyticsAppHtml, { analyticsTotal: true });

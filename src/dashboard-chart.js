@@ -194,6 +194,7 @@ function drawCacheLens(ctx, b, bounds, guideX, isPinned){
   ctx.restore();
 }
 function drawChart(rows, s, hover = -1, progress = 1){
+  const chartDrawStartedAt = perfNow();
   ensureVisibleSeries();
   const canvas = document.getElementById('usageChart');
   if(!canvas) return;
@@ -428,6 +429,7 @@ function drawChart(rows, s, hover = -1, progress = 1){
     }
     ctx.restore();
   }
+  markPerfStage('chartDrawMs', perfNow() - chartDrawStartedAt);
 }
 function clamp(nv, min, max){ return Math.max(min, Math.min(max, nv)); }
 function showTip(event, b, focus){
@@ -443,7 +445,12 @@ function showTip(event, b, focus){
   const pinned = chartPinnedIndex >= 0 ? `<div class="tip-pin">${TXT.pinnedPoint} &#183; ${TXT.unpinPoint}</div>` : '';
   const hit = Math.max(0, Math.min(100, cacheHitRate(b) || 0));
   const health = cacheHealth(b);
-  tip.innerHTML = `<b>${esc(title)}</b><div class="tip-row tip-state"><span>${esc(state)}</span><strong>${n(b.requests || 0)} ${TXT.requests}</strong></div>${pinned}${mixedScale ? `<div class="tip-row tip-note"><span>${TXT.relativeScale}</span><strong>${TXT.eachPeak100}</strong></div>` : ''}${active.map((cfg) => row(cfg, cfg.key === focusKey)).join('')}<div class="tip-divider"></div>${metricRow(TXT.cacheHitRate, cacheHitText(b), 'cache')}<div class="tip-cache-bar" style="--hit:${hit}%"><i></i></div>${metricRow(TXT.cacheHealth, health.label, `cache-health ${health.tone}`)}${metricRow(`${TXT.cacheReadShort} / ${TXT.cacheCreateShort}`, `${compact(b.cacheRead || 0)} / ${compact(b.cacheWrite || 0)}`)}${metricRow(TXT.ttft, ms(b.ttftMs))}${metricRow(TXT.wait, ms(b.waitMs))}${metricRow(TXT.queue, ms(b.queueMs))}`;
+  const tipKey = `${b.start || ''}|${focusKey}|${chartPinnedIndex}|${[...visibleSeries].join(',')}`;
+  const contentChanged = tipKey !== lastChartTipKey;
+  if(contentChanged){
+    lastChartTipKey = tipKey;
+    tip.innerHTML = `<b>${esc(title)}</b><div class="tip-row tip-state"><span>${esc(state)}</span><strong>${n(b.requests || 0)} ${TXT.requests}</strong></div>${pinned}${mixedScale ? `<div class="tip-row tip-note"><span>${TXT.relativeScale}</span><strong>${TXT.eachPeak100}</strong></div>` : ''}${active.map((cfg) => row(cfg, cfg.key === focusKey)).join('')}<div class="tip-divider"></div>${metricRow(TXT.cacheHitRate, cacheHitText(b), 'cache')}<div class="tip-cache-bar" style="--hit:${hit}%"><i></i></div>${metricRow(TXT.cacheHealth, health.label, `cache-health ${health.tone}`)}${metricRow(`${TXT.cacheReadShort} / ${TXT.cacheCreateShort}`, `${compact(b.cacheRead || 0)} / ${compact(b.cacheWrite || 0)}`)}${metricRow(TXT.ttft, ms(b.ttftMs))}${metricRow(TXT.wait, ms(b.waitMs))}${metricRow(TXT.queue, ms(b.queueMs))}`;
+  }
   tip.classList.add('show');
   const box = tip.getBoundingClientRect ? tip.getBoundingClientRect() : { width: 248, height: 260 };
   const width = Math.max(224, Number(box.width || 248));
@@ -455,18 +462,21 @@ function showTip(event, b, focus){
   const top = clamp(rawTop, 8, Math.max(8, window.innerHeight - height - 8));
   tip.classList.toggle('flip-x', preferLeft);
   tip.style.transform = `translate3d(${left}px, ${top}px, 0) scale(1)`;
-  const meta = document.getElementById('chartHoverMeta');
-  if(meta) meta.innerHTML = `<b>${esc(title)}</b>${chartPinnedIndex >= 0 ? `<span>${TXT.pinnedPoint}</span>` : ''}${mixedScale ? `<span>${TXT.relativeScale}</span>` : ''}<span>${Number(b.requests || 0) ? `${TXT.requests} ${n(b.requests)}` : TXT.idleHours}</span><span>${TXT.total} ${n(b.total || 0)}</span><span class="cache-meta">${TXT.cacheHitRate} ${cacheHitText(b)}</span><span class="cache-health-meta ${health.tone}">${TXT.cacheHealth} ${health.label}</span><span>${TXT.ttft} ${ms(b.ttftMs)}</span><span>${TXT.wait} ${ms(b.waitMs)}</span><span>${TXT.queue} ${ms(b.queueMs)}</span>`;
-  const scrubber = document.getElementById('chartHoverScrubber');
-  if(scrubber){
-    scrubber.classList.add('active');
-    scrubber.classList.toggle('pinned', chartPinnedIndex >= 0);
-    scrubber.innerHTML = chartScrubberHtml(title, b, health, hit, chartPinnedIndex >= 0, focus);
+  if(contentChanged){
+    const meta = document.getElementById('chartHoverMeta');
+    if(meta) meta.innerHTML = `<b>${esc(title)}</b>${chartPinnedIndex >= 0 ? `<span>${TXT.pinnedPoint}</span>` : ''}${mixedScale ? `<span>${TXT.relativeScale}</span>` : ''}<span>${Number(b.requests || 0) ? `${TXT.requests} ${n(b.requests)}` : TXT.idleHours}</span><span>${TXT.total} ${n(b.total || 0)}</span><span class="cache-meta">${TXT.cacheHitRate} ${cacheHitText(b)}</span><span class="cache-health-meta ${health.tone}">${TXT.cacheHealth} ${health.label}</span><span>${TXT.ttft} ${ms(b.ttftMs)}</span><span>${TXT.wait} ${ms(b.waitMs)}</span><span>${TXT.queue} ${ms(b.queueMs)}</span>`;
+    const scrubber = document.getElementById('chartHoverScrubber');
+    if(scrubber){
+      scrubber.classList.add('active');
+      scrubber.classList.toggle('pinned', chartPinnedIndex >= 0);
+      scrubber.innerHTML = chartScrubberHtml(title, b, health, hit, chartPinnedIndex >= 0, focus);
+    }
   }
 }
 function clearChartHover({ redraw = true, clearPinned = true } = {}){
   if(clearPinned) chartPinnedIndex = -1;
   const tip = document.getElementById('chartTip');
+  lastChartTipKey = '';
   if(tip){ tip.classList.remove('show', 'flip-x'); tip.style.transform = 'translate3d(-999px,-999px,0) scale(.98)'; }
   document.querySelectorAll('.chart-card.chart-active, .chart-card.chart-pinned').forEach((card) => card.classList.remove('chart-active', 'chart-pinned'));
   const meta = document.getElementById('chartHoverMeta');
@@ -604,16 +614,20 @@ function renderRequestInspector(list){
 }
 
 function tableRows(rows){
+  const tableStartedAt = perfNow();
   const matched = applyTableSearch(rows);
-  const list = matched.slice(0, 160);
+  const limit = Math.max(100, Number(requestTableRenderLimit || 100));
+  const list = matched.slice(0, limit);
   selectedRequestFrom(list);
   const body = list.length ? list.map((r) => {
     const key = requestKeyFor(r);
     const selected = key === selectedRequestKey;
     return `<tr class="request-row ${selected ? 'selected' : ''}" data-request-select="${esc(key)}"><td>${esc(dateLabel(r.time))}</td><td><span class="source-pill">${esc(sourceName(r))}</span></td><td>${esc(r.provider)}</td><td><code>${esc(shortModel(r.model))}</code></td><td>${n(r.input)}</td><td>${n(r.output)}</td><td>${n(r.cacheWrite || 0)}</td><td>${n(r.cacheRead || 0)}</td><td class="cache-cell">${cachePillHtml(r)}</td><td><b>${n(r.total)}</b></td><td>${ms(r.ttftMs)}</td><td>${ms(r.latencyMs)}</td><td>${rate(r.outputTokensPerSec)}</td><td class="${r.ok ? 'ok' : 'bad'}">${esc(r.status)}</td><td><div>${esc(r.sessionTitle)}</div><div class="muted">${esc(r.sessionId)}</div></td></tr>`;
   }).join('') : emptyRow(15);
-  const clipped = matched.length > list.length ? `<div class="table-limit-note">\u5df2\u5148\u6e32\u67d3 ${n(list.length)} / ${n(matched.length)} \u884c\uff0c\u7ee7\u7eed\u641c\u7d22\u53ef\u7f29\u5c0f\u8303\u56f4\u3002</div>` : '';
-  return `<div class="request-manager"><div class="request-main"><div class="table-scroll"><table><thead><tr><th>${TXT.time}</th><th>${TXT.source}</th><th>${TXT.provider}</th><th>${TXT.model}</th><th>${TXT.input}</th><th>${TXT.output}</th><th>${TXT.cacheWrite}</th><th>${TXT.cacheRead}</th><th>${TXT.cacheHitRate}</th><th>${TXT.total}</th><th>${TXT.ttft}</th><th>${TXT.wait}</th><th>${TXT.speed}</th><th>${TXT.status}</th><th>${TXT.session}</th></tr></thead><tbody>${body}</tbody></table></div>${clipped}</div>${renderRequestInspector(list)}</div>`;
+  const clipped = matched.length > list.length ? `<div class="table-limit-note">\u5df2\u5148\u6e32\u67d3 ${n(list.length)} / ${n(matched.length)} \u884c\uff0c\u6eda\u52a8\u5230\u5e95\u90e8\u7ee7\u7eed\u52a0\u8f7d\uff0c\u6216\u7ee7\u7eed\u641c\u7d22\u7f29\u5c0f\u8303\u56f4\u3002</div>` : '';
+  const html = `<div class="request-manager"><div class="request-main"><div class="table-scroll"><table><thead><tr><th>${TXT.time}</th><th>${TXT.source}</th><th>${TXT.provider}</th><th>${TXT.model}</th><th>${TXT.input}</th><th>${TXT.output}</th><th>${TXT.cacheWrite}</th><th>${TXT.cacheRead}</th><th>${TXT.cacheHitRate}</th><th>${TXT.total}</th><th>${TXT.ttft}</th><th>${TXT.wait}</th><th>${TXT.speed}</th><th>${TXT.status}</th><th>${TXT.session}</th></tr></thead><tbody>${body}</tbody></table></div>${clipped}</div>${renderRequestInspector(list)}</div>`;
+  markPerfStage('tableRenderMs', perfNow() - tableStartedAt);
+  return html;
 }
 
 function statTable(groups, label){ const list = groups.slice(0, 160); return `<div class="table-scroll"><table><thead><tr><th>${label}</th><th>${TXT.requests}</th><th>${TXT.input}</th><th>${TXT.output}</th><th>${TXT.cacheWrite}</th><th>${TXT.cacheRead}</th><th>${TXT.cacheHitRate}</th><th>${TXT.total}</th><th>${TXT.ttft}</th><th>${TXT.wait}</th><th>${TXT.status}</th></tr></thead><tbody>${list.length ? list.map((g) => `<tr><td><b>${esc(label === TXT.model ? shortModel(g.key) : g.key)}</b></td><td>${n(g.stats.requests)}</td><td>${n(g.stats.input)}</td><td>${n(g.stats.output)}</td><td>${n(g.stats.cacheWrite)}</td><td>${n(g.stats.cacheRead)}</td><td class="cache-cell">${cachePillHtml(g.stats)}</td><td><b>${n(g.stats.total)}</b></td><td>${ms(avg(g.stats.ttfts))}</td><td>${ms(avg(g.stats.latencies))}</td><td class="${g.stats.errors ? 'bad' : 'ok'}">${g.stats.errors ? `${n(g.stats.errors)} error` : '200'}</td></tr>`).join('') : emptyRow(11)}</tbody></table></div>`; }

@@ -1,0 +1,26 @@
+/* 1.19.0 local rendering layout pass */
+.content {
+  scroll-behavior:smooth;
+  contain:layout style;
+}
+.view-switching .table-card,
+.view-switching .chart-card,
+.view-switching .summary-card {
+  content-visibility:auto;
+}
+.request-main .table-scroll,
+.session-scroll {
+  overscroll-behavior:contain;
+  contain:layout paint style;
+}
+.analytics-deferred {
+  min-height:220px;
+  display:grid;
+  place-items:center;
+  color:var(--muted);
+  border:1px solid var(--hairline);
+  border-radius:var(--radius-lg);
+  background:linear-gradient(180deg,rgba(255,255,255,.76),rgba(247,249,252,.64));
+  box-shadow:var(--shadow-card);
+}
+

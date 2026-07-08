@@ -39,7 +39,7 @@ function makeSnapshot(requestCount = 5200, sessionCount = 900){
     const output = 120 + (i % 19) * 23;
     const cacheRead = i % 5 === 0 ? 0 : 900 + (i % 47) * 61;
     const cacheWrite = i % 7 === 0 ? 0 : 80 + (i % 11) * 17;
-    requestLog.push({ id:`r-${i}`, sessionId, sessionTitle:`???? ${i % sessionCount}`, source, sourceLabel: source === "cli" ? "CLI" : "???", provider:"codearts", model:models[i % models.length], time:now - (i % 168) * H / 2, input, output, cacheRead, cacheWrite, total:input + output + cacheRead + cacheWrite, ok:i % 97 !== 0, status:i % 97 === 0 ? "500" : "200", latencyMs:900 + (i % 80) * 30, ttftMs:180 + (i % 40) * 20, firstContentMs:260 + (i % 40) * 20, outputTokensPerSec:12 + (i % 45) });
+    requestLog.push({ id:`r-${i}`, sessionId, sessionTitle:`\u4f1a\u8bdd ${i % sessionCount}`, source, sourceLabel: source === "cli" ? "CLI" : "\u684c\u9762\u7aef", provider:"codearts", model:models[i % models.length], time:now - (i % 168) * H / 2, input, output, cacheRead, cacheWrite, total:input + output + cacheRead + cacheWrite, ok:i % 97 !== 0, status:i % 97 === 0 ? "500" : "200", latencyMs:900 + (i % 80) * 30, ttftMs:180 + (i % 40) * 20, firstContentMs:260 + (i % 40) * 20, outputTokensPerSec:12 + (i % 45) });
   }
   const bySession = new Map();
   for(const r of requestLog){
@@ -50,7 +50,7 @@ function makeSnapshot(requestCount = 5200, sessionCount = 900){
     bySession.set(k, prev);
   }
   const usage = requestLog.reduce((a,r) => { a.total += r.total; a.input += r.input; a.output += r.output; a.cacheRead += r.cacheRead; a.cacheWrite += r.cacheWrite; a.requests += 1; return a; }, { total:0,input:0,output:0,cacheRead:0,cacheWrite:0,requests:0 });
-  return { ok:true, timestamp:now, updatedAt:"2026/07/08 20:00", sources:[{ id:"desktop", source:"desktop", label:"???" }, { id:"cli", source:"cli", label:"CLI" }], usage:{ today:usage, window:usage, week:usage, all:usage }, queue:{ window:{ samples:20, avg:1200 }, trends:{ hourly24h:[] } }, requestLog, sessions:[...bySession.values()], status:{ usagePercent:50, level:"ok", label:"50%" } };
+  return { ok:true, timestamp:now, updatedAt:"2026/07/08 20:00", sources:[{ id:"desktop", source:"desktop", label:"\u684c\u9762\u7aef" }, { id:"cli", source:"cli", label:"CLI" }], usage:{ today:usage, window:usage, week:usage, all:usage }, queue:{ window:{ samples:20, avg:1200 }, trends:{ hourly24h:[] } }, requestLog, sessions:[...bySession.values()], status:{ usagePercent:50, level:"ok", label:"50%" } };
 }
 async function main(){
   const snapshot = makeSnapshot();
@@ -70,6 +70,6 @@ async function main(){
   assert.match(html, /usage-total-board/);
   assert.match(html, /chart-card/);
   assert.ok(elapsed < 5000, `dashboard stress render too slow: ${elapsed.toFixed(1)}ms`);
-  console.log(`ok - dashboard stress ${elapsed.toFixed(1)}ms ? requests=${snapshot.requestLog.length} sessions=${snapshot.sessions.length} html=${html.length}`);
+  console.log(`ok - dashboard stress ${elapsed.toFixed(1)}ms | requests=${snapshot.requestLog.length} sessions=${snapshot.sessions.length} html=${html.length}`);
 }
 main().catch((error) => { console.error(error); process.exit(1); });
