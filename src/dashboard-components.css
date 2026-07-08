@@ -161,3 +161,53 @@ tr:hover td,
 .session-bulk-slot:empty {
   display: none;
 }
+
+/* Commercial empty/error states and Finder-like density pass. */
+.commercial-error-state {
+  min-height: 360px;
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr) auto auto auto;
+  align-items: center;
+  gap: 14px;
+  text-align: left;
+}
+.commercial-error-state .error-orb {
+  width: 48px;
+  height: 48px;
+  border-radius: 16px;
+  display: grid;
+  place-items: center;
+  color: #b42318;
+  font-weight: 950;
+  background: linear-gradient(180deg, rgba(255,255,255,.92), rgba(255,241,239,.86));
+  border: 1px solid rgba(253,162,155,.42);
+  box-shadow: var(--shadow-control);
+}
+.commercial-error-state b { font-size: 18px; letter-spacing: -.25px; }
+.commercial-error-state span { color: #667085; word-break: break-word; }
+.commercial-error-state em { color: #8a93a3; font-style: normal; }
+
+.table-scroll table td,
+.table-scroll table th {
+  height: 36px;
+  padding-top: 7px;
+  padding-bottom: 7px;
+}
+.session-table.simple td {
+  height: 38px;
+}
+.session-manager {
+  background: linear-gradient(90deg, rgba(255,255,255,.72), rgba(248,250,253,.62));
+}
+.session-inspector {
+  border-left-color: rgba(218,225,235,.74);
+}
+.session-row.selected td {
+  background: rgba(10,132,255,.055) !important;
+}
+.session-row-actions button,
+.inspector-actions button:not(.primary-action) {
+  background: rgba(247,249,252,.78);
+  border-color: rgba(216,224,235,.76);
+  color: #475467;
+}

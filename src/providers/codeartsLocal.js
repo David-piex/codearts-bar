@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { loadSettings } = require('../settings');
+const agg = require('../core/aggregator');
 
 const DEFAULT_DB_PATH = path.join(os.homedir(), '.codeartsdoer', 'codearts-data', 'opencode.db');
 const CLI_DB_PATH = path.join(os.homedir(), '.codeartsdoer', 'cli-data', 'opencode.db');
@@ -53,11 +54,21 @@ async function openSqlJsDbReadonly(dbPath) {
   return new SQL.Database(fs.readFileSync(dbPath));
 }
 function nativeAll(db, sql) { return db.prepare(sql).all(); }
+function nativeAllParams(db, sql, params = []) { return db.prepare(sql).all(...params); }
 function sqlJsAll(db, sql) {
   const stmt = db.prepare(sql);
   const rows = [];
   try { while (stmt.step()) rows.push(stmt.getAsObject()); }
   finally { stmt.free(); }
+  return rows;
+}
+function sqlJsAllParams(db, sql, params = []) {
+  const stmt = db.prepare(sql);
+  const rows = [];
+  try {
+    stmt.bind(params);
+    while (stmt.step()) rows.push(stmt.getAsObject());
+  } finally { stmt.free(); }
   return rows;
 }
 function closeDb(db) { if (db && typeof db.close === 'function') db.close(); }
@@ -106,6 +117,134 @@ function mergeCollections(collections, adapter = 'mixed') {
     parts: existing.flatMap((x) => x.parts).sort((a, b) => a.time_created - b.time_created),
   };
 }
+function pageBounds(payload = {}, defaultLimit = 100) {
+  const limit = Math.max(1, Math.min(500, Number(payload.limit || defaultLimit)));
+  const offset = Math.max(0, Number(payload.offset || 0));
+  return { limit, offset };
+}
+function normalizeRange(range = {}) {
+  const start = Number(range.start || 0);
+  const end = Number(range.end || 0);
+  return {
+    start: Number.isFinite(start) && start > 0 ? start : 0,
+    end: Number.isFinite(end) && end > 0 ? end : 0,
+  };
+}
+function sourceMatchesPayload(source, payload = {}) {
+  return !payload.source || payload.source === 'all' || payload.source === source.id;
+}
+function likeParam(value) { return `%${String(value || '').trim()}%`; }
+function assistantWhere(payload = {}) {
+  const where = ["(data like '%\"role\":\"assistant\"%' or data like '%\"role\": \"assistant\"%')"];
+  const params = [];
+  const { start, end } = normalizeRange(payload.range);
+  if (start) { where.push('time_created >= ?'); params.push(start); }
+  if (end) { where.push('time_created <= ?'); params.push(end); }
+  const q = String(payload.query || '').trim();
+  if (q) {
+    where.push('(session_id like ? or data like ?)');
+    params.push(likeParam(q), likeParam(q));
+  }
+  if (payload.model && payload.model !== 'all') {
+    where.push('data like ?');
+    params.push(likeParam(payload.model));
+  }
+  return { where: where.join(' and '), params };
+}
+function sessionWhere(payload = {}) {
+  const where = [];
+  const params = [];
+  const { start, end } = normalizeRange(payload.range);
+  if (start) { where.push('time_updated >= ?'); params.push(start); }
+  if (end) { where.push('time_updated <= ?'); params.push(end); }
+  if (payload.status === 'active') where.push('time_archived is null');
+  else if (payload.status === 'archived') where.push('time_archived is not null');
+  if (payload.project && payload.project !== 'all') { where.push('directory = ?'); params.push(payload.project); }
+  const q = String(payload.query || '').trim();
+  if (q) {
+    where.push('(id like ? or title like ? or directory like ?)');
+    params.push(likeParam(q), likeParam(q), likeParam(q));
+  }
+  return { where: where.length ? where.join(' and ') : '1=1', params };
+}
+function placeholders(list) { return list.map(() => '?').join(','); }
+function requestRowsFromMessages(messages, sessions, parts) {
+  const partMap = agg.buildPartMap(parts);
+  const sessionMap = new Map((sessions || []).map((s) => [`${s.source || ''}:${s.id || ''}`, s]));
+  return (messages || [])
+    .map((row) => {
+      const data = agg.parseJsonSafe(row.data, {});
+      if (data.role !== 'assistant') return null;
+      const token = agg.tokenForMessage(row, partMap);
+      const perf = agg.messagePerf(row, partMap, new Map()) || {};
+      const session = sessionMap.get(`${row.source || ''}:${row.session_id || ''}`) || {};
+      const error = agg.extractError(data);
+      return {
+        id: row.id,
+        sessionId: row.session_id,
+        sessionTitle: session.title || '(无标题)',
+        source: row.source || 'unknown',
+        sourceLabel: row.sourceLabel || row.source || 'unknown',
+        provider: data.providerID || data.model?.providerID || perf.provider || 'unknown',
+        model: data.modelID || data.model?.modelID || perf.model || 'unknown',
+        createdAt: row.time_created,
+        updatedAt: row.time_updated,
+        time: row.time_created,
+        status: error?.statusCode || (data.error ? 'error' : 200),
+        ok: !data.error,
+        error: error ? error.message : null,
+        latencyMs: perf.latencyMs,
+        ttftMs: perf.ttftMs,
+        firstContentMs: perf.firstContentMs,
+        outputTokensPerSec: perf.outputTokensPerSec,
+        ...token,
+      };
+    })
+    .filter(Boolean);
+}
+function sessionsFromRows(sessions, messages, parts, timestamp = Date.now()) {
+  const partMap = agg.buildPartMap(parts);
+  const usageMap = agg.buildSessionUsageMap(messages, partMap, 0);
+  return (sessions || []).map((s) => {
+    const usage = usageMap.get(`${s.source || ''}:${s.id || ''}`) || { total: 0, input: 0, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0, userTurns: 0, modelCalls: 0, errors: 0, models: [], topModel: null };
+    return {
+      id: s.id,
+      title: s.title || '(无标题)',
+      directory: s.directory,
+      version: s.version,
+      createdAt: s.time_created,
+      updatedAt: s.time_updated,
+      archivedAt: s.time_archived || null,
+      age: timestamp - s.time_updated,
+      archived: Boolean(s.time_archived),
+      source: s.source,
+      sourceLabel: s.sourceLabel,
+      dbPath: s.dbPath,
+      usage,
+    };
+  });
+}
+function queryPartsForMessages(queryAll, db, source, messageIds) {
+  if (!messageIds.length) return [];
+  const sql = `select id, message_id, session_id, time_created, time_updated, data from part where message_id in (${placeholders(messageIds)}) order by time_created asc`;
+  return tagRows(queryAll(db, sql, messageIds), source);
+}
+function querySessionsByIds(queryAll, db, source, sessionIds) {
+  const ids = [...new Set(sessionIds.filter(Boolean))];
+  if (!ids.length) return [];
+  const sql = `select id, title, directory, version, time_created, time_updated, time_archived from session where id in (${placeholders(ids)})`;
+  return tagRows(queryAll(db, sql, ids), source);
+}
+function queryMessagesForSessions(queryAll, db, source, sessionIds) {
+  const ids = [...new Set(sessionIds.filter(Boolean))];
+  if (!ids.length) return [];
+  const sql = `select id, session_id, time_created, time_updated, data from message where session_id in (${placeholders(ids)}) order by time_created desc`;
+  return tagRows(queryAll(db, sql, ids), source);
+}
+function pageResult(items, total, payload, defaultLimit) {
+  const { limit, offset } = pageBounds(payload, defaultLimit);
+  return { ok: true, limit, offset, total, hasMore: offset + items.length < total, items };
+}
 function collectRowsNative(options = {}) {
   const sources = listDataSources(options);
   const out = [];
@@ -142,6 +281,122 @@ async function collectRows(options = {}) {
   const rows = await collectRowsSqlJs(options);
   rows.nativeError = 'CODEARTS_BAR_FORCE_SQLJS=1';
   return rows;
+}
+function getRequestsPageNative(payload = {}) {
+  const { limit, offset } = pageBounds(payload, 100);
+  const rowsBySource = [];
+  let total = 0;
+  for (const source of listDataSources(payload).filter((s) => sourceMatchesPayload(s, payload))) {
+    let db;
+    try {
+      db = openNativeDbReadonly(source.dbPath);
+      const tables = nativeAll(db, "select name from sqlite_master where type='table'").map((r) => r.name);
+      validateTables(tables);
+      const { where, params } = assistantWhere(payload);
+      const count = nativeAllParams(db, `select count(*) as count from message where ${where}`, params)[0]?.count || 0;
+      total += Number(count || 0);
+      const rawMessages = nativeAllParams(db, `select id, session_id, time_created, time_updated, data from message where ${where} order by time_created desc limit ? offset ?`, [...params, offset + limit, 0]);
+      const messages = tagRows(rawMessages, source);
+      const sessions = querySessionsByIds(nativeAllParams, db, source, messages.map((m) => m.session_id));
+      const parts = tables.includes('part') ? queryPartsForMessages(nativeAllParams, db, source, messages.map((m) => m.id)) : [];
+      rowsBySource.push(...requestRowsFromMessages(messages, sessions, parts));
+    } finally { closeDb(db); }
+  }
+  const items = rowsBySource.sort((a, b) => (b.time || 0) - (a.time || 0)).slice(offset, offset + limit);
+  return pageResult(items, total, payload, 100);
+}
+async function getRequestsPageSqlJs(payload = {}) {
+  const { limit, offset } = pageBounds(payload, 100);
+  const rowsBySource = [];
+  let total = 0;
+  for (const source of listDataSources(payload).filter((s) => sourceMatchesPayload(s, payload))) {
+    const db = await openSqlJsDbReadonly(source.dbPath);
+    try {
+      const tables = sqlJsAll(db, "select name from sqlite_master where type='table'").map((r) => r.name);
+      validateTables(tables);
+      const { where, params } = assistantWhere(payload);
+      const count = sqlJsAllParams(db, `select count(*) as count from message where ${where}`, params)[0]?.count || 0;
+      total += Number(count || 0);
+      const rawMessages = sqlJsAllParams(db, `select id, session_id, time_created, time_updated, data from message where ${where} order by time_created desc limit ? offset ?`, [...params, offset + limit, 0]);
+      const messages = tagRows(rawMessages, source);
+      const sessions = querySessionsByIds(sqlJsAllParams, db, source, messages.map((m) => m.session_id));
+      const parts = tables.includes('part') ? queryPartsForMessages(sqlJsAllParams, db, source, messages.map((m) => m.id)) : [];
+      rowsBySource.push(...requestRowsFromMessages(messages, sessions, parts));
+    } finally { closeDb(db); }
+  }
+  const items = rowsBySource.sort((a, b) => (b.time || 0) - (a.time || 0)).slice(offset, offset + limit);
+  return pageResult(items, total, payload, 100);
+}
+async function getRequestsPage(payload = {}) {
+  if (process.env.CODEARTS_BAR_FORCE_SQLJS !== '1') {
+    try { return getRequestsPageNative(payload); }
+    catch (error) {
+      const page = await getRequestsPageSqlJs(payload);
+      page.nativeError = error.message;
+      return page;
+    }
+  }
+  const page = await getRequestsPageSqlJs(payload);
+  page.nativeError = 'CODEARTS_BAR_FORCE_SQLJS=1';
+  return page;
+}
+function getSessionsPageNative(payload = {}) {
+  const { limit, offset } = pageBounds(payload, 80);
+  const rowsBySource = [];
+  let total = 0;
+  for (const source of listDataSources(payload).filter((s) => sourceMatchesPayload(s, payload))) {
+    let db;
+    try {
+      db = openNativeDbReadonly(source.dbPath);
+      const tables = nativeAll(db, "select name from sqlite_master where type='table'").map((r) => r.name);
+      validateTables(tables);
+      const { where, params } = sessionWhere(payload);
+      const count = nativeAllParams(db, `select count(*) as count from session where ${where}`, params)[0]?.count || 0;
+      total += Number(count || 0);
+      const rawSessions = nativeAllParams(db, `select id, title, directory, version, time_created, time_updated, time_archived from session where ${where} order by time_updated desc limit ? offset ?`, [...params, offset + limit, 0]);
+      const sessions = tagRows(rawSessions, source);
+      const messages = queryMessagesForSessions(nativeAllParams, db, source, sessions.map((s) => s.id));
+      const parts = tables.includes('part') ? queryPartsForMessages(nativeAllParams, db, source, messages.map((m) => m.id)) : [];
+      rowsBySource.push(...sessionsFromRows(sessions, messages, parts, Date.now()));
+    } finally { closeDb(db); }
+  }
+  const items = rowsBySource.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0)).slice(offset, offset + limit);
+  return pageResult(items, total, payload, 80);
+}
+async function getSessionsPageSqlJs(payload = {}) {
+  const { limit, offset } = pageBounds(payload, 80);
+  const rowsBySource = [];
+  let total = 0;
+  for (const source of listDataSources(payload).filter((s) => sourceMatchesPayload(s, payload))) {
+    const db = await openSqlJsDbReadonly(source.dbPath);
+    try {
+      const tables = sqlJsAll(db, "select name from sqlite_master where type='table'").map((r) => r.name);
+      validateTables(tables);
+      const { where, params } = sessionWhere(payload);
+      const count = sqlJsAllParams(db, `select count(*) as count from session where ${where}`, params)[0]?.count || 0;
+      total += Number(count || 0);
+      const rawSessions = sqlJsAllParams(db, `select id, title, directory, version, time_created, time_updated, time_archived from session where ${where} order by time_updated desc limit ? offset ?`, [...params, offset + limit, 0]);
+      const sessions = tagRows(rawSessions, source);
+      const messages = queryMessagesForSessions(sqlJsAllParams, db, source, sessions.map((s) => s.id));
+      const parts = tables.includes('part') ? queryPartsForMessages(sqlJsAllParams, db, source, messages.map((m) => m.id)) : [];
+      rowsBySource.push(...sessionsFromRows(sessions, messages, parts, Date.now()));
+    } finally { closeDb(db); }
+  }
+  const items = rowsBySource.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0)).slice(offset, offset + limit);
+  return pageResult(items, total, payload, 80);
+}
+async function getSessionsPage(payload = {}) {
+  if (process.env.CODEARTS_BAR_FORCE_SQLJS !== '1') {
+    try { return getSessionsPageNative(payload); }
+    catch (error) {
+      const page = await getSessionsPageSqlJs(payload);
+      page.nativeError = error.message;
+      return page;
+    }
+  }
+  const page = await getSessionsPageSqlJs(payload);
+  page.nativeError = 'CODEARTS_BAR_FORCE_SQLJS=1';
+  return page;
 }
 function parseLogTimestamp(line) {
   const m = line.match(/INFO\s+(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})/);
@@ -412,4 +667,4 @@ function watchTargets(options = {}) {
   return [...out];
 }
 
-module.exports = { DEFAULT_DB_PATH, CLI_DB_PATH, SOURCE_DEFS, listDataSources, watchTargets, resolveDbPath, ensureReadableDb, collectRowsNative, collectRowsSqlJs, collectRows, scanTtftLogs, scanQueueLogs, readCodeArtsConfig, detectProcesses, archiveSession, renameSession };
+module.exports = { DEFAULT_DB_PATH, CLI_DB_PATH, SOURCE_DEFS, listDataSources, watchTargets, resolveDbPath, ensureReadableDb, collectRowsNative, collectRowsSqlJs, collectRows, getRequestsPage, getSessionsPage, scanTtftLogs, scanQueueLogs, readCodeArtsConfig, detectProcesses, archiveSession, renameSession };

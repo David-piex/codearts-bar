@@ -59,6 +59,8 @@ let queryRenderTimer = null;
 let analyticsDeferredToken = 0;
 let requestTableRenderLimit = 100;
 let sessionTableRenderLimit = 80;
+let requestPageLoading = false;
+let sessionPageLoading = false;
 let lastRenderPerf = null;
 let currentRenderPerf = null;
 let tableScrollBindFrame = null;
@@ -103,6 +105,7 @@ const TXT = {
   cli: 'CLI',
   unknown: '\u672a\u77e5',
   settings: '\u8bbe\u7f6e',
+  openLogs: '\u6253\u5f00\u65e5\u5fd7',
   usage: '\u4f7f\u7528\u7edf\u8ba1',
   analyticsWorkspace: '\u4f7f\u7528\u5206\u6790',
   sessionWorkspace: '\u4f1a\u8bdd\u7ba1\u7406\u5668',
@@ -375,11 +378,20 @@ const TXT = {
 };
 const RANGE_LABELS = { today: TXT.today, '1d': '1d', '3d': '3d', '7d': '7d', '14d': '14d', '30d': '30d', '60d': '60d', '90d': '90d', '180d': '180d', '365d': '365d', custom: '\u81ea\u5b9a\u4e49', all: '\u5168\u90e8' };
 const RANGE_OPTIONS = [['today', TXT.today], ['1d', '1d'], ['3d', '3d'], ['7d', '7d'], ['14d', '14d'], ['30d', '30d'], ['60d', '60d'], ['90d', '90d'], ['180d', '180d'], ['365d', '365d'], ['all', '\u5168\u90e8']];
-eval(['dashboard-state.js','dashboard-date-range.js','dashboard-analytics.js','dashboard/chart/chart-series.js','dashboard/chart/chart-legend.js','dashboard/chart/chart-canvas.js','dashboard/chart/chart-tooltip.js','dashboard/chart/chart-hover.js','dashboard-chart.js','dashboard-sessions.js'].map(readRendererPart).join('\n'));
+eval(['dashboard-state.js','dashboard-date-range.js','dashboard/analytics/analytics-core.js','dashboard/analytics/analytics-agent-idle.js','dashboard-analytics.js','dashboard/chart/chart-series.js','dashboard/chart/chart-legend.js','dashboard/chart/chart-canvas.js','dashboard/chart/chart-tooltip.js','dashboard/chart/chart-hover.js','dashboard-chart.js','dashboard-sessions.js'].map(readRendererPart).join('\n'));
+function dashboardErrorAdvice(message = ''){
+  const text = String(message || '');
+  if(/不存在|no such file|ENOENT/i.test(text)) return { title: '没有找到数据源', hint: '检查 CodeArts Agent 是否已经启动过，或在设置里选择正确的 opencode.db。', action: TXT.settings };
+  if(/permission|EACCES|EPERM|权限/i.test(text)) return { title: '没有读取权限', hint: '请确认当前用户可以读取 CodeArts 数据目录，必要时以普通用户重新启动应用。', action: TXT.openLogs };
+  if(/缺少 .*表|malformed|corrupt|database disk image/i.test(text)) return { title: '数据库结构异常', hint: '数据库可能损坏或版本不兼容。建议先备份数据库，再打开日志查看具体表结构错误。', action: TXT.openLogs };
+  if(/CodeArts|codearts/i.test(text)) return { title: 'CodeArts 状态异常', hint: '检查 CodeArts Agent / CLI 是否安装并产生过会话数据。', action: TXT.settings };
+  return { title: TXT.failed, hint: '刷新失败。你可以重试、打开设置检查数据源，或打开日志查看诊断信息。', action: TXT.openLogs };
+}
 function renderError(s){
   const message = esc(s?.error || TXT.noData);
+  const advice = dashboardErrorAdvice(s?.error || '');
   const app = document.getElementById('app');
-  commitAppHtml(app, `${headerHtml(false)}<section class="dashboard-empty-state dashboard-error-state"><div><b>${TXT.failed}</b><span>${message}</span><em>\u65e5\u5fd7\u4f1a\u5199\u5165\u672c\u5730\u8bca\u65ad\u6587\u4ef6\uff0c\u70b9\u51fb\u5237\u65b0\u53ef\u91cd\u8bd5\u3002</em></div><button data-refresh="1">${TXT.refresh}</button><button data-settings="1">${TXT.settings}</button></section>`);
+  commitAppHtml(app, `${headerHtml(false)}<section class="dashboard-empty-state dashboard-error-state commercial-error-state"><div class="error-orb">!</div><div><b>${esc(advice.title)}</b><span>${message}</span><em>${esc(advice.hint)}</em></div><button data-refresh="1">${TXT.refresh}</button><button data-settings="1">${TXT.settings}</button><button data-open-logs="1">${TXT.openLogs}</button></section>`);
 }
 function workspaceTabsHtml(){ const tabs = [['analytics', TXT.analyticsWorkspace], ['sessions', TXT.sessionWorkspace]]; return `<div class="tabs workspace-tabs">${tabs.map(([k, label]) => `<button data-workspace="${k}" class="tab ${workspaceMode === k ? 'active' : ''}">${esc(label)}</button>`).join('')}</div>`; }
 function headerHtml(compact = false){ const title = compact ? TXT.compactTitle : (workspaceMode === 'sessions' ? TXT.sessionWorkspace : TXT.analyticsWorkspace); const sub = compact ? TXT.compactHint : (workspaceMode === 'sessions' ? TXT.sessionWorkspaceHint : TXT.analyticsWorkspaceHint); return `<div class="topbar ${compact ? 'compact-topbar' : ''}"><div class="back">&#8592;</div><div class="logo"><img src="../assets/codearts-logo.png" /></div><div class="topbar-title"><h1 class="page-title">${title}</h1><div class="page-subtitle">${sub}</div></div><div class="topbar-actions view-mode-switch" role="group" aria-label="\u89c6\u56fe\u6a21\u5f0f"><button data-layout-mode="dashboard" class="${layoutMode === 'dashboard' ? 'active' : ''}" aria-pressed="${layoutMode === 'dashboard' ? 'true' : 'false'}">${TXT.dashboardMode}</button><button data-layout-mode="compact" class="${layoutMode === 'compact' ? 'active' : ''}" aria-pressed="${layoutMode === 'compact' ? 'true' : 'false'}">${TXT.menuCardMode}</button></div></div>${compact ? '' : workspaceTabsHtml()}`; }
@@ -526,4 +538,4 @@ function applyCustomDateInputs(){
 function setupAutoRefresh(){ if(autoRefreshTimer) clearInterval(autoRefreshTimer); const sec = Math.max(5, Number(refreshEvery) || 30); autoRefreshTimer = setInterval(refreshNow, sec * 1000); }
 async function load(){ setRefreshState(TXT.refresh); const first = await ipcRenderer.invoke('dashboard:getSnapshot'); render(first); if(!first?.ok) await refreshNow(); setupAutoRefresh(); }
 async function refreshNow(opts = {}){ setRefreshState(TXT.refresh); render(await ipcRenderer.invoke('dashboard:refresh'), opts && opts.type ? {} : opts); setRefreshState(TXT.refreshed); setTimeout(() => setRefreshState(''), 800); }
-eval(readRendererPart('dashboard/dashboard-events.js'));
+eval(['dashboard/events/date-events.js','dashboard/dashboard-events.js','dashboard/events/window-events.js'].map(readRendererPart).join('\n'));

@@ -397,8 +397,26 @@ ipcMain.handle('settings:set', async (_event, next) => { const saved = saveSetti
 ipcMain.handle('diagnose:get', async () => diagnose());
 ipcMain.handle('auth:get', async () => ({}));
 ipcMain.handle('dashboard:getSnapshot', () => lastSnapshot || errorSnapshot(new Error('尚未刷新')));
-ipcMain.handle('dashboard:getRequestsPage', (_event, payload = {}) => paginateSnapshotList((lastSnapshot && lastSnapshot.requestLog) || [], payload));
-ipcMain.handle('dashboard:getSessionsPage', (_event, payload = {}) => paginateSnapshotList((lastSnapshot && lastSnapshot.sessions) || [], payload));
+ipcMain.handle('dashboard:getRequestsPage', async (_event, payload = {}) => {
+  try { return await localProvider.getRequestsPage(payload); }
+  catch (error) {
+    appendLog('warn', 'dashboard:getRequestsPage', error.message, { payload });
+    const page = paginateSnapshotList((lastSnapshot && lastSnapshot.requestLog) || [], payload);
+    page.fallback = 'snapshot';
+    page.error = error.message;
+    return page;
+  }
+});
+ipcMain.handle('dashboard:getSessionsPage', async (_event, payload = {}) => {
+  try { return await localProvider.getSessionsPage(payload); }
+  catch (error) {
+    appendLog('warn', 'dashboard:getSessionsPage', error.message, { payload });
+    const page = paginateSnapshotList((lastSnapshot && lastSnapshot.sessions) || [], payload);
+    page.fallback = 'snapshot';
+    page.error = error.message;
+    return page;
+  }
+});
 ipcMain.handle('dashboard:getDiff', (_event, payload = {}) => {
   const since = Number(payload.since || 0);
   const snap = lastSnapshot || errorSnapshot(new Error('尚未刷新'));

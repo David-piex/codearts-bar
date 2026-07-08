@@ -24,9 +24,13 @@ const rendererFiles = [
   "dashboard-renderer.js",
   "dashboard/dashboard-perf.js",
   "dashboard/dashboard-slots.js",
+  "dashboard/events/date-events.js",
   "dashboard/dashboard-events.js",
+  "dashboard/events/window-events.js",
   "dashboard-state.js",
   "dashboard-date-range.js",
+  "dashboard/analytics/analytics-core.js",
+  "dashboard/analytics/analytics-agent-idle.js",
   "dashboard-analytics.js",
   "dashboard/chart/chart-series.js",
   "dashboard/chart/chart-legend.js",
@@ -214,6 +218,8 @@ assert.match(renderer, /sessionRowHtml/);
 assert.match(renderer, /dashboard\/dashboard-perf\.js/);
 assert.match(renderer, /dashboard\/dashboard-slots\.js/);
 assert.match(renderer, /dashboard\/dashboard-events\.js/);
+assert.match(renderer, /dashboard\/events\/date-events\.js/);
+assert.match(renderer, /dashboard\/events\/window-events\.js/);
 assert.match(renderer, /dashboard\/sessions\/session-inspector\.js/);
 assert.match(renderer, /dashboard\/sessions\/session-table\.js/);
 assert.match(renderer, /dashboard\/sessions\/session-workspace\.js/);

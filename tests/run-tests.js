@@ -150,6 +150,33 @@ async function testSqliteFixtureSqlJsFallback() {
   }
 }
 
+async function testProviderDbPagination() {
+  const dbPath = path.join(__dirname, 'fixtures', 'opencode-fixture.db');
+  const previous = process.env.CODEARTS_BAR_FORCE_SQLJS;
+  process.env.CODEARTS_BAR_FORCE_SQLJS = '1';
+  try {
+    const reqPage = await localProvider.getRequestsPage({ dbPath, limit: 1, offset: 0, source: 'all', query: 'multi-model' });
+    assert.equal(reqPage.ok, true);
+    assert.equal(reqPage.items.length, 1);
+    assert.equal(reqPage.total, 2);
+    assert.equal(reqPage.items[0].model, 'multi-model');
+    assert.equal(reqPage.hasMore, true);
+    const reqPage2 = await localProvider.getRequestsPage({ dbPath, limit: 1, offset: 1, source: 'all', query: 'multi-model' });
+    assert.equal(reqPage2.items.length, 1);
+    assert.notEqual(reqPage2.items[0].id, reqPage.items[0].id);
+
+    const sessionPage = await localProvider.getSessionsPage({ dbPath, limit: 1, offset: 0, source: 'all', status: 'active', query: 'Multi' });
+    assert.equal(sessionPage.ok, true);
+    assert.equal(sessionPage.items.length, 1);
+    assert.equal(sessionPage.total, 1);
+    assert.equal(sessionPage.items[0].id, 'ses_multi');
+    assert.equal(sessionPage.items[0].usage.total, 53);
+    assert.equal(sessionPage.items[0].usage.userTurns, 2);
+  } finally {
+    if (previous == null) delete process.env.CODEARTS_BAR_FORCE_SQLJS; else process.env.CODEARTS_BAR_FORCE_SQLJS = previous;
+  }
+}
+
 (async () => {
   testOfficialStatsParser();
   testQuota();
@@ -161,6 +188,7 @@ async function testSqliteFixtureSqlJsFallback() {
   testErrorBalanceFixture();
   testHealth();
   await testSqliteFixtureSqlJsFallback();
+  await testProviderDbPagination();
   await testRenameSessionFixture();
   console.log('ok - unit tests');
 })().catch((error) => { console.error(error); process.exit(1); });

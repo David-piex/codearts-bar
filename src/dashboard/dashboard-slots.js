@@ -71,7 +71,76 @@ function updateLimitNote(kind, rendered, total){
     : '\u884c\uff0c\u6eda\u52a8\u5230\u5e95\u90e8\u7ee7\u7eed\u52a0\u8f7d\uff0c\u6216\u7ee7\u7eed\u641c\u7d22\u7f29\u5c0f\u8303\u56f4\u3002';
   note.textContent = `\u5df2\u5148\u6e32\u67d3 ${n(rendered)} / ${n(total)} ${suffix}`;
 }
-function appendRequestRows(){
+function currentPageRangePayload(){
+  if(!snapshot?.ok) return {};
+  return { start: sinceForRange(snapshot), end: untilForRange(snapshot) };
+}
+function mergeRequestPageItems(items = []){
+  if(!snapshot?.ok || !Array.isArray(items) || !items.length) return items || [];
+  const seen = new Set((snapshot.requestLog || []).map(requestKeyFor));
+  const fresh = [];
+  for(const item of items){
+    const key = requestKeyFor(item);
+    if(seen.has(key)) continue;
+    seen.add(key);
+    fresh.push(item);
+  }
+  if(fresh.length) snapshot.requestLog = [...(snapshot.requestLog || []), ...fresh].sort((a, b) => (b.time || 0) - (a.time || 0));
+  return fresh;
+}
+function mergeSessionPageItems(items = []){
+  if(!snapshot?.ok || !Array.isArray(items) || !items.length) return items || [];
+  const seen = new Set((snapshot.sessions || []).map(sessionKeyFor));
+  const fresh = [];
+  for(const item of items){
+    const key = sessionKeyFor(item);
+    if(seen.has(key)) continue;
+    seen.add(key);
+    fresh.push(item);
+  }
+  if(fresh.length) snapshot.sessions = [...(snapshot.sessions || []), ...fresh].sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+  return fresh;
+}
+async function loadRequestPage(offset, limit = 100){
+  if(requestPageLoading) return null;
+  requestPageLoading = true;
+  try {
+    return await ipcRenderer.invoke('dashboard:getRequestsPage', {
+      limit,
+      offset,
+      source: sourceFilter,
+      model: modelFilter,
+      range: currentPageRangePayload(),
+      query: analyticsQuery,
+    });
+  } catch (error) {
+    console.warn('[dashboard] request page failed', error);
+    return null;
+  } finally {
+    requestPageLoading = false;
+  }
+}
+async function loadSessionPage(offset, limit = 80){
+  if(sessionPageLoading) return null;
+  sessionPageLoading = true;
+  try {
+    return await ipcRenderer.invoke('dashboard:getSessionsPage', {
+      limit,
+      offset,
+      source: sourceFilter,
+      status: sessionStatusFilter,
+      project: sessionProjectFilter,
+      range: currentPageRangePayload(),
+      query: sessionQuery,
+    });
+  } catch (error) {
+    console.warn('[dashboard] session page failed', error);
+    return null;
+  } finally {
+    sessionPageLoading = false;
+  }
+}
+async function appendRequestRows(){
   if(!snapshot?.ok) return false;
   const tbody = document.querySelector('.request-main tbody');
   if(!tbody || typeof tbody.insertAdjacentHTML !== 'function') return render(snapshot, { windowLayout:false, instantChart:true, partial:true });
@@ -79,32 +148,49 @@ function appendRequestRows(){
   const rows = applyTableSearch(filterRows(snapshot));
   const before = Math.max(100, Number(requestTableRenderLimit || 100));
   const next = Math.min(before + 100, rows.length, 5000);
-  if(next <= before) return false;
-  const chunk = rows.slice(before, next).map(requestRowHtml).join('');
+  let chunkItems = rows.slice(before, next);
+  let total = rows.length;
+  let renderedNext = next;
+  if(!chunkItems.length){
+    const page = await loadRequestPage(before, 100);
+    if(!page?.ok || !Array.isArray(page.items) || !page.items.length) return false;
+    chunkItems = mergeRequestPageItems(page.items);
+    total = Number(page.total || before + chunkItems.length);
+    renderedNext = before + chunkItems.length;
+  }
+  const chunk = chunkItems.map(requestRowHtml).join('');
   if(chunk) tbody.insertAdjacentHTML('beforeend', chunk);
-  requestTableRenderLimit = next;
-  updateLimitNote('requests', next, rows.length);
-  console.debug(`[dashboard] append request rows ${Math.round(perfNow() - started)}ms rows=${before}->${next}/${rows.length}`);
+  requestTableRenderLimit = renderedNext;
+  updateLimitNote('requests', renderedNext, total);
+  console.debug(`[dashboard] append request rows ${Math.round(perfNow() - started)}ms rows=${before}->${renderedNext}/${total}`);
   return true;
 }
-function appendSessionRows(){
+async function appendSessionRows(){
   if(!snapshot?.ok) return false;
   const tbody = document.querySelector('.session-scroll tbody');
-  if(!tbody || typeof tbody.insertAdjacentHTML !== 'function') return render(snapshot, { windowLayout:false, instantChart:true });
+  if(!tbody || typeof tbody.insertAdjacentHTML !== 'function') return render(snapshot, { windowLayout:false, instantChart:true, partial:true });
   const started = perfNow();
   const rows = sortSessions((snapshot.sessions || []).filter(sessionMatches));
   const before = Math.max(80, Number(sessionTableRenderLimit || 80));
   const next = Math.min(before + 80, rows.length, 5000);
-  if(next <= before) return false;
-  const chunkItems = rows.slice(before, next);
+  let chunkItems = rows.slice(before, next);
+  let total = rows.length;
+  let renderedNext = next;
+  if(!chunkItems.length){
+    const page = await loadSessionPage(before, 80);
+    if(!page?.ok || !Array.isArray(page.items) || !page.items.length) return false;
+    chunkItems = mergeSessionPageItems(page.items);
+    total = Number(page.total || before + chunkItems.length);
+    renderedNext = before + chunkItems.length;
+  }
   const chunk = chunkItems.map((item) => sessionRowHtml(item, false)).join('');
   if(chunk) tbody.insertAdjacentHTML('beforeend', chunk);
-  sessionTableRenderLimit = next;
-  sessionTableItems = rows.slice(0, next);
-  updateLimitNote('sessions', next, rows.length);
+  sessionTableRenderLimit = renderedNext;
+  sessionTableItems = [...sessionTableItems, ...chunkItems].slice(0, renderedNext);
+  updateLimitNote('sessions', renderedNext, total);
   const rowCount = document.querySelector('.session-toolbar .row-count');
   if(rowCount) rowCount.textContent = `${n(sessionTableItems.length)} ${TXT.rows}`;
-  console.debug(`[dashboard] append session rows ${Math.round(perfNow() - started)}ms rows=${before}->${next}/${rows.length}`);
+  console.debug(`[dashboard] append session rows ${Math.round(perfNow() - started)}ms rows=${before}->${renderedNext}/${total}`);
   return true;
 }
 
