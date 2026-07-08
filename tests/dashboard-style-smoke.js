@@ -1,0 +1,166 @@
+﻿"use strict";
+
+const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
+
+const html = fs.readFileSync(path.join(__dirname, "..", "src", "dashboard.html"), "utf8");
+const rendererFiles = [
+  "dashboard-renderer.js",
+  "dashboard-state.js",
+  "dashboard-date-range.js",
+  "dashboard-analytics.js",
+  "dashboard-chart.js",
+  "dashboard-sessions.js",
+];
+const renderer = rendererFiles
+  .map((file) => fs.readFileSync(path.join(__dirname, "..", "src", file), "utf8"))
+  .join("\n");
+
+assert.match(html, /1\.17\.8 native control and material convergence/);
+assert.match(html, /--native-font-ui:/);
+assert.match(html, /--native-font-mono:/);
+assert.match(html, /--native-control-height:34px/);
+assert.match(html, /--native-control-bg:/);
+assert.match(html, /--native-control-bg-pressed:/);
+assert.match(html, /--native-control-bg-disabled:/);
+assert.match(html, /--native-selection-bg:/);
+assert.match(html, /--native-caret:#0a84ff/);
+assert.match(html, /--native-placeholder:#9aa3b2/);
+assert.match(html, /font-family:var\(--native-font-ui\)/);
+assert.match(html, /font-family:var\(--native-font-mono\)/);
+assert.match(html, /-webkit-tap-highlight-color:transparent/);
+assert.match(html, /caret-color:var\(--native-caret\)/);
+assert.match(html, /background:var\(--native-control-bg-pressed\)/);
+assert.match(html, /background:var\(--native-control-bg-disabled\)/);
+assert.match(html, /opacity:\.92/);
+assert.match(html, /-webkit-font-smoothing:antialiased/);
+assert.match(html, /-moz-osx-font-smoothing:grayscale/);
+assert.match(html, /font-feature-settings:"kern" 1,"tnum" 1,"cv01" 1/);
+assert.match(html, /:where\(button, input, select, textarea\)/);
+assert.match(html, /:where\(button, select, input, textarea, canvas\):focus-visible/);
+assert.match(html, /prefers-reduced-transparency: reduce/);
+assert.match(html, /@supports not \(\(-webkit-backdrop-filter:blur\(1px\)\) or \(backdrop-filter:blur\(1px\)\)\)/);
+assert.match(html, /scrollbar-width:thin/);
+assert.match(html, /forced-colors: active/);
+assert.match(html, /1\.18\.3 native segmented controls convergence/);
+assert.match(html, /--native-segmented-bg:/);
+assert.match(html, /--native-segmented-border:/);
+assert.match(html, /--native-segmented-inset:/);
+assert.match(html, /--native-segment-active-bg:/);
+assert.match(html, /--native-segment-active-shadow:/);
+assert.match(html, /--native-segment-hover:/);
+assert.match(html, /:where\(\.workspace-tabs, \.source-switch, \.range, \.table-tabs\)/);
+assert.match(html, /backdrop-filter:blur\(26px\) saturate\(1\.55\) contrast\(1\.02\)/);
+assert.match(html, /mix-blend-mode:screen/);
+assert.match(html, /\.workspace-tabs \.tab\.active::after/);
+assert.match(html, /display:none/);
+assert.match(html, /1\.17\.9 commercial cache insight center/);
+assert.match(html, /cache-insights/);
+assert.match(html, /cache-insight-grid/);
+assert.match(html, /cache-insight-score/);
+assert.match(html, /chart-snapshot/);
+assert.match(html, /chart-snapshot-grid/);
+assert.match(html, /chart-snapshot-card/);
+assert.match(html, /chart-legend b\.cache i/);
+assert.match(html, /chart-tip::before/);
+assert.match(html, /chart-tip\.preview-pinned/);
+assert.match(html, /chart-card\.chart-hover-preview/);
+assert.match(html, /tip-row\.tip-state/);
+assert.match(html, /tip-cache-bar/);
+assert.match(html, /tip-row\.tip-metric\.cache-health/);
+assert.match(html, /\.chart-card\.chart-active \.chart-hover-meta \.cache-meta/);
+assert.match(html, /\.chart-card\.chart-active \.chart-hover-meta \.cache-health-meta/);
+assert.match(html, /tip-pin/);
+assert.match(html, /chart-hover-scrubber/);
+assert.match(html, /chart-hover-scrubber\.active/);
+assert.match(html, /chart-hover-scrubber\.pinned/);
+assert.match(html, /scrubber-cache/);
+assert.match(html, /scrubber-pin/);
+assert.match(html, /width:var\(--hit,0%\)/);
+assert.match(html, /1\.18\.1 commercial cache governance workbench/);
+assert.match(html, /cache-governance/);
+assert.match(html, /cache-governance-kpis/);
+assert.match(html, /cache-governance-list/);
+assert.match(html, /cache-governance-actions/);
+assert.match(html, /1\.18\.0 agent rhythm card/);
+assert.match(html, /agent-rhythm-card/);
+assert.match(html, /agent-rhythm-rail/);
+assert.match(html, /agent-rhythm-lists/);
+assert.match(html, /session-saved-views/);
+assert.match(html, /saved-view-composer/);
+assert.match(html, /saved-view-row/);
+assert.match(html, /saved-view-delete/);
+assert.match(html, /1\.18\.2 simplified session management/);
+assert.match(html, /session-simple-shell/);
+assert.match(html, /session-primary-filters/);
+assert.match(html, /session-saved-inline/);
+assert.match(html, /session-library-status/);
+assert.match(html, /session-table\.simple/);
+assert.match(html, /session-actions-cell/);
+assert.match(html, /session-row-actions/);
+assert.match(html, /session-row-actions button/);
+assert.match(html, /idle-summary-card/);
+assert.match(html, /session-advanced-shell/);
+assert.match(html, /session-advanced-controls/);
+assert.match(html, /1\.18\.4 native table and inspector surface/);
+assert.match(html, /session-inspector,/);
+assert.match(html, /request-inspector/);
+assert.match(html, /table-toolbar/);
+assert.match(html, /backdrop-filter:blur\(22px\) saturate\(1\.34\)/);
+assert.match(html, /1\.18\.5 analytics total overview board/);
+assert.match(html, /usage-total-board/);
+assert.match(html, /usage-total-hero/);
+assert.match(html, /usage-total-strip/);
+assert.match(html, /usage-total-cache/);
+assert.match(html, /usage-total-request-spark/);
+assert.match(html, /--cache-hit:/);
+assert.match(html, /grid-template-columns:repeat\(4,minmax\(140px,1fr\)\) minmax\(220px,1\.25fr\)/);
+assert.match(html, /1\.18\.6 commercial usage board refinement/);
+assert.match(html, /\.cc-usage-summary\.usage-summary/);
+assert.match(html, /background:transparent/);
+assert.match(html, /usage-detail-stack/);
+assert.match(html, /blur\(22px\) saturate\(1\.30\)/);
+assert.match(html, /prefers-reduced-motion: reduce/);
+assert.match(html, /1\.18\.7 lightweight session inspector/);
+assert.match(html, /session-essential-inspector/);
+assert.match(html, /session-essential-actions/);
+assert.match(html, /session-essential-summary/);
+assert.match(html, /session-essential-meta/);
+assert.match(html, /session-essential-cache/);
+assert.match(html, /--session-hit:/);
+assert.match(html, /1\.18\.8 commercial native table polish/);
+assert.match(html, /session-table\.simple \.session-row\.selected td/);
+assert.match(html, /session-table\.simple \.session-row\.selected td:first-child/);
+assert.match(html, /\.cache-pill i/);
+assert.match(html, /\.cache-pill i::before/);
+assert.match(html, /width:var\(--hit,0%\)/);
+assert.match(html, /1\.18\.9 commercial intent clarity and usage cache emphasis/);
+assert.match(html, /usage-total-board\.cache-hot/);
+assert.match(html, /usage-total-board\.cache-warm/);
+assert.match(html, /usage-total-board\.cache-cold/);
+assert.match(html, /session-intent-row/);
+assert.match(html, /grid-template-columns:repeat\(3,minmax\(0,1fr\)\)/);
+assert.doesNotMatch(html, /global-cache-pill/);
+assert.match(html, /1\.18\.10 commercial toolbar de-duplication and native density/);
+assert.match(html, /\.page-head \.filters/);
+assert.match(html, /min-height:44px/);
+assert.match(html, /0 8px 18px rgba\(24,39,65,\.035\)/);
+assert.match(html, /1\.18\.11 footer-safe chart hover visibility/);
+assert.match(html, /--footer-safe-space:64px/);
+assert.match(html, /scroll-padding-bottom:var\(--footer-safe-space\)/);
+assert.match(html, /scroll-margin-bottom:var\(--footer-safe-space\)/);
+assert.match(html, /1\.18\.12 commercial session first-screen density/);
+assert.match(html, /grid-template-columns:minmax\(0,1\.02fr\) minmax\(360px,\.98fr\)/);
+assert.match(html, /\.session-workspace-card \.session-manager/);
+assert.match(html, /min-height:520px/);
+assert.match(html, /1\.18\.13 commercial chart hover aperture/);
+assert.match(renderer, /drawHoverAperture/);
+assert.match(renderer, /createRadialGradient/);
+assert.match(renderer, /animatePinnedHover/);
+assert.match(html, /chartPinnedScrub/);
+assert.match(html, /scrubber-focus/);
+
+console.log("ok - dashboard style smoke");
+
+

@@ -1,0 +1,23 @@
+﻿OVERVIEW
+Sessions 1
+Messages 2
+Days 7
+
+COST & TOKENS
+Total Cost $0.0001
+Avg Cost/Day $0.0000
+Avg Tokens/Session 20.9K
+Median Tokens/Session 20.9K
+Input 20.9K
+Output 10
+Cache Read 0
+Cache Write 0
+
+MODEL USAGE
+huaweicloud-maas/gpt-5.5
+Messages 2
+Input Tokens 20.9K
+Output Tokens 10
+Cache Read 0
+Cache Write 0
+Cost $0.0001

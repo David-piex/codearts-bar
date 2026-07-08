@@ -1,0 +1,109 @@
+﻿{
+    "name":  "codearts-bar",
+    "version":  "1.16.21",
+    "description":  "CodeArts Bar: desktop tray app, VS Code/CodeArts status extension, and CLI for local CodeArts Agent usage.",
+    "main":  "src/main.js",
+    "type":  "commonjs",
+    "scripts":  {
+                    "start":  "electron .",
+                    "dev":  "electron . --dev",
+                    "snapshot":  "node src/cli.js snapshot",
+                    "stats":  "node src/cli.js stats",
+                    "screenshot:dashboard":  "node tests/dashboard-preview-screenshot.js",
+                    "test":  "node tests/run-tests.js \u0026\u0026 node tests/dashboard-renderer-smoke.js \u0026\u0026 node tests/dashboard-style-smoke.js \u0026\u0026 node tests/dashboard-preview-smoke.js \u0026\u0026 node src/cli.js self-test",
+                    "prepare:extension":  "node src/prepare-extension.js",
+                    "build:extension":  "node src/build-extension.js",
+                    "build:app":  "electron-builder --win nsis portable --x64",
+                    "release":  "node src/release.js",
+                    "stress:dashboard":  "node tests/dashboard-stress.js",
+                    "verify":  "npm test \u0026\u0026 npm run stress:dashboard"
+                },
+    "keywords":  [
+                     "codearts",
+                     "tray",
+                     "usage",
+                     "token",
+                     "vscode-extension",
+                     "cli"
+                 ],
+    "author":  "CodeArts Bar",
+    "license":  "MIT",
+    "devDependencies":  {
+                            "@vscode/vsce":  "^3.9.2",
+                            "electron":  "^31.7.7",
+                            "electron-builder":  "^26.15.3"
+                        },
+    "dependencies":  {
+                         "sql.js":  "^1.14.1"
+                     },
+    "bin":  {
+                "codearts-bar":  "src/bin.js"
+            },
+    "files":  [
+                  "src/**/*",
+                  "assets/**/*",
+                  "README.md",
+                  "package.json",
+                  "node_modules/sql.js/dist/sql-wasm.js",
+                  "node_modules/sql.js/dist/sql-wasm.wasm"
+              ],
+    "build":  {
+                  "appId":  "local.codearts.bar",
+                  "productName":  "CodeArts Bar",
+                  "asar":  true,
+                  "directories":  {
+                                      "output":  "dist"
+                                  },
+                  "files":  [
+                                "src/**/*",
+                                "assets/**/*",
+                                "package.json",
+                                "node_modules/sql.js/dist/sql-wasm.js",
+                                "node_modules/sql.js/dist/sql-wasm.wasm"
+                            ],
+                  "win":  {
+                              "icon":  "assets/codearts-logo.ico",
+                              "target":  [
+                                             {
+                                                 "target":  "nsis",
+                                                 "arch":  [
+                                                              "x64"
+                                                          ]
+                                             },
+                                             {
+                                                 "target":  "portable",
+                                                 "arch":  [
+                                                              "x64"
+                                                          ]
+                                             }
+                                         ]
+                          },
+                  "nsis":  {
+                               "oneClick":  false,
+                               "allowToChangeInstallationDirectory":  true,
+                               "createDesktopShortcut":  true,
+                               "createStartMenuShortcut":  true,
+                               "shortcutName":  "CodeArts Bar",
+                               "artifactName":  "CodeArts-Bar-Setup-${version}-${arch}.${ext}"
+                           },
+                  "mac":  {
+                              "target":  [
+                                             "dmg"
+                                         ],
+                              "category":  "public.app-category.developer-tools"
+                          },
+                  "linux":  {
+                                "target":  [
+                                               "AppImage"
+                                           ],
+                                "category":  "Development"
+                            },
+                  "portable":  {
+                                   "artifactName":  "CodeArts-Bar-Portable-${version}-${arch}.${ext}"
+                               }
+              },
+    "repository":  {
+                       "type":  "git",
+                       "url":  "https://gitee.com/dtse01/codearts-bar.git"
+                   }
+}

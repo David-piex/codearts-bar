@@ -1,0 +1,10 @@
+﻿INFO 2026-07-07T01:00:01 [ses_fixture] [req_fixture] Infer stream first token generated in 1234ms at 1783386001234
+INFO 2026-07-07T01:00:02 [ses_other] [req_other] Infer stream first token generated in 888ms at 1783386002222
+INFO 2026-07-07T01:00:10 +1ms service=inferhub-queue "[Queue] start Polling params:
+[{"task_id":"1","model":"2"},"ses_queue","GLM-5.1"], status:
+200, response:
+[{"task_id":"1","model":"2","status":"3","queue_length":4,"queue_position":4,"message":"5"},"abc:ses_queue","GLM-5.1","waiting","busy"]"
+INFO 2026-07-07T01:00:31 +1ms service=inferhub-queue "[Queue] start Polling params:
+[{"task_id":"1","model":"2"},"ses_queue","GLM-5.1"], status:
+200, response:
+[{"task_id":"1","model":"2","status":"3","queue_length":0,"queue_position":0,"message":"4"},"abc:ses_queue","GLM-5.1","working",""]"

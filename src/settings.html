@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <title>&#30721;&#36947; Bar &#35774;&#32622;</title>
+  <style>
+    body { font-family: Segoe UI, Arial, sans-serif; margin: 22px; background:#0f172a; color:#e5e7eb; }
+    label { display:block; margin-top:14px; font-size:13px; color:#cbd5e1; }
+    input[type=text], input[type=number] { width:100%; box-sizing:border-box; padding:8px; border-radius:8px; border:1px solid #334155; background:#111827; color:#fff; }
+    .row { display:flex; gap:12px; }
+    .row > div { flex:1; }
+    button { margin-top:18px; padding:9px 14px; border:0; border-radius:8px; background:#2563eb; color:#fff; cursor:pointer; }
+    button.secondary { background:#334155; }
+    .hint { color:#94a3b8; font-size:12px; margin-top:4px; }
+    .status { margin-top:12px; color:#86efac; }
+  </style>
+</head>
+<body>
+  <h2>&#30721;&#36947; Bar &#35774;&#32622;</h2>
+  <label>opencode.db &#36335;&#24452;</label>
+  <input id="dbPath" type="text" />
+  <div class="hint">&#40664;&#35748;&#65306;%USERPROFILE%\.codeartsdoer\codearts-data\opencode.db</div>
+  <div class="row">
+    <div><label>&#27599;&#26085; token &#26174;&#31034;&#36719;&#19978;&#38480;</label><input id="dailyLimit" type="number" /></div>
+    <div><label>&#32479;&#35745;&#31383;&#21475;&#23567;&#26102;&#25968;</label><input id="windowHours" type="number" /></div>
+  </div>
+  <label>&#21047;&#26032;&#38388;&#38548;&#65288;&#27627;&#31186;&#65289;</label>
+  <input id="refreshMs" type="number" />
+  <div class="hint">&#23454;&#26102;&#26356;&#26032;&#20027;&#35201;&#38752;&#30417;&#21548;&#26412;&#22320;&#25968;&#25454;&#24211;&#21644;&#26085;&#24535;&#21464;&#21270;&#65307;&#36825;&#37324;&#26159;&#20828;&#24213;&#36718;&#35810;&#38388;&#38548;&#12290;</div>
+  <label><input id="showPerformance" type="checkbox" /> &#26174;&#31034;&#24615;&#33021;</label>
+  <label><input id="showTools" type="checkbox" /> &#26174;&#31034;&#24037;&#20855;</label>
+  <label><input id="notifyDanger" type="checkbox" /> &#36798;&#21040;&#39640;&#29992;&#37327;&#26102;&#36890;&#30693;</label>
+  <button id="save">&#20445;&#23384;&#24182;&#21047;&#26032;</button>
+  <button id="diagnose" class="secondary">&#22797;&#21046;&#35786;&#26029;&#25968;&#25454;</button>
+  <div id="status" class="status"></div>
+  <script src="settings-renderer.js"></script>
+</body>
+</html>

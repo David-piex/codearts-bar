@@ -1,0 +1,20 @@
+﻿node_modules/
+npm-debug.log*
+.DS_Store
+*.log
+
+# Keep committed test log fixtures
+!tests/fixtures/logs/
+!tests/fixtures/logs/*.log
+
+# Local/build artifacts
+.cache/
+.codeartsdoer/
+.agents/
+dist/
+release/
+upstream-CodexBar/
+
+# Legacy root copies; source of truth lives under src/
+/main.js
+/dashboard-renderer.js
