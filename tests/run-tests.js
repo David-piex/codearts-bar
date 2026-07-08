@@ -177,6 +177,42 @@ async function testProviderDbPagination() {
   }
 }
 
+async function testProviderDbAggregates() {
+  const dbPath = path.join(__dirname, 'fixtures', 'opencode-fixture.db');
+  const previous = process.env.CODEARTS_BAR_FORCE_SQLJS;
+  process.env.CODEARTS_BAR_FORCE_SQLJS = '1';
+  try {
+    const timestamp = Date.UTC(2026, 6, 8, 0, 0, 0);
+    const summary = await localProvider.getSummary({ dbPath, timestamp, windowHours: 24 });
+    assert.equal(summary.ok, true);
+    assert.equal(summary.usage.all.total, 220);
+    assert.equal(summary.usage.window.messages, 3);
+
+    const trend = await localProvider.getTrendBuckets({ dbPath, start: 0, end: Date.UTC(2030, 0, 1), bucketMs: 86400000 });
+    assert.equal(trend.ok, true);
+    assert.equal(trend.buckets.length, 1);
+    assert.equal(trend.buckets[0].total, 220);
+
+    const source = await localProvider.getSourceStats({ dbPath, range: { start: 0, end: Date.UTC(2030, 0, 1) } });
+    assert.equal(source.items[0].total, 220);
+    assert.equal(source.items[0].requests, 3);
+
+    const models = await localProvider.getModelStats({ dbPath, range: { start: 0, end: Date.UTC(2030, 0, 1) } });
+    assert.equal(models.items[0].model, 'fixture-model');
+    assert.equal(models.items[0].total, 167);
+
+    const sessions = await localProvider.getSessionSummary({ dbPath, timestamp });
+    assert.equal(sessions.total, 2);
+    assert.equal(sessions.active, 2);
+
+    const health = await localProvider.getDatabaseHealth({ dbPath });
+    assert.equal(health.items[0].quickCheck, 'ok');
+    assert.equal(health.items[0].messageCount, 5);
+  } finally {
+    if (previous == null) delete process.env.CODEARTS_BAR_FORCE_SQLJS; else process.env.CODEARTS_BAR_FORCE_SQLJS = previous;
+  }
+}
+
 (async () => {
   testOfficialStatsParser();
   testQuota();
@@ -189,6 +225,7 @@ async function testProviderDbPagination() {
   testHealth();
   await testSqliteFixtureSqlJsFallback();
   await testProviderDbPagination();
+  await testProviderDbAggregates();
   await testRenameSessionFixture();
   console.log('ok - unit tests');
 })().catch((error) => { console.error(error); process.exit(1); });

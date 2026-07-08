@@ -22,12 +22,12 @@ function compactModelRows(rows, limit = 5){
   const groups = groupBy(rows, (r) => r.model).slice(0, limit);
   const max = Math.max(1, ...groups.map((g) => g.stats.total || 0));
   if(!groups.length) return `<div class="compact-empty">${TXT.emptyHint}</div>`;
-  return `<div class="compact-list">${groups.map((g) => `<div class="compact-row"><div><b>${esc(shortModel(g.key))}</b><span>${n(g.stats.requests)} ${TXT.requests} 閻?${TXT.ttft} ${ms(avg(g.stats.ttfts))}</span></div><strong>${compact(g.stats.total)}</strong><i style="--w:${Math.max(4, Math.min(100, ((g.stats.total || 0) / max) * 100))}%"></i></div>`).join('')}</div>`;
+  return `<div class="compact-list">${groups.map((g) => `<div class="compact-row"><div><b>${esc(shortModel(g.key))}</b><span>${n(g.stats.requests)} ${TXT.requests} · ${TXT.ttft} ${ms(avg(g.stats.ttfts))}</span></div><strong>${compact(g.stats.total)}</strong><i style="--w:${Math.max(4, Math.min(100, ((g.stats.total || 0) / max) * 100))}%"></i></div>`).join('')}</div>`;
 }
 function compactSessionRows(s){
   const list = sortSessions((s.sessions || []).filter((item) => (sourceFilter === 'all' || sourceKey(item) === sourceFilter) && sessionStatusMatches(item))).slice(0, 5);
   if(!list.length) return `<div class="compact-empty">${TXT.emptyHint}</div>`;
-  return `<div class="compact-list compact-sessions">${list.map((item) => { const u = item.usage || {}; const tags = (metaForSession(item).tags || []).slice(0, 2).join(' 閻?'); return `<button class="compact-row compact-session-row" data-table="sessions" data-session-select="${esc(sessionKeyFor(item))}"><div><b>${esc(item.title || '(untitled)')}</b><span>${esc(sourceName(item))} 閻?${n(u.userTurns || 0)} ${TXT.turns}${tags ? ` 閻?${esc(tags)}` : ''}</span></div><strong>${compact(u.total || 0)}</strong><i style="--w:${Math.max(3, Math.min(100, ((u.total || 0) / Math.max(1, list[0]?.usage?.total || 1)) * 100))}%"></i></button>`; }).join('')}</div>`;
+  return `<div class="compact-list compact-sessions">${list.map((item) => { const u = item.usage || {}; const tags = (metaForSession(item).tags || []).slice(0, 2).join(' \u00b7 '); return `<button class="compact-row compact-session-row" data-table="sessions" data-session-select="${esc(sessionKeyFor(item))}"><div><b>${esc(item.title || '(untitled)')}</b><span>${esc(sourceName(item))} \u00b7 ${n(u.userTurns || 0)} ${TXT.turns}${tags ? ` \u00b7 ${esc(tags)}` : ''}</span></div><strong>${compact(u.total || 0)}</strong><i style="--w:${Math.max(3, Math.min(100, ((u.total || 0) / Math.max(1, list[0]?.usage?.total || 1)) * 100))}%"></i></button>`; }).join('')}</div>`;
 }
 function compactSourcePill(s){
   const st = sumReq(filterRows(s));

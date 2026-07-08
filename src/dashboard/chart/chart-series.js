@@ -18,19 +18,40 @@ function bucketRows(rows, s){
     buckets.push(b);
     bucketMap.set(t, b);
   }
+  const trendList = dayMode ? (s?.trends?.daily14d || []) : (s?.trends?.hourly24h || []);
+  const useTrendTokens = Array.isArray(trendList) && trendList.length > 0;
+  if(useTrendTokens){
+    for(const item of trendList){
+      const rawTime = Number(item.start || 0);
+      if(!validTimestamp(rawTime, s)) continue;
+      const t = dayMode ? dayStart(rawTime) : Math.floor(rawTime / bucketMs) * bucketMs;
+      const b = bucketMap.get(t);
+      if(!b) continue;
+      b.total += item.total || 0;
+      b.input += item.input || 0;
+      b.output += item.output || 0;
+      b.cacheRead += item.cacheRead || 0;
+      b.cacheWrite += item.cacheWrite || 0;
+      b.requests += item.requests || item.messages || 0;
+      b.errors += item.errors || 0;
+      if(Number.isFinite(item.latencyAvg)) b.latencies.push(item.latencyAvg);
+    }
+  }
   for(const r of rows){
     const rawTime = Number(r.time || 0);
     if(!validTimestamp(rawTime, s)) continue;
     const t = dayMode ? dayStart(rawTime) : Math.floor(rawTime / bucketMs) * bucketMs;
     const b = bucketMap.get(t);
     if(!b) continue;
-    b.total += r.total || 0;
-    b.input += r.input || 0;
-    b.output += r.output || 0;
-    b.cacheRead += r.cacheRead || 0;
-    b.cacheWrite += r.cacheWrite || 0;
-    b.requests += 1;
-    if(!r.ok) b.errors += 1;
+    if(!useTrendTokens){
+      b.total += r.total || 0;
+      b.input += r.input || 0;
+      b.output += r.output || 0;
+      b.cacheRead += r.cacheRead || 0;
+      b.cacheWrite += r.cacheWrite || 0;
+      b.requests += 1;
+      if(!r.ok) b.errors += 1;
+    }
     if(Number.isFinite(r.latencyMs)) b.latencies.push(r.latencyMs);
     if(Number.isFinite(r.ttftMs)) b.ttfts.push(r.ttftMs);
     if(Number.isFinite(r.firstContentMs)) b.firstContents.push(r.firstContentMs);

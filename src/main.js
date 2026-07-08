@@ -417,6 +417,68 @@ ipcMain.handle('dashboard:getSessionsPage', async (_event, payload = {}) => {
     return page;
   }
 });
+
+function dashboardAggregatePayload(payload = {}) {
+  const settings = loadSettings();
+  return {
+    ...payload,
+    dailyLimit: Number(payload.dailyLimit || settings.dailyLimit || process.env.CODEARTS_BAR_DAILY_LIMIT || 200000),
+    windowHours: Number(payload.windowHours || settings.windowHours || process.env.CODEARTS_BAR_WINDOW_HOURS || 24),
+    timestamp: Number(payload.timestamp || Date.now()),
+  };
+}
+function snapshotUsageFallback(scope) {
+  const snap = lastSnapshot || null;
+  if (!snap || !snap.ok) return null;
+  if (scope === 'summary') return { ok: true, timestamp: snap.timestamp || 0, usage: snap.usage || {}, sources: snap.sources || [], fallback: 'snapshot' };
+  if (scope === 'trend') return { ok: true, timestamp: snap.timestamp || 0, buckets: snap.trends?.hourly24h || [], fallback: 'snapshot' };
+  if (scope === 'source') return { ok: true, timestamp: snap.timestamp || 0, items: snap.sourceStats || [], fallback: 'snapshot' };
+  if (scope === 'model') return { ok: true, timestamp: snap.timestamp || 0, items: snap.models || [], fallback: 'snapshot' };
+  if (scope === 'session') return { ok: true, timestamp: snap.timestamp || 0, ...(snap.sessionSummary || {}), fallback: 'snapshot' };
+  return null;
+}
+ipcMain.handle('dashboard:getSummary', async (_event, payload = {}) => {
+  try { return await localProvider.getSummary(dashboardAggregatePayload(payload)); }
+  catch (error) {
+    appendLog('warn', 'dashboard:getSummary', error.message, { payload });
+    return snapshotUsageFallback('summary') || { ok: false, error: error.message };
+  }
+});
+ipcMain.handle('dashboard:getTrendBuckets', async (_event, payload = {}) => {
+  try { return await localProvider.getTrendBuckets(dashboardAggregatePayload(payload)); }
+  catch (error) {
+    appendLog('warn', 'dashboard:getTrendBuckets', error.message, { payload });
+    return snapshotUsageFallback('trend') || { ok: false, error: error.message };
+  }
+});
+ipcMain.handle('dashboard:getSourceStats', async (_event, payload = {}) => {
+  try { return await localProvider.getSourceStats(dashboardAggregatePayload(payload)); }
+  catch (error) {
+    appendLog('warn', 'dashboard:getSourceStats', error.message, { payload });
+    return snapshotUsageFallback('source') || { ok: false, error: error.message };
+  }
+});
+ipcMain.handle('dashboard:getModelStats', async (_event, payload = {}) => {
+  try { return await localProvider.getModelStats(dashboardAggregatePayload(payload)); }
+  catch (error) {
+    appendLog('warn', 'dashboard:getModelStats', error.message, { payload });
+    return snapshotUsageFallback('model') || { ok: false, error: error.message };
+  }
+});
+ipcMain.handle('dashboard:getSessionSummary', async (_event, payload = {}) => {
+  try { return await localProvider.getSessionSummary(dashboardAggregatePayload(payload)); }
+  catch (error) {
+    appendLog('warn', 'dashboard:getSessionSummary', error.message, { payload });
+    return snapshotUsageFallback('session') || { ok: false, error: error.message };
+  }
+});
+ipcMain.handle('dashboard:getDatabaseHealth', async (_event, payload = {}) => {
+  try { return await localProvider.getDatabaseHealth(dashboardAggregatePayload(payload)); }
+  catch (error) {
+    appendLog('warn', 'dashboard:getDatabaseHealth', error.message, { payload });
+    return { ok: false, error: error.message };
+  }
+});
 ipcMain.handle('dashboard:getDiff', (_event, payload = {}) => {
   const since = Number(payload.since || 0);
   const snap = lastSnapshot || errorSnapshot(new Error('尚未刷新'));

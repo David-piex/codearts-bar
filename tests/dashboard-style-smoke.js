@@ -22,6 +22,10 @@ const html = dashboardSourceFiles
   .join("\n");
 const rendererFiles = [
   "dashboard-renderer.js",
+  "dashboard/i18n.js",
+  "dashboard/dashboard-shell.js",
+  "dashboard/dashboard-error-state.js",
+  "dashboard/dashboard-bootstrap.js",
   "dashboard/dashboard-perf.js",
   "dashboard/dashboard-slots.js",
   "dashboard/events/date-events.js",
@@ -39,6 +43,11 @@ const rendererFiles = [
   "dashboard/chart/chart-hover.js",
   "dashboard-chart.js",
   "dashboard-sessions.js",
+  "dashboard/sessions/session-meta.js",
+  "dashboard/sessions/session-filters.js",
+  "dashboard/sessions/session-saved-views.js",
+  "dashboard/sessions/session-bulk.js",
+  "dashboard/sessions/session-cache-governance.js",
   "dashboard/sessions/session-inspector.js",
   "dashboard/sessions/session-table.js",
   "dashboard/sessions/session-workspace.js",
@@ -215,11 +224,20 @@ assert.match(renderer, /appendSessionRows/);
 assert.match(renderer, /insertAdjacentHTML/);
 assert.match(renderer, /requestRowHtml/);
 assert.match(renderer, /sessionRowHtml/);
+assert.match(renderer, /dashboard\/i18n\.js/);
+assert.match(renderer, /dashboard\/dashboard-shell\.js/);
+assert.match(renderer, /dashboard\/dashboard-error-state\.js/);
+assert.match(renderer, /dashboard\/dashboard-bootstrap\.js/);
 assert.match(renderer, /dashboard\/dashboard-perf\.js/);
 assert.match(renderer, /dashboard\/dashboard-slots\.js/);
 assert.match(renderer, /dashboard\/dashboard-events\.js/);
 assert.match(renderer, /dashboard\/events\/date-events\.js/);
 assert.match(renderer, /dashboard\/events\/window-events\.js/);
+assert.match(renderer, /dashboard\/sessions\/session-meta\.js/);
+assert.match(renderer, /dashboard\/sessions\/session-filters\.js/);
+assert.match(renderer, /dashboard\/sessions\/session-saved-views\.js/);
+assert.match(renderer, /dashboard\/sessions\/session-bulk\.js/);
+assert.match(renderer, /dashboard\/sessions\/session-cache-governance\.js/);
 assert.match(renderer, /dashboard\/sessions\/session-inspector\.js/);
 assert.match(renderer, /dashboard\/sessions\/session-table\.js/);
 assert.match(renderer, /dashboard\/sessions\/session-workspace\.js/);
@@ -230,6 +248,9 @@ assert.match(renderer, /sessionToolbarSlot/);
 assert.match(renderer, /sessionModalSlot/);
 assert.match(renderer, /Renderer perf/);
 assert.match(renderer, /togglePerfPanel/);
+assert.match(renderer, /dashboard:getSummary/);
+assert.match(renderer, /dashboard:getTrendBuckets/);
+assert.match(renderer, /scheduleDashboardAggregates/);
 
 
 assert.match(renderer, /requestTableRenderLimit = 100/);
