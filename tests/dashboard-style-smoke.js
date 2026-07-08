@@ -22,11 +22,17 @@ const html = dashboardSourceFiles
   .join("\n");
 const rendererFiles = [
   "dashboard-renderer.js",
+  "dashboard/dashboard-perf.js",
+  "dashboard/dashboard-slots.js",
+  "dashboard/dashboard-events.js",
   "dashboard-state.js",
   "dashboard-date-range.js",
   "dashboard-analytics.js",
   "dashboard-chart.js",
   "dashboard-sessions.js",
+  "dashboard/sessions/session-inspector.js",
+  "dashboard/sessions/session-table.js",
+  "dashboard/sessions/session-workspace.js",
 ];
 const renderer = rendererFiles
   .map((file) => fs.readFileSync(path.join(__dirname, "..", "src", file), "utf8"))
@@ -200,6 +206,20 @@ assert.match(renderer, /appendSessionRows/);
 assert.match(renderer, /insertAdjacentHTML/);
 assert.match(renderer, /requestRowHtml/);
 assert.match(renderer, /sessionRowHtml/);
+assert.match(renderer, /dashboard\/dashboard-perf\.js/);
+assert.match(renderer, /dashboard\/dashboard-slots\.js/);
+assert.match(renderer, /dashboard\/dashboard-events\.js/);
+assert.match(renderer, /dashboard\/sessions\/session-inspector\.js/);
+assert.match(renderer, /dashboard\/sessions\/session-table\.js/);
+assert.match(renderer, /dashboard\/sessions\/session-workspace\.js/);
+assert.match(renderer, /sessionInspectorSlot/);
+assert.match(renderer, /sessionTableSlot/);
+assert.match(renderer, /sessionOverviewSlot/);
+assert.match(renderer, /sessionToolbarSlot/);
+assert.match(renderer, /sessionModalSlot/);
+assert.match(renderer, /Renderer perf/);
+assert.match(renderer, /togglePerfPanel/);
+
 
 assert.match(renderer, /requestTableRenderLimit = 100/);
 assert.match(renderer, /sessionTableRenderLimit = 80/);

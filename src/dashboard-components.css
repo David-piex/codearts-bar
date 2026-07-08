@@ -34,3 +34,26 @@ input:disabled {
   cursor:default;
 }
 
+
+/* 1.19.1 hidden renderer performance panel */
+.perf-panel {
+  position:fixed;
+  right:14px;
+  bottom:70px;
+  z-index:9999;
+  display:none;
+  min-width:190px;
+  padding:10px 12px;
+  border:1px solid rgba(180,190,205,.72);
+  border-radius:14px;
+  background:rgba(255,255,255,.82);
+  -webkit-backdrop-filter:blur(18px) saturate(1.35);
+  backdrop-filter:blur(18px) saturate(1.35);
+  box-shadow:0 16px 38px rgba(24,39,65,.14), inset 0 1px 0 rgba(255,255,255,.78);
+  color:#111827;
+  font:12px/1.35 var(--native-font-mono,"SF Mono",Consolas,monospace);
+}
+.perf-panel.show { display:grid; gap:4px; }
+.perf-panel b { font-family:var(--native-font-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif); font-size:12px; }
+.perf-panel span { display:flex; justify-content:space-between; color:#475467; }
+.perf-panel em { margin-top:2px; color:#98a2b3; font-style:normal; }
