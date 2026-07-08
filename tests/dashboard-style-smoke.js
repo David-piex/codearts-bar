@@ -7,6 +7,12 @@ const path = require("node:path");
 const dashboardSourceFiles = [
   "dashboard.html",
   "dashboard.css",
+  "dashboard-controls.css",
+  "dashboard-analytics.css",
+  "dashboard-sessions.css",
+  "dashboard-chart.css",
+  "dashboard-compact.css",
+  "dashboard-responsive.css",
   "dashboard-native.css",
   "dashboard-layout.css",
   "dashboard-components.css",
@@ -178,6 +184,23 @@ assert.match(html, /href="dashboard\.css"/);
 assert.match(html, /href="dashboard-native\.css"/);
 assert.match(html, /href="dashboard-layout\.css"/);
 assert.match(html, /href="dashboard-components\.css"/);
+assert.match(html, /href="dashboard-controls\.css"/);
+assert.match(html, /href="dashboard-analytics\.css"/);
+assert.match(html, /href="dashboard-sessions\.css"/);
+assert.match(html, /href="dashboard-chart\.css"/);
+assert.match(html, /href="dashboard-compact\.css"/);
+assert.match(html, /href="dashboard-responsive\.css"/);
+assert.match(renderer, /analyticsSummarySlot/);
+assert.match(renderer, /analyticsChartSlot/);
+assert.match(renderer, /analyticsTableSlot/);
+assert.match(renderer, /analyticsAdvancedSlot/);
+assert.match(renderer, /patchAnalyticsView/);
+assert.match(renderer, /appendRequestRows/);
+assert.match(renderer, /appendSessionRows/);
+assert.match(renderer, /insertAdjacentHTML/);
+assert.match(renderer, /requestRowHtml/);
+assert.match(renderer, /sessionRowHtml/);
+
 assert.match(renderer, /requestTableRenderLimit = 100/);
 assert.match(renderer, /sessionTableRenderLimit = 80/);
 assert.match(renderer, /renderer-perf/);

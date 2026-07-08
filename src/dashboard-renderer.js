@@ -445,6 +445,109 @@ function analyticsEmptyState(rows){
   if(rows.length) return '';
   return `<section class="dashboard-empty-state analytics-empty-state"><div><b>${TXT.emptyAnalyticsTitle}</b><span>${TXT.emptyAnalyticsHint}</span></div><button data-date-range-toggle="1">${TXT.dateRange}</button><button data-source="all">${TXT.allSource}</button></section>`;
 }
+function patchHtmlSlot(id, html){
+  const el = document.getElementById(id);
+  if(!el) return false;
+  if(el.innerHTML !== html) el.innerHTML = html;
+  return true;
+}
+function analyticsSlotsReady(){
+  if(typeof document.querySelector !== 'function') return false;
+  return Boolean(document.querySelector('#analyticsSummarySlot') && document.querySelector('#analyticsChartSlot') && document.querySelector('#analyticsTableSlot'));
+}
+function analyticsTableHtml(rows, s){ const t = perfNow(); const html = renderTable(rows, s); markPerfStage('lowerRenderMs', perfNow() - t); return html; }
+function analyticsAdvancedHtml(rows, s){ const t = perfNow(); const html = renderAnalyticsAdvanced(rows, s); markPerfStage('lowerRenderMs', perfNow() - t); return html; }
+function analyticsShellHtml(s, rows, opts = {}){
+  const deferHeavy = opts.deferHeavy === true;
+  const tableHtml = deferHeavy ? '<div id="analyticsDeferred" class="analytics-deferred"><span>\u6b63\u5728\u66f4\u65b0\u660e\u7ec6...</span></div>' : analyticsTableHtml(rows, s);
+  const advancedHtml = deferHeavy ? '' : analyticsAdvancedHtml(rows, s);
+  return `${headerHtml(false)}<div id="analyticsFiltersSlot">${filtersHtml(s)}</div><div id="analyticsSummarySlot">${renderSummary(rows, s)}</div><div id="analyticsEmptySlot">${analyticsEmptyState(rows)}</div><div id="analyticsChartSlot">${renderChart(rows, s)}</div><div id="analyticsAgentSlot">${renderAgentRhythm(s)}</div><div id="analyticsTableSlot">${tableHtml}</div><div id="analyticsAdvancedSlot">${advancedHtml}</div>`;
+}
+function patchChartChrome(rows, s){
+  const slot = document.getElementById('analyticsChartSlot');
+  const canvas = document.getElementById('usageChart');
+  if(!slot || !canvas || !document.createElement) return false;
+  const tmp = document.createElement('div');
+  tmp.innerHTML = renderChart(rows, s);
+  const nextHead = tmp.querySelector?.('.card-head');
+  const currentHead = slot.querySelector?.('.card-head');
+  if(nextHead && currentHead && currentHead.innerHTML !== nextHead.innerHTML) currentHead.innerHTML = nextHead.innerHTML;
+  const nextUnderbar = tmp.querySelector?.('.chart-underbar');
+  const currentUnderbar = slot.querySelector?.('.chart-underbar');
+  if(nextUnderbar && currentUnderbar && chartPinnedIndex < 0 && currentUnderbar.innerHTML !== nextUnderbar.innerHTML) currentUnderbar.innerHTML = nextUnderbar.innerHTML;
+  const nextScrubber = tmp.querySelector?.('#chartHoverScrubber');
+  const currentScrubber = document.getElementById('chartHoverScrubber');
+  if(nextScrubber && currentScrubber && chartPinnedIndex < 0 && currentScrubber.innerHTML !== nextScrubber.innerHTML) currentScrubber.innerHTML = nextScrubber.innerHTML;
+  return true;
+}
+function patchAnalyticsView(s, rows, opts = {}){
+  if(!analyticsSlotsReady()) return false;
+  patchHtmlSlot('analyticsFiltersSlot', filtersHtml(s));
+  patchHtmlSlot('analyticsSummarySlot', renderSummary(rows, s));
+  patchHtmlSlot('analyticsEmptySlot', analyticsEmptyState(rows));
+  patchChartChrome(rows, s);
+  patchHtmlSlot('analyticsAgentSlot', renderAgentRhythm(s));
+  const token = ++analyticsDeferredToken;
+  if(opts.deferHeavy === true){
+    patchHtmlSlot('analyticsTableSlot', '<div id="analyticsDeferred" class="analytics-deferred"><span>\u6b63\u5728\u66f4\u65b0\u660e\u7ec6...</span></div>');
+    patchHtmlSlot('analyticsAdvancedSlot', '');
+    setTimeout(() => {
+      if(token !== analyticsDeferredToken || snapshot !== s || layoutMode !== 'dashboard' || workspaceMode !== 'analytics') return;
+      patchHtmlSlot('analyticsTableSlot', analyticsTableHtml(rows, s));
+      patchHtmlSlot('analyticsAdvancedSlot', analyticsAdvancedHtml(rows, s));
+      bindIncrementalTables();
+    }, 35);
+  } else {
+    patchHtmlSlot('analyticsTableSlot', analyticsTableHtml(rows, s));
+    patchHtmlSlot('analyticsAdvancedSlot', analyticsAdvancedHtml(rows, s));
+  }
+  return true;
+}
+function updateLimitNote(kind, rendered, total){
+  const note = document.querySelector(`[data-table-limit="${kind}"]`);
+  if(!note) return;
+  if(rendered >= total){ note.remove?.(); return; }
+  note.dataset.rendered = String(rendered);
+  note.dataset.total = String(total);
+  const suffix = kind === 'sessions' ? '行，滚动到底部继续加载，或继续搜索 / 筛选缩小范围。' : '行，滚动到底部继续加载，或继续搜索缩小范围。';
+  note.textContent = `已先渲染 ${n(rendered)} / ${n(total)} ${suffix}`;
+}
+function appendRequestRows(){
+  if(!snapshot?.ok) return false;
+  const tbody = document.querySelector('.request-main tbody');
+  if(!tbody || typeof tbody.insertAdjacentHTML !== 'function') return render(snapshot, { windowLayout:false, instantChart:true, partial:true });
+  const started = perfNow();
+  const rows = applyTableSearch(filterRows(snapshot));
+  const before = Math.max(100, Number(requestTableRenderLimit || 100));
+  const next = Math.min(before + 100, rows.length, 5000);
+  if(next <= before) return false;
+  const chunk = rows.slice(before, next).map(requestRowHtml).join('');
+  if(chunk) tbody.insertAdjacentHTML('beforeend', chunk);
+  requestTableRenderLimit = next;
+  updateLimitNote('requests', next, rows.length);
+  console.debug(`[dashboard] append request rows ${Math.round(perfNow() - started)}ms rows=${before}->${next}/${rows.length}`);
+  return true;
+}
+function appendSessionRows(){
+  if(!snapshot?.ok) return false;
+  const tbody = document.querySelector('.session-scroll tbody');
+  if(!tbody || typeof tbody.insertAdjacentHTML !== 'function') return render(snapshot, { windowLayout:false, instantChart:true });
+  const started = perfNow();
+  const rows = sortSessions((snapshot.sessions || []).filter(sessionMatches));
+  const before = Math.max(80, Number(sessionTableRenderLimit || 80));
+  const next = Math.min(before + 80, rows.length, 5000);
+  if(next <= before) return false;
+  const chunkItems = rows.slice(before, next);
+  const chunk = chunkItems.map((item) => sessionRowHtml(item, false)).join('');
+  if(chunk) tbody.insertAdjacentHTML('beforeend', chunk);
+  sessionTableRenderLimit = next;
+  sessionTableItems = rows.slice(0, next);
+  updateLimitNote('sessions', next, rows.length);
+  const rowCount = document.querySelector('.session-toolbar .row-count');
+  if(rowCount) rowCount.textContent = `${n(sessionTableItems.length)} ${TXT.rows}`;
+  console.debug(`[dashboard] append session rows ${Math.round(perfNow() - started)}ms rows=${before}->${next}/${rows.length}`);
+  return true;
+}
 
 function render(s, opts = {}){
   const renderStartedAt = perfNow();
@@ -484,23 +587,23 @@ function render(s, opts = {}){
     return;
   }
   const deferHeavy = opts.deferHeavy === true;
-  const renderLower = () => { const t = perfNow(); const html = `${renderAgentRhythm(s)}${renderTable(rows, s)}${renderAnalyticsAdvanced(rows, s)}`; markPerfStage('lowerRenderMs', perfNow() - t); return html; };
-  const token = ++analyticsDeferredToken;
   const domStartedAt = perfNow();
-  commitAppHtml(app, `${headerHtml(false)}${filtersHtml(s)}${renderSummary(rows, s)}${analyticsEmptyState(rows)}${renderChart(rows, s)}${deferHeavy ? '<div id="analyticsDeferred" class="analytics-deferred"><span>\u6b63\u5728\u66f4\u65b0\u660e\u7ec6...</span></div>' : renderLower()}`);
+  const patched = opts.partial === true && !modeChanged && patchAnalyticsView(s, rows, opts);
+  if(!patched) commitAppHtml(app, analyticsShellHtml(s, rows, opts));
   markPerfStage('domCommitMs', perfNow() - domStartedAt);
   syncFooter();
-  const instant = opts.instantChart === true || modeChanged || suppressChartIntro;
+  const instant = opts.instantChart === true || modeChanged || suppressChartIntro || patched;
   requestAnimationFrame(() => {
     bindChart(rows, s, { instant });
     app?.classList.remove('view-switching');
-    markRenderCost(renderStartedAt, 'analytics', rows.length);
+    markRenderCost(renderStartedAt, patched ? 'analytics:partial' : 'analytics', rows.length);
     bindIncrementalTables();
-    if(deferHeavy){
+    if(deferHeavy && !patched){
+      const token = ++analyticsDeferredToken;
       setTimeout(() => {
         if(token !== analyticsDeferredToken || snapshot !== s || layoutMode !== 'dashboard' || workspaceMode !== 'analytics') return;
-        const holder = document.getElementById('analyticsDeferred');
-        if(holder) holder.outerHTML = renderLower();
+        patchHtmlSlot('analyticsTableSlot', analyticsTableHtml(rows, s));
+        patchHtmlSlot('analyticsAdvancedSlot', analyticsAdvancedHtml(rows, s));
         bindIncrementalTables();
       }, 35);
     }
@@ -517,9 +620,7 @@ function bindIncrementalTables(){
       requestScroller.addEventListener('scroll', () => {
         if(workspaceMode !== 'analytics' || tableTab !== 'requests' || !snapshot?.ok) return;
         if(requestScroller.scrollTop + requestScroller.clientHeight < requestScroller.scrollHeight - 180) return;
-        const before = requestTableRenderLimit;
-        requestTableRenderLimit = Math.min(requestTableRenderLimit + 100, 5000);
-        if(requestTableRenderLimit !== before) render(snapshot, { windowLayout:false, instantChart:true, deferHeavy:false });
+        appendRequestRows();
       }, { passive:true });
     }
     const sessionScroller = document.querySelector('.session-scroll');
@@ -528,9 +629,7 @@ function bindIncrementalTables(){
       sessionScroller.addEventListener('scroll', () => {
         if(workspaceMode !== 'sessions' || !snapshot?.ok) return;
         if(sessionScroller.scrollTop + sessionScroller.clientHeight < sessionScroller.scrollHeight - 180) return;
-        const before = sessionTableRenderLimit;
-        sessionTableRenderLimit = Math.min(sessionTableRenderLimit + 80, 5000);
-        if(sessionTableRenderLimit !== before) render(snapshot, { windowLayout:false, instantChart:true });
+        appendSessionRows();
       }, { passive:true });
     }
   });
@@ -561,20 +660,20 @@ document.addEventListener('click', async (e) => {
   const dateControl = e.target.closest('.date-range-control');
   if(dateRangeOpen && !dateControl){
     dateRangeOpen = false;
-    if(snapshot?.ok) render(snapshot, { windowLayout: false, instantChart: true, deferHeavy: true });
+    if(snapshot?.ok) render(snapshot, { windowLayout: false, instantChart: true, deferHeavy: true, partial: true });
     return;
   }
   const dateToggle = e.target.closest('[data-date-range-toggle]');
   if(dateToggle){
     if(dateRangeOpen) dateRangeOpen = false;
     else openDateRangePopover();
-    if(snapshot?.ok) render(snapshot, { windowLayout: false, instantChart: true, deferHeavy: true });
+    if(snapshot?.ok) render(snapshot, { windowLayout: false, instantChart: true, deferHeavy: true, partial: true });
     return;
   }
   const dateQuick = e.target.closest('[data-date-range-quick]');
   if(dateQuick){
     setDateRangeQuick(dateQuick.dataset.dateRangeQuick || 'today');
-    if(snapshot?.ok) render(snapshot, { windowLayout: false, instantChart: true, deferHeavy: true });
+    if(snapshot?.ok) render(snapshot, { windowLayout: false, instantChart: true, deferHeavy: true, partial: true });
     return;
   }
   const dateFocus = e.target.closest('[data-date-range-focus]');
@@ -589,13 +688,13 @@ document.addEventListener('click', async (e) => {
     d.setMonth(d.getMonth() + (dateMonth.dataset.dateRangeMonth === 'next' ? 1 : -1));
     dateRangeMonth = monthStart(d.getTime());
     localStorage.setItem('dateRangeMonth', String(dateRangeMonth));
-    if(snapshot?.ok) render(snapshot, { windowLayout: false, instantChart: true, deferHeavy: true });
+    if(snapshot?.ok) render(snapshot, { windowLayout: false, instantChart: true, deferHeavy: true, partial: true });
     return;
   }
   const dateDay = e.target.closest('[data-date-range-day]');
   if(dateDay){
     chooseCalendarDay(Number(dateDay.dataset.dateRangeDay));
-    if(snapshot?.ok) render(snapshot, { windowLayout: false, instantChart: true, deferHeavy: true });
+    if(snapshot?.ok) render(snapshot, { windowLayout: false, instantChart: true, deferHeavy: true, partial: true });
     return;
   }
   const dateCancel = e.target.closest('[data-date-range-cancel]');
@@ -603,14 +702,14 @@ document.addEventListener('click', async (e) => {
     dateRangeOpen = false;
     dateRangeDraftStart = 0;
     dateRangeDraftEnd = 0;
-    if(snapshot?.ok) render(snapshot, { windowLayout: false, instantChart: true, deferHeavy: true });
+    if(snapshot?.ok) render(snapshot, { windowLayout: false, instantChart: true, deferHeavy: true, partial: true });
     return;
   }
   const dateConfirm = e.target.closest('[data-date-range-confirm]');
   if(dateConfirm){
     applyCustomDateInputs();
     dateRangeOpen = false;
-    if(snapshot?.ok) render(snapshot, { windowLayout: false, instantChart: true, deferHeavy: true });
+    if(snapshot?.ok) render(snapshot, { windowLayout: false, instantChart: true, deferHeavy: true, partial: true });
     return;
   }
   const layoutModeBtn = e.target.closest('[data-layout-mode]');
@@ -622,7 +721,7 @@ document.addEventListener('click', async (e) => {
   if(compactPaneBtn){
     compactPane = compactPaneBtn.dataset.compactPane || 'overview';
     localStorage.setItem('compactPane', compactPane);
-    if(snapshot?.ok) render(snapshot, { windowLayout: false, instantChart: true });
+    if(snapshot?.ok) render(snapshot, { windowLayout: false, instantChart: true, partial: true });
     return;
   }
   const compactPin = e.target.closest('[data-compact-pin]');
@@ -630,7 +729,7 @@ document.addEventListener('click', async (e) => {
     compactPinned = !compactPinned;
     localStorage.setItem('compactPinned', compactPinned ? '1' : '0');
     applyCompactWindowChrome();
-    if(snapshot?.ok) render(snapshot, { windowLayout: false, instantChart: true });
+    if(snapshot?.ok) render(snapshot, { windowLayout: false, instantChart: true, partial: true });
     return;
   }
   const bulkMetaCancel = e.target.closest('[data-bulk-meta-cancel]');
@@ -655,7 +754,7 @@ document.addEventListener('click', async (e) => {
   const renameSave = e.target.closest('[data-rename-save]');
   if(renameSave){ await saveRenameSheet(); return; }
   const workspace = e.target.closest('[data-workspace]');
-  if(workspace){ workspaceMode = workspace.dataset.workspace || 'analytics'; localStorage.setItem('workspaceMode', workspaceMode); if(workspaceMode === 'sessions'){ tableTab = 'sessions'; localStorage.setItem('statsTableTab', tableTab); } else if(tableTab === 'sessions'){ tableTab = 'requests'; localStorage.setItem('statsTableTab', tableTab); } if(snapshot?.ok) render(snapshot, { windowLayout: false, instantChart: true }); return; }
+  if(workspace){ workspaceMode = workspace.dataset.workspace || 'analytics'; localStorage.setItem('workspaceMode', workspaceMode); if(workspaceMode === 'sessions'){ tableTab = 'sessions'; localStorage.setItem('statsTableTab', tableTab); } else if(tableTab === 'sessions'){ tableTab = 'requests'; localStorage.setItem('statsTableTab', tableTab); } if(snapshot?.ok) render(snapshot, { windowLayout: false, instantChart: true, partial: true }); return; }
   const smartView = e.target.closest('[data-session-smart-view]');
   if(smartView){ applySessionSmartView(smartView.dataset.sessionSmartView || 'recent'); if(snapshot?.ok) render(snapshot); return; }
   const saveView = e.target.closest('[data-saved-session-save]');
@@ -698,7 +797,7 @@ document.addEventListener('click', async (e) => {
   if(analyticsAdvancedToggle){
     analyticsAdvancedOpen = !analyticsAdvancedOpen;
     localStorage.setItem('analyticsAdvancedOpen', analyticsAdvancedOpen ? '1' : '0');
-    if(snapshot?.ok) render(snapshot, { windowLayout: false, instantChart: true });
+    if(snapshot?.ok) render(snapshot, { windowLayout: false, instantChart: true, partial: true });
     return;
   }
   const primaryFilter = e.target.closest('[data-session-primary-filter]');
@@ -901,7 +1000,7 @@ document.addEventListener('click', async (e) => {
   const series = e.target.closest('[data-series]');
   if(series){ const key = series.dataset.series; if(visibleSeries.has(key)) visibleSeries.delete(key); else visibleSeries.add(key); saveVisibleSeries(); if(snapshot?.ok) render(snapshot); return; }
   const cacheModel = e.target.closest('[data-cache-model]');
-  if(cacheModel){ modelFilter = cacheModel.dataset.cacheModel || 'all'; localStorage.setItem('statsModel', modelFilter); if(snapshot?.ok) render(snapshot, { windowLayout: false, instantChart: true }); return; }
+  if(cacheModel){ modelFilter = cacheModel.dataset.cacheModel || 'all'; localStorage.setItem('statsModel', modelFilter); if(snapshot?.ok) render(snapshot, { windowLayout: false, instantChart: true, partial: true }); return; }
   const cacheProject = e.target.closest('[data-cache-project]');
   if(cacheProject){
     workspaceMode = 'sessions';
@@ -920,13 +1019,13 @@ document.addEventListener('click', async (e) => {
   const src = e.target.closest('[data-source]');
   const rangeApply = e.target.closest('[data-range-apply]');
   const tab = e.target.closest('[data-table]');
-  if(rangeApply){ applyCustomDateInputs(); if(snapshot?.ok) render(snapshot, { windowLayout: false, instantChart: true, deferHeavy: true }); return; }
-  if(src){ resetIncrementalRenderLimits('all'); sourceFilter = src.dataset.source; localStorage.setItem('statsSource', sourceFilter); if(snapshot?.ok) render(snapshot, { windowLayout: false, instantChart: true, deferHeavy: true }); }
+  if(rangeApply){ applyCustomDateInputs(); if(snapshot?.ok) render(snapshot, { windowLayout: false, instantChart: true, deferHeavy: true, partial: true }); return; }
+  if(src){ resetIncrementalRenderLimits('all'); sourceFilter = src.dataset.source; localStorage.setItem('statsSource', sourceFilter); if(snapshot?.ok) render(snapshot, { windowLayout: false, instantChart: true, deferHeavy: true, partial: true }); }
   if(tab){ resetIncrementalRenderLimits('all'); tableTab = tab.dataset.table; localStorage.setItem('statsTableTab', tableTab); if(tableTab === 'sessions'){ workspaceMode = 'sessions'; localStorage.setItem('workspaceMode', workspaceMode); } else { workspaceMode = 'analytics'; localStorage.setItem('workspaceMode', workspaceMode); } if(tab.closest('.compact-panel-actions')){ layoutMode = 'dashboard'; localStorage.setItem('layoutMode', layoutMode); } if(snapshot?.ok) render(snapshot); }
 });
-document.addEventListener('change', (e) => { const dateInput = e.target.closest('[data-date-range-date], [data-date-range-time]'); if(dateInput){ const which = dateInput.dataset.dateRangeDate || dateInput.dataset.dateRangeTime; const part = dateInput.dataset.dateRangeDate ? 'date' : 'time'; updateDateRangeDraft(which, part, dateInput.value); if(snapshot?.ok) render(snapshot, { windowLayout: false, instantChart: true, deferHeavy: true }); return; } const follow = e.target.closest('[data-date-range-follow]'); if(follow){ dateRangeFollowNow = follow.checked; if(dateRangeFollowNow) dateRangeDraftEnd = Number(snapshot?.timestamp || Date.now()); localStorage.setItem('dateRangeFollowNow', dateRangeFollowNow ? '1' : '0'); if(snapshot?.ok) render(snapshot, { windowLayout: false, instantChart: true, deferHeavy: true }); return; } const tags = e.target.closest('[data-session-tags]'); if(tags){ const key = tags.dataset.sessionTags; sessionMeta[key] = { ...(sessionMeta[key] || {}), tags: normalizeTags(tags.value) }; saveSessionMeta(); setRefreshState(TXT.savedLocal); clearTimeout(lastToastTimer); lastToastTimer = setTimeout(() => setRefreshState(''), 900); if(snapshot?.ok) render(snapshot); return; } const sel = e.target.closest('[data-select]'); if(!sel) return; if(sel.dataset.select === 'source'){ resetIncrementalRenderLimits('all'); sourceFilter = sel.value; localStorage.setItem('statsSource', sourceFilter); if(snapshot?.ok) render(snapshot, { windowLayout: false, instantChart: true, deferHeavy: true }); } if(sel.dataset.select === 'model'){ resetIncrementalRenderLimits('all'); modelFilter = sel.value; localStorage.setItem('statsModel', modelFilter); if(snapshot?.ok) render(snapshot, { windowLayout: false, instantChart: true, deferHeavy: true }); } if(sel.dataset.select === 'refresh'){ refreshEvery = sel.value; localStorage.setItem('statsRefreshEvery', refreshEvery); setupAutoRefresh(); } if(sel.dataset.select === 'range'){ resetIncrementalRenderLimits('all'); rangeFilter = normalizeRangeFilter(sel.value); const days = Number(String(rangeFilter).replace('d', '')); if(Number.isFinite(days)) localStorage.setItem('customRangeDays', String(days)); localStorage.setItem('statsRange', rangeFilter); if(snapshot?.ok) render(snapshot, { windowLayout: false, instantChart: true, deferHeavy: true }); } if(sel.dataset.select === 'sessionSort'){ resetIncrementalRenderLimits('sessions'); sessionSort = sel.value; localStorage.setItem('sessionSort', sessionSort); if(snapshot?.ok) render(snapshot); } if(sel.dataset.select === 'sessionTag'){ resetIncrementalRenderLimits('sessions'); sessionTagFilter = sel.value; localStorage.setItem('sessionTagFilter', sessionTagFilter); if(snapshot?.ok) render(snapshot); } if(sel.dataset.select === 'sessionProject'){ resetIncrementalRenderLimits('sessions'); sessionProjectFilter = sel.value; localStorage.setItem('sessionProjectFilter', sessionProjectFilter); if(snapshot?.ok) render(snapshot); } });
-document.addEventListener('input', (e) => { const bulkTags = e.target.closest('[data-bulk-meta-tags]'); if(bulkTags){ bulkMetaTagsDraft = bulkTags.value; return; } const bulkNote = e.target.closest('[data-bulk-meta-note]'); if(bulkNote){ bulkMetaNoteDraft = bulkNote.value; return; } const savedViewName = e.target.closest('[data-saved-session-name]'); if(savedViewName){ savedSessionViewNameDraft = savedViewName.value; return; } const note = e.target.closest('[data-session-note]'); if(note){ const key = note.dataset.sessionNote; sessionMeta[key] = { ...(sessionMeta[key] || {}), note: note.value }; saveSessionMeta(); setRefreshState(TXT.savedLocal); clearTimeout(lastToastTimer); lastToastTimer = setTimeout(() => setRefreshState(''), 800); return; } const rename = e.target.closest('[data-rename-input]'); if(rename){ renameDraft = rename.value; return; } const q = e.target.closest('[data-query]'); if(!q) return; const scope = q.dataset.query === 'sessions' ? 'sessions' : 'analytics'; if(scope === 'sessions'){ sessionQuery = q.value; localStorage.setItem('statsSessionQuery', sessionQuery); } else { analyticsQuery = q.value; localStorage.setItem('statsAnalyticsQuery', analyticsQuery); } const app = document.getElementById('app'); app?.classList.add('is-typing'); clearTimeout(queryRenderTimer); queryRenderTimer = setTimeout(() => { queryRenderTimer = null; resetIncrementalRenderLimits(scope === 'sessions' ? 'sessions' : 'requests'); if(snapshot?.ok) render(snapshot, { windowLayout: false, instantChart: true }); requestAnimationFrame(() => { const next = document.querySelector(`[data-query="${scope}"]`); if(next){ next.focus(); next.setSelectionRange(next.value.length, next.value.length); } app?.classList.remove('is-typing'); }); }, 140); });
-document.addEventListener('keydown', async (e) => { if(dateRangeOpen && e.key === 'Escape'){ dateRangeOpen = false; if(snapshot?.ok) render(snapshot, { windowLayout: false, instantChart: true, deferHeavy: true }); return; } if(e.key === 'Enter' && e.target.closest('[data-saved-session-name]')){ saveCurrentSessionView(); if(snapshot?.ok) render(snapshot); return; } if(bulkMetaOpen && e.key === 'Escape'){ bulkMetaOpen = false; bulkMetaTagsDraft = ''; bulkMetaNoteDraft = ''; if(snapshot?.ok) render(snapshot); return; } if(!renameSessionKey) return; if(e.key === 'Escape'){ renameSessionKey = ''; renameDraft = ''; if(snapshot?.ok) render(snapshot); } if(e.key === 'Enter' && e.target.closest('[data-rename-input]')){ await saveRenameSheet(); } });
+document.addEventListener('change', (e) => { const dateInput = e.target.closest('[data-date-range-date], [data-date-range-time]'); if(dateInput){ const which = dateInput.dataset.dateRangeDate || dateInput.dataset.dateRangeTime; const part = dateInput.dataset.dateRangeDate ? 'date' : 'time'; updateDateRangeDraft(which, part, dateInput.value); if(snapshot?.ok) render(snapshot, { windowLayout: false, instantChart: true, deferHeavy: true, partial: true }); return; } const follow = e.target.closest('[data-date-range-follow]'); if(follow){ dateRangeFollowNow = follow.checked; if(dateRangeFollowNow) dateRangeDraftEnd = Number(snapshot?.timestamp || Date.now()); localStorage.setItem('dateRangeFollowNow', dateRangeFollowNow ? '1' : '0'); if(snapshot?.ok) render(snapshot, { windowLayout: false, instantChart: true, deferHeavy: true, partial: true }); return; } const tags = e.target.closest('[data-session-tags]'); if(tags){ const key = tags.dataset.sessionTags; sessionMeta[key] = { ...(sessionMeta[key] || {}), tags: normalizeTags(tags.value) }; saveSessionMeta(); setRefreshState(TXT.savedLocal); clearTimeout(lastToastTimer); lastToastTimer = setTimeout(() => setRefreshState(''), 900); if(snapshot?.ok) render(snapshot); return; } const sel = e.target.closest('[data-select]'); if(!sel) return; if(sel.dataset.select === 'source'){ resetIncrementalRenderLimits('all'); sourceFilter = sel.value; localStorage.setItem('statsSource', sourceFilter); if(snapshot?.ok) render(snapshot, { windowLayout: false, instantChart: true, deferHeavy: true, partial: true }); } if(sel.dataset.select === 'model'){ resetIncrementalRenderLimits('all'); modelFilter = sel.value; localStorage.setItem('statsModel', modelFilter); if(snapshot?.ok) render(snapshot, { windowLayout: false, instantChart: true, deferHeavy: true, partial: true }); } if(sel.dataset.select === 'refresh'){ refreshEvery = sel.value; localStorage.setItem('statsRefreshEvery', refreshEvery); setupAutoRefresh(); } if(sel.dataset.select === 'range'){ resetIncrementalRenderLimits('all'); rangeFilter = normalizeRangeFilter(sel.value); const days = Number(String(rangeFilter).replace('d', '')); if(Number.isFinite(days)) localStorage.setItem('customRangeDays', String(days)); localStorage.setItem('statsRange', rangeFilter); if(snapshot?.ok) render(snapshot, { windowLayout: false, instantChart: true, deferHeavy: true, partial: true }); } if(sel.dataset.select === 'sessionSort'){ resetIncrementalRenderLimits('sessions'); sessionSort = sel.value; localStorage.setItem('sessionSort', sessionSort); if(snapshot?.ok) render(snapshot); } if(sel.dataset.select === 'sessionTag'){ resetIncrementalRenderLimits('sessions'); sessionTagFilter = sel.value; localStorage.setItem('sessionTagFilter', sessionTagFilter); if(snapshot?.ok) render(snapshot); } if(sel.dataset.select === 'sessionProject'){ resetIncrementalRenderLimits('sessions'); sessionProjectFilter = sel.value; localStorage.setItem('sessionProjectFilter', sessionProjectFilter); if(snapshot?.ok) render(snapshot); } });
+document.addEventListener('input', (e) => { const bulkTags = e.target.closest('[data-bulk-meta-tags]'); if(bulkTags){ bulkMetaTagsDraft = bulkTags.value; return; } const bulkNote = e.target.closest('[data-bulk-meta-note]'); if(bulkNote){ bulkMetaNoteDraft = bulkNote.value; return; } const savedViewName = e.target.closest('[data-saved-session-name]'); if(savedViewName){ savedSessionViewNameDraft = savedViewName.value; return; } const note = e.target.closest('[data-session-note]'); if(note){ const key = note.dataset.sessionNote; sessionMeta[key] = { ...(sessionMeta[key] || {}), note: note.value }; saveSessionMeta(); setRefreshState(TXT.savedLocal); clearTimeout(lastToastTimer); lastToastTimer = setTimeout(() => setRefreshState(''), 800); return; } const rename = e.target.closest('[data-rename-input]'); if(rename){ renameDraft = rename.value; return; } const q = e.target.closest('[data-query]'); if(!q) return; const scope = q.dataset.query === 'sessions' ? 'sessions' : 'analytics'; if(scope === 'sessions'){ sessionQuery = q.value; localStorage.setItem('statsSessionQuery', sessionQuery); } else { analyticsQuery = q.value; localStorage.setItem('statsAnalyticsQuery', analyticsQuery); } const app = document.getElementById('app'); app?.classList.add('is-typing'); clearTimeout(queryRenderTimer); queryRenderTimer = setTimeout(() => { queryRenderTimer = null; resetIncrementalRenderLimits(scope === 'sessions' ? 'sessions' : 'requests'); if(snapshot?.ok) render(snapshot, { windowLayout: false, instantChart: true, partial: true }); requestAnimationFrame(() => { const next = document.querySelector(`[data-query="${scope}"]`); if(next){ next.focus(); next.setSelectionRange(next.value.length, next.value.length); } app?.classList.remove('is-typing'); }); }, 140); });
+document.addEventListener('keydown', async (e) => { if(dateRangeOpen && e.key === 'Escape'){ dateRangeOpen = false; if(snapshot?.ok) render(snapshot, { windowLayout: false, instantChart: true, deferHeavy: true, partial: true }); return; } if(e.key === 'Enter' && e.target.closest('[data-saved-session-name]')){ saveCurrentSessionView(); if(snapshot?.ok) render(snapshot); return; } if(bulkMetaOpen && e.key === 'Escape'){ bulkMetaOpen = false; bulkMetaTagsDraft = ''; bulkMetaNoteDraft = ''; if(snapshot?.ok) render(snapshot); return; } if(!renameSessionKey) return; if(e.key === 'Escape'){ renameSessionKey = ''; renameDraft = ''; if(snapshot?.ok) render(snapshot); } if(e.key === 'Enter' && e.target.closest('[data-rename-input]')){ await saveRenameSheet(); } });
 ipcRenderer.on('dashboard:snapshot', (_e, s) => { suppressChartIntro = true; render(s, { instantChart: true, windowLayout: false }); suppressChartIntro = false; setRefreshState(TXT.realtime); setTimeout(() => setRefreshState(''), 900); });
 window.addEventListener('resize', () => {
   if(!snapshot?.ok || workspaceMode !== 'analytics' || layoutMode === 'compact') return;
