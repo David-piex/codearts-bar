@@ -71,7 +71,6 @@ function setDateRangeQuick(key){
     const days = Math.max(1, Number(String(key).replace('d', '')) || 1);
     start = now - days * 86400000;
   }
-  dateRangeFollowNow = false;
   dateRangeDraftStart = start;
   dateRangeDraftEnd = end;
   dateRangeMonth = monthStart(start);
@@ -93,7 +92,6 @@ function updateDateRangeDraft(which, part, value){
   const dateValue = part === 'date' ? value : dateInputValue(base);
   const timeValue = part === 'time' ? value : timeInputValue(base);
   const next = composeDateTime(dateValue, timeValue, base);
-  if(!isStart) dateRangeFollowNow = false;
   if(isStart) dateRangeDraftStart = next; else dateRangeDraftEnd = next;
   dateRangeMonth = monthStart(isStart ? dateRangeDraftStart : dateRangeDraftEnd);
 }
@@ -107,7 +105,6 @@ function chooseCalendarDay(dayMs){
     dateRangeDraftStart = b.getTime();
     dateRangeFocus = 'end';
   } else {
-    dateRangeFollowNow = false;
     dateRangeDraftEnd = b.getTime();
     dateRangeFocus = 'start';
   }
@@ -149,12 +146,10 @@ function rangeHtml(){
     const since = sinceForRange(snapshot || { timestamp: now }, rangeFilter);
     customDateStart = since || now - 86400000;
     customDateEnd = rangeFilter === 'today' ? now : now;
-    dateRangeFollowNow = false;
     rangeFilter = 'customTime';
     localStorage.setItem('statsRange', rangeFilter);
     localStorage.setItem('customDateStart', String(customDateStart));
     localStorage.setItem('customDateEnd', String(customDateEnd));
-    localStorage.setItem('dateRangeFollowNow', '0');
   }
   const r = normalizeCustomDateRange(snapshot || {});
   const summary = `${dateFullLabel(r.start)} - ${dateFullLabel(r.end)}`;

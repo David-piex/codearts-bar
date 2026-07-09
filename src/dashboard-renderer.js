@@ -13,8 +13,6 @@ let dateRangeOpen = false;
 let dateRangeDraftStart = 0;
 let dateRangeDraftEnd = 0;
 let dateRangeFocus = 'start';
-let dateRangeFollowNow = false;
-try { localStorage.setItem('dateRangeFollowNow', '0'); } catch {}
 let dateRangeMonth = Number(localStorage.getItem('dateRangeMonth') || 0) || 0;
 let tableTab = localStorage.getItem('statsTableTab') || 'requests';
 let workspaceMode = localStorage.getItem('workspaceMode') || 'analytics';
@@ -69,6 +67,8 @@ let sessionTablePage = Math.max(0, Number(localStorage.getItem('sessionTablePage
 let requestPageLoading = false;
 let sessionPageLoading = false;
 let sessionPageCache = { key: '', items: null, total: 0, page: 0, timestamp: 0 };
+let sessionRequestPageCache = new Map();
+let sessionRequestPageInflight = new Map();
 let sessionPageRefreshTimer = null;
 let lastRenderPerf = null;
 let currentRenderPerf = null;
@@ -151,12 +151,12 @@ function rendererPartPath(name){
 function readRendererPart(name){ return require('node:fs').readFileSync(rendererPartPath(name), 'utf8'); }
 
 eval(readRendererPart('dashboard/i18n.js'));
-eval(['dashboard-state.js','dashboard-date-range.js','dashboard/analytics/analytics-core.js','dashboard/analytics/analytics-agent-idle.js','dashboard-analytics.js','dashboard/chart/chart-series.js','dashboard/chart/chart-legend.js','dashboard/chart/chart-canvas.js','dashboard/chart/chart-tooltip.js','dashboard/chart/chart-hover.js','dashboard-chart.js','dashboard-sessions.js'].map(readRendererPart).join('\n'));
-eval(['dashboard/dashboard-shell.js','dashboard/dashboard-error-state.js','dashboard/dashboard-bootstrap.js'].map(readRendererPart).join('\n'));
+eval(['core/cacheMetrics.js','dashboard-state.js','dashboard-date-range.js','dashboard/analytics/analytics-core.js','dashboard/analytics/analytics-agent-idle.js','dashboard-analytics.js','dashboard/chart/chart-series.js','dashboard/chart/chart-legend.js','dashboard/chart/chart-canvas.js','dashboard/chart/chart-tooltip.js','dashboard/chart/chart-hover.js','dashboard-chart.js','dashboard-sessions.js'].map(readRendererPart).join('\n'));
+eval(['dashboard/dashboard-shell.js','dashboard/dashboard-error-state.js','dashboard/dashboard-diagnostics.js','dashboard/dashboard-bootstrap.js'].map(readRendererPart).join('\n'));
 let lastCommittedHtml = '';
 let lastRenderCost = 0;
 eval(readRendererPart('dashboard/dashboard-perf.js'));
-eval(readRendererPart('dashboard/dashboard-slots.js'));
+eval(['dashboard/dashboard-slots.js','dashboard/slots/slot-core.js','dashboard/slots/analytics-slots.js','dashboard/slots/data-page-slots.js','dashboard/slots/session-slots.js','dashboard/slots/perf-panel-slot.js'].map(readRendererPart).join('\n'));
 function mergeRenderOptions(prev = {}, next = {}){
   prev = prev || {};
   next = next || {};
@@ -305,4 +305,4 @@ function bindIncrementalTables(){
     }
   });
 }
-eval(['dashboard/events/date-events.js','dashboard/dashboard-events.js','dashboard/events/window-events.js'].map(readRendererPart).join('\n'));
+eval(['dashboard/events/date-events.js','dashboard/events/chrome-events.js','dashboard/events/session-events.js','dashboard/events/analytics-events.js','dashboard/events/form-events.js','dashboard/dashboard-events.js','dashboard/events/window-events.js'].map(readRendererPart).join('\n'));

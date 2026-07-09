@@ -8,10 +8,21 @@ const { spawn } = require('node:child_process');
 const { getSnapshotWithCache, snapshotToText, errorSnapshot, fmtInt } = require('./codeartsData');
 const { loadSettings, saveSettings } = require('./settings');
 const { diagnose } = require('./diagnose');
-const { buildHealth, notificationEvents } = require('./health');
+const { notificationEvents } = require('./health');
 const localProvider = require('./providers/codeartsLocal');
-
-const SESSION_PAGE_SIZE = 48;
+const dashboardLight = require('./main/dashboard-light');
+const {
+  SESSION_PAGE_SIZE,
+  usageStatusFromSummary,
+  applyUsageDerivedFields,
+  dashboardAggregatePayload,
+  pageBounds,
+  matchesPageFilters,
+  buildDashboardPreviewSnapshot,
+  lightUpdatedAt,
+  buildInitialLightSnapshot,
+  buildDashboardLightPair,
+} = dashboardLight;
 
 let tray = null;
 let lastSnapshot = null;
@@ -26,6 +37,8 @@ let watchFingerprint = '';
 let isQuitting = false;
 let forcedExitTimer = null;
 let trayHintShown = false;
+let fullRefreshInFlight = null;
+let lightRefreshInFlight = null;
 
 function colorForLevel(level) { return level === 'danger' ? '#ff4d4f' : level === 'warning' ? '#faad14' : '#16a34a'; }
 function makeTrayIcon(snapshot) {
@@ -47,12 +60,6 @@ function makeTrayIcon(snapshot) {
 }
 function menuItem(label, sublabel) { return { label: sublabel ? `${label}    ${sublabel}` : label, enabled: false }; }
 function trim(text, max) { text = String(text || '').replace(/\s+/g, ' ').trim(); return text.length > max ? `${text.slice(0, max - 1)}…` : text; }
-function usageStatusFromSummary(usage = {}, settings = loadSettings()) {
-  const dailyLimit = Number(settings.dailyLimit || process.env.CODEARTS_BAR_DAILY_LIMIT || 200000);
-  const today = usage.today || {};
-  const usagePercent = dailyLimit > 0 ? Math.min(999, Math.max(0, (Number(today.total || 0) / dailyLimit) * 100)) : 0;
-  return { label: `${Math.round(usagePercent)}%`, usagePercent, level: usagePercent >= 90 ? 'danger' : usagePercent >= 70 ? 'warning' : 'ok' };
-}
 function traySummaryText(snapshot) {
   if (!snapshot || !snapshot.ok) return snapshot ? `\u7801\u9053 Bar\n${snapshot.error}` : '\u7801\u9053 Bar';
   const u = snapshot.usage || {};
@@ -209,30 +216,72 @@ function quitApp() {
 }
 
 async function refreshNow() {
-  const previousLevel = lastSnapshot && lastSnapshot.ok ? lastSnapshot.status.level : null;
-  const previousHealth = lastSnapshot && lastSnapshot.ok ? lastSnapshot.health : null;
-  try {
-    lastSnapshot = await getSnapshotWithCache(loadSettings());
-    lastDashboardSnapshot = buildDashboardPreviewSnapshot(lastSnapshot);
-  }
-  catch (error) { appendLog('error', 'refresh', error.message, { stack: error.stack }); lastSnapshot = errorSnapshot(error); lastDashboardSnapshot = lastSnapshot; }
-  updateTray(lastSnapshot);
-  if (lastSnapshot.ok && loadSettings().notifyDanger && previousLevel !== 'danger' && lastSnapshot.status.level === 'danger' && Notification.isSupported()) {
-    new Notification({ title: '码道 Bar', body: `今日 token 使用偏高：${lastSnapshot.status.label}` }).show();
-  }
-  const settings = loadSettings();
-  if (lastSnapshot.ok && settings.notifyHealth && Notification.isSupported()) {
-    for (const issue of notificationEvents(previousHealth, lastSnapshot.health).slice(0, 2)) {
-      new Notification({ title: `码道 Bar · ${issue.level}`, body: issue.message }).show();
+  if (fullRefreshInFlight) return fullRefreshInFlight;
+  fullRefreshInFlight = (async () => {
+    const previousLevel = lastSnapshot && lastSnapshot.ok ? lastSnapshot.status.level : null;
+    const previousHealth = lastSnapshot && lastSnapshot.ok ? lastSnapshot.health : null;
+    try {
+      lastSnapshot = await getSnapshotWithCache(loadSettings());
+      applyUsageDerivedFields(lastSnapshot, loadSettings(), Number(lastSnapshot.timestamp || Date.now()));
+      lastDashboardSnapshot = buildDashboardPreviewSnapshot(lastSnapshot);
     }
-  }
-  pushDashboard();
-  refreshOfficialInBackground();
+    catch (error) { appendLog('error', 'refresh', error.message, { stack: error.stack }); lastSnapshot = errorSnapshot(error); lastDashboardSnapshot = lastSnapshot; }
+    updateTray(lastSnapshot);
+    if (lastSnapshot.ok && loadSettings().notifyDanger && previousLevel !== 'danger' && lastSnapshot.status.level === 'danger' && Notification.isSupported()) {
+      new Notification({ title: '\u7801\u9053 Bar', body: '\u4eca\u65e5 token \u4f7f\u7528\u504f\u9ad8\uff1a' + lastSnapshot.status.label }).show();
+    }
+    const settings = loadSettings();
+    if (lastSnapshot.ok && settings.notifyHealth && Notification.isSupported()) {
+      for (const issue of notificationEvents(previousHealth, lastSnapshot.health).slice(0, 2)) {
+        new Notification({ title: '\u7801\u9053 Bar - ' + issue.level, body: issue.message }).show();
+      }
+    }
+    pushDashboard();
+    refreshOfficialInBackground();
+    return lastSnapshot;
+  })().finally(() => { fullRefreshInFlight = null; });
+  return fullRefreshInFlight;
 }
 
+async function refreshLight(options = {}) {
+  if (lightRefreshInFlight) return lightRefreshInFlight;
+  lightRefreshInFlight = (async () => {
+    const previousLevel = lastSnapshot && lastSnapshot.ok ? lastSnapshot.status?.level : null;
+    const previousHealth = lastSnapshot && lastSnapshot.ok ? lastSnapshot.health : null;
+    try {
+      const next = await buildInitialLightSnapshot({ timestamp: Date.now(), ...options });
+      lastSnapshot = next;
+      lastDashboardSnapshot = next;
+    } catch (error) {
+      appendLog('warn', 'refresh:light-initial', error.message, { stack: error.stack });
+      try {
+        lastSnapshot = await getSnapshotWithCache(loadSettings());
+        applyUsageDerivedFields(lastSnapshot, loadSettings(), Number(lastSnapshot.timestamp || Date.now()));
+        lastDashboardSnapshot = buildDashboardPreviewSnapshot(lastSnapshot);
+      } catch (fullError) {
+        appendLog('error', 'refresh', fullError.message, { stack: fullError.stack });
+        lastSnapshot = errorSnapshot(fullError);
+        lastDashboardSnapshot = lastSnapshot;
+      }
+    }
+    updateTray(lastSnapshot);
+    const settings = loadSettings();
+    if (lastSnapshot?.ok && settings.notifyDanger && previousLevel !== 'danger' && lastSnapshot.status?.level === 'danger' && Notification.isSupported()) {
+      new Notification({ title: '\u7801\u9053 Bar', body: '\u4eca\u65e5 token \u4f7f\u7528\u504f\u9ad8\uff1a' + lastSnapshot.status.label }).show();
+    }
+    if (lastSnapshot?.ok && settings.notifyHealth && Notification.isSupported()) {
+      for (const issue of notificationEvents(previousHealth, lastSnapshot.health).slice(0, 2)) {
+        new Notification({ title: '\u7801\u9053 Bar - ' + issue.level, body: issue.message }).show();
+      }
+    }
+    pushDashboard();
+    return lastSnapshot;
+  })().finally(() => { lightRefreshInFlight = null; });
+  return lightRefreshInFlight;
+}
 
 async function refreshTraySummaryOnly() {
-  if (!lastSnapshot || !lastSnapshot.ok) return refreshNow();
+  if (!lastSnapshot || !lastSnapshot.ok) return refreshLight();
   const previousLevel = lastSnapshot.status?.level || null;
   const settings = loadSettings();
   const timestamp = Date.now();
@@ -249,6 +298,7 @@ async function refreshTraySummaryOnly() {
         status: { ...(lastSnapshot.status || {}), ...usageStatusFromSummary(summary.usage, settings) },
         freshness: { stale: false, source: 'summary', ageMs: 0 },
       };
+      applyUsageDerivedFields(lastSnapshot, settings, timestamp);
     }
   } catch (error) {
     appendLog('warn', 'tray:summary', error.message);
@@ -260,7 +310,7 @@ async function refreshTraySummaryOnly() {
   return lastSnapshot;
 }
 async function refreshLightAndPush(reason = 'watch') {
-  if (!lastSnapshot || !lastSnapshot.ok) return refreshNow();
+  if (!lastSnapshot || !lastSnapshot.ok) return refreshLight({ reason });
   try {
     await buildDashboardLightSnapshot({ reason, timestamp: Date.now() });
   } catch (error) {
@@ -431,43 +481,6 @@ function patchSessionInMemory(session, patch = {}) {
 async function refreshOfficialInBackground() {
   return;
 }
-function pageBounds(payload = {}) {
-  const limit = Math.max(1, Math.min(500, Number(payload.limit || 100)));
-  const offset = Math.max(0, Number(payload.offset || 0));
-  return { limit, offset };
-}
-function normalizePageRange(range = {}) {
-  const start = Number(range.start || 0);
-  const end = Number(range.end || 0);
-  return {
-    start: Number.isFinite(start) && start > 0 ? start : 0,
-    end: Number.isFinite(end) && end > 0 ? end : 0,
-  };
-}
-function matchesPageFilters(item, payload = {}) {
-  if (!item) return false;
-  if (payload.source && payload.source !== 'all' && String(item.source || '') !== String(payload.source)) return false;
-  const { start, end } = normalizePageRange(payload.range);
-  const time = Number(item.time || item.updatedAt || item.createdAt || 0);
-  if (start && time && time < start) return false;
-  if (end && time && time > end) return false;
-  const query = String(payload.query || '').trim().toLowerCase();
-  if (query) {
-    const text = [
-      item.id,
-      item.sessionId,
-      item.sessionTitle,
-      item.title,
-      item.directory,
-      item.provider,
-      item.model,
-      item.sourceLabel,
-      item.source,
-    ].filter(Boolean).join(' ').toLowerCase();
-    if (!text.includes(query)) return false;
-  }
-  return true;
-}
 function paginateSnapshotList(list, payload = {}) {
   const { limit, offset } = pageBounds(payload);
   const filtered = (list || []).filter((item) => matchesPageFilters(item, payload));
@@ -482,11 +495,11 @@ function paginateSnapshotList(list, payload = {}) {
   };
 }
 ipcMain.handle('settings:get', () => loadSettings());
-ipcMain.handle('settings:set', async (_event, next) => { const saved = saveSettings(next); scheduleRefresh(); scheduleDbWatch(); await refreshNow(); return saved; });
+ipcMain.handle('settings:set', async (_event, next) => { const saved = saveSettings(next); scheduleRefresh(); scheduleDbWatch(); await refreshLight(); return saved; });
 ipcMain.handle('diagnose:get', async () => diagnose());
 ipcMain.handle('auth:get', async () => ({}));
 ipcMain.handle('dashboard:getSnapshot', async (_event, payload = {}) => {
-  if (!lastSnapshot || !lastSnapshot.ok) return lastDashboardSnapshot || lastSnapshot || errorSnapshot(new Error('尚未刷新'));
+  if (!lastSnapshot || !lastSnapshot.ok) return lastDashboardSnapshot || lastSnapshot || await buildInitialLightSnapshot(payload);
   if (payload && Object.keys(payload).length) return buildDashboardLightSnapshot(payload);
   return lastDashboardSnapshot || buildDashboardPreviewSnapshot(lastSnapshot);
 });
@@ -495,6 +508,23 @@ ipcMain.handle('dashboard:getRequestsPage', async (_event, payload = {}) => {
   catch (error) {
     appendLog('warn', 'dashboard:getRequestsPage', error.message, { payload });
     const page = paginateSnapshotList((lastSnapshot && lastSnapshot.requestLog) || [], payload);
+    page.fallback = 'snapshot';
+    page.error = error.message;
+    return page;
+  }
+});
+ipcMain.handle('dashboard:getSessionRequestsPage', async (_event, payload = {}) => {
+  try { return await localProvider.getSessionRequestsPage(payload); }
+  catch (error) {
+    appendLog('warn', 'dashboard:getSessionRequestsPage', error.message, { payload });
+    const sessionId = String(payload.sessionId || '').trim();
+    const source = String(payload.source || 'all').toLowerCase();
+    const filtered = ((lastSnapshot && lastSnapshot.requestLog) || []).filter((item) => {
+      if (sessionId && item.sessionId !== sessionId) return false;
+      if (source && source !== 'all' && String(item.source || '').toLowerCase() !== source) return false;
+      return true;
+    });
+    const page = paginateSnapshotList(filtered, payload);
     page.fallback = 'snapshot';
     page.error = error.message;
     return page;
@@ -511,24 +541,6 @@ ipcMain.handle('dashboard:getSessionsPage', async (_event, payload = {}) => {
   }
 });
 
-function dashboardAggregatePayload(payload = {}) {
-  const settings = loadSettings();
-  return {
-    ...payload,
-    dailyLimit: Number(payload.dailyLimit || settings.dailyLimit || process.env.CODEARTS_BAR_DAILY_LIMIT || 200000),
-    windowHours: Number(payload.windowHours || settings.windowHours || process.env.CODEARTS_BAR_WINDOW_HOURS || 24),
-    timestamp: Number(payload.timestamp || Date.now()),
-  };
-}
-function trendScopeKeyForPayload(payload = {}, bucketMs = 3600000) {
-  const range = payload.range || {};
-  const startRaw = Number(payload.start ?? range.start ?? 0) || 0;
-  const endRaw = Number(payload.end ?? range.end ?? payload.timestamp ?? Date.now()) || 0;
-  const safeBucketMs = Math.max(1, Number(bucketMs || payload.bucketMs || 3600000));
-  const start = startRaw > 0 ? Math.floor(startRaw / safeBucketMs) * safeBucketMs : 0;
-  const end = endRaw > 0 ? Math.ceil(endRaw / safeBucketMs) * safeBucketMs : 0;
-  return `${payload.source || 'all'}|${payload.model || 'all'}|${safeBucketMs}|${start}|${end}`;
-}
 function snapshotUsageFallback(scope) {
   const snap = lastSnapshot || null;
   if (!snap || !snap.ok) return null;
@@ -540,122 +552,17 @@ function snapshotUsageFallback(scope) {
   return null;
 }
 
-function defaultRequestPagePayload(payload = {}) {
-  return {
-    limit: 100,
-    offset: 0,
-    source: payload.source || 'all',
-    model: payload.model || 'all',
-    range: payload.range || {},
-    query: payload.query || '',
-  };
-}
-function defaultSessionPagePayload(payload = {}) {
-  return {
-    limit: SESSION_PAGE_SIZE,
-    offset: 0,
-    source: payload.source || 'all',
-    status: payload.status || 'active',
-    project: payload.project || 'all',
-    range: payload.range || {},
-    query: payload.sessionQuery || payload.query || '',
-  };
-}
-function pageEnvelope(page = {}, payload = {}, fallbackItems = [], fallbackTotal = 0) {
-  const items = Array.isArray(page.items) ? page.items : fallbackItems;
-  const total = Number(page.total ?? fallbackTotal ?? items.length);
-  const limit = Number(page.limit || payload.limit || items.length || 1);
-  const offset = Number(page.offset || payload.offset || 0);
-  return {
-    limit,
-    offset,
-    total,
-    hasMore: Boolean(page.hasMore ?? (offset + items.length < total)),
-    items,
-    payload,
-    snapshotTimestamp: Number(page.snapshotTimestamp || Date.now()),
-  };
-}
-function buildDashboardPreviewSnapshot(full = lastSnapshot, payload = {}) {
-  if (!full || !full.ok) return full;
-  const requestPayload = defaultRequestPagePayload(payload);
-  const sessionPayload = defaultSessionPagePayload(payload);
-  const requestItems = ((full.requestLog || []).filter((item) => matchesPageFilters(item, requestPayload))).slice(0, requestPayload.limit);
-  const sessionItems = ((full.sessions || []).filter((item) => matchesPageFilters(item, sessionPayload))).slice(0, sessionPayload.limit);
-  const requestTotal = Number(full.requestTotal || (full.requestLog || []).length || requestItems.length);
-  const sessionTotal = Number(full.sessionTotal || full.sessionSummary?.active || full.sessionSummary?.total || (full.sessions || []).length || sessionItems.length);
-  return {
-    ...full,
-    requestLog: requestItems,
-    sessions: sessionItems,
-    requestTotal,
-    sessionTotal,
-    requestPage: pageEnvelope({}, requestPayload, requestItems, requestTotal),
-    sessionPage: pageEnvelope({}, sessionPayload, sessionItems, sessionTotal),
-    lightRefresh: true,
-    freshness: { ...(full.freshness || {}), source: full.freshness?.source || 'preview' },
-  };
-}
-
-
-function lightUpdatedAt(ts = Date.now()) {
-  try { return new Date(ts).toLocaleString('zh-CN', { hour12: false }); }
-  catch { return String(ts); }
-}
 async function buildDashboardLightSnapshot(payload = {}) {
   if (!lastSnapshot || !lastSnapshot.ok) {
-    await refreshNow();
+    await refreshLight(payload);
     return lastDashboardSnapshot || lastSnapshot;
   }
-  const fullBase = lastSnapshot;
-  const timestamp = Number(payload.timestamp || Date.now());
-  const basePayload = dashboardAggregatePayload({ ...payload, timestamp });
-  const dayMode = Number(basePayload.bucketMs || 3600000) >= 86400000;
-  const requestPayload = defaultRequestPagePayload(payload);
-  const sessionPayload = defaultSessionPagePayload(payload);
-  const [aggregates, requestsPage, sessionsPage] = await Promise.all([
-    localProvider.getDashboardAggregates(basePayload).catch((error) => ({ ok: false, error: error.message })),
-    localProvider.getRequestsPage(requestPayload).catch((error) => ({ ok: false, error: error.message })),
-    localProvider.getSessionsPage(sessionPayload).catch((error) => ({ ok: false, error: error.message })),
-  ]);
-  const settings = loadSettings();
-  const fullSnap = {
-    ...fullBase,
-    timestamp,
-    updatedAt: lightUpdatedAt(timestamp),
-    freshness: { stale: false, source: 'light', ageMs: 0 },
-  };
-  if (aggregates?.ok && aggregates.usage) {
-    fullSnap.usage = aggregates.usage;
-    fullSnap.status = { ...(fullSnap.status || {}), ...usageStatusFromSummary(aggregates.usage, settings) };
-  }
-  if (aggregates?.ok && Array.isArray(aggregates.buckets)) {
-    fullSnap.trends = { ...(fullSnap.trends || {}) };
-    if (dayMode) fullSnap.trends.daily14d = aggregates.buckets;
-    else fullSnap.trends.hourly24h = aggregates.buckets;
-    fullSnap.trendsSource = 'db-light';
-    fullSnap.trendsScope = trendScopeKeyForPayload(basePayload, dayMode ? 86400000 : 3600000);
-    fullSnap.aggregateScope = fullSnap.trendsScope;
-    fullSnap.aggregateAt = timestamp;
-  }
-  if (aggregates?.ok && Array.isArray(aggregates.sourceStats)) fullSnap.sourceStats = aggregates.sourceStats;
-  if (aggregates?.ok && Array.isArray(aggregates.modelStats)) fullSnap.models = aggregates.modelStats.slice(0, 12);
-  if (aggregates?.ok && aggregates.sessionSummary) fullSnap.sessionSummary = aggregates.sessionSummary;
-  delete fullSnap.lightRefresh;
+  const { fullSnap, dashboardSnap } = await buildDashboardLightPair(lastSnapshot, payload);
   lastSnapshot = fullSnap;
-  const dashboardSnap = {
-    ...fullSnap,
-    requestLog: requestsPage?.ok && Array.isArray(requestsPage.items) ? requestsPage.items : [],
-    sessions: sessionsPage?.ok && Array.isArray(sessionsPage.items) ? sessionsPage.items : [],
-    requestTotal: Number(requestsPage?.total || 0),
-    sessionTotal: Number(sessionsPage?.total || 0),
-    requestPage: requestsPage?.ok ? pageEnvelope(requestsPage, requestPayload, requestsPage.items || [], requestsPage.total || 0) : null,
-    sessionPage: sessionsPage?.ok ? pageEnvelope(sessionsPage, sessionPayload, sessionsPage.items || [], sessionsPage.total || 0) : null,
-    lightRefresh: true,
-  };
   lastDashboardSnapshot = dashboardSnap;
   return dashboardSnap;
 }
+
 ipcMain.handle('dashboard:getSummary', async (_event, payload = {}) => {
   try { return await localProvider.getSummary(dashboardAggregatePayload(payload)); }
   catch (error) {
@@ -765,7 +672,7 @@ ipcMain.handle('dashboard:renameSession', async (_event, session, title) => {
 function singleInstance() {
   const gotLock = app.requestSingleInstanceLock();
   if (!gotLock) { app.exit(0); return false; }
-  app.on('second-instance', () => { refreshNow(); openDashboardWindow(); });
+  app.on('second-instance', () => { refreshLight(); openDashboardWindow(); });
   return true;
 }
 if (singleInstance()) {
@@ -777,7 +684,7 @@ if (singleInstance()) {
     tray.on('double-click', () => restoreDashboardWindow());
     tray.on('right-click', () => showTrayMenu());
     refreshTrayMenu();
-    refreshNow();
+    refreshLight();
     scheduleRefresh();
     scheduleDbWatch();
   });
@@ -795,4 +702,3 @@ if (singleInstance()) {
   });
   app.on('will-quit', cleanupRuntime);
 }
-

@@ -998,21 +998,6 @@
       letter-spacing:-.02em;
     }
     .date-range-field input[type="time"] { text-align:center; }
-    .date-range-follow {
-      display:flex;
-      align-items:center;
-      gap:8px;
-      color:#6b7280;
-      font-size:12px;
-      font-weight:760;
-      user-select:none;
-    }
-    .date-range-follow input {
-      width:19px;
-      height:19px;
-      margin:0;
-      accent-color:#0a84ff;
-    }
     .date-range-actions {
       display:grid;
       grid-template-columns:1fr 1.55fr;

@@ -128,7 +128,7 @@ function usageSelect(prefix, predicate = '1=1') {
 }
 
 function usageFromRow(row = {}, prefix) {
-  return {
+  return agg.cacheMetrics.withCacheHitMetrics({
     total: sqlNumber(row[`${prefix}_total`]),
     input: sqlNumber(row[`${prefix}_input`]),
     output: sqlNumber(row[`${prefix}_output`]),
@@ -137,11 +137,11 @@ function usageFromRow(row = {}, prefix) {
     cacheWrite: sqlNumber(row[`${prefix}_cacheWrite`]),
     messages: sqlNumber(row[`${prefix}_messages`]),
     errors: sqlNumber(row[`${prefix}_errors`]),
-  };
+  });
 }
 
 function rowUsage(row = {}) {
-  return {
+  return agg.cacheMetrics.withCacheHitMetrics({
     total: sqlNumber(row.total),
     input: sqlNumber(row.input),
     output: sqlNumber(row.output),
@@ -150,7 +150,7 @@ function rowUsage(row = {}) {
     cacheWrite: sqlNumber(row.cacheWrite),
     messages: sqlNumber(row.messages),
     errors: sqlNumber(row.errors),
-  };
+  });
 }
 
 function summaryForSourceSql({ source, db, tables, queryAll, payload, windows }) {
@@ -201,7 +201,7 @@ function trendForSourceSql({ db, tables, queryAll, payload, trendRange }) {
     from bucketed
     group by bucket
     order by bucket asc`;
-  return queryAll(db, sql, params).map((row) => ({
+  return queryAll(db, sql, params).map((row) => agg.cacheMetrics.withCacheHitMetrics({
     start: sqlNumber(row.start),
     end: sqlNumber(row.end),
     total: sqlNumber(row.total),

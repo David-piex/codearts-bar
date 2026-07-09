@@ -66,12 +66,12 @@ function emptyMetric(){ return TXT.noData || '\u65e0\u6570\u636e'; }
 function ms(v){ if(v == null || v === '') return emptyMetric(); v = Number(v); if(!Number.isFinite(v)) return emptyMetric(); if(v < 1000) return `${Math.round(v)}ms`; return `${(v / 1000).toFixed(v < 10000 ? 2 : 1)}s`; }
 function rate(v){ if(v == null || v === '') return emptyMetric(); v = Number(v); return Number.isFinite(v) ? `${v.toFixed(v < 10 ? 2 : 1)} token/s` : emptyMetric(); }
 function percent(v){ if(v == null || v === '') return emptyMetric(); v = Number(v); if(!Number.isFinite(v)) return emptyMetric(); return `${v.toFixed(v > 0 && v < 10 ? 1 : 0)}%`; }
-function cacheHitDenominator(st){ return Number(st?.input || 0) + Number(st?.cacheRead || 0); }
-function cacheHitRate(st){ const read = Number(st?.cacheRead || 0); const total = cacheHitDenominator(st); return total > 0 ? (read / total) * 100 : null; }
+function cacheHitDenominator(st){ return CacheMetrics.cacheHitDenominator(st); }
+function cacheHitRate(st){ return CacheMetrics.cacheHitRatePercent(st); }
 function cacheHitText(st){ return percent(cacheHitRate(st)); }
-function cacheHitBasis(st){ const read = Number(st?.cacheRead || 0); const total = cacheHitDenominator(st); return `${compact(read)} / ${compact(total)}`; }
+function cacheHitBasis(st){ const basis = CacheMetrics.cacheHitBasis(st); return `${compact(basis.cacheRead)} / ${compact(basis.denominator)}`; }
 function cacheTokenTotal(st){ return Number(st?.cacheRead || 0) + Number(st?.cacheWrite || 0); }
-function cacheCoverageRate(st){ const read = Number(st?.cacheRead || 0); const input = Number(st?.input || 0); const total = read + input; return total > 0 ? (read / total) * 100 : null; }
+function cacheCoverageRate(st){ return CacheMetrics.cacheCoverageRatePercent(st); }
 function cacheReuseValue(st){ const read = Number(st?.cacheRead || 0); const write = Number(st?.cacheWrite || 0); if(write > 0) return read / write; if(read > 0) return Infinity; return null; }
 function multiple(v){ if(v == null || v === '') return emptyMetric(); if(v === Infinity) return '\u221ex'; v = Number(v); if(!Number.isFinite(v)) return emptyMetric(); return `${v.toFixed(v > 0 && v < 10 ? 2 : 1)}x`; }
 function multipleUi(v){ if(v == null || v === '') return emptyMetric(); if(v === Infinity) return '\u9ad8\u590d\u7528'; return multiple(v); }

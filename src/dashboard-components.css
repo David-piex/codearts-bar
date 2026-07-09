@@ -204,6 +204,63 @@ tr:hover td,
 .commercial-error-state span { color: #667085; word-break: break-word; }
 .commercial-error-state em { color: #8a93a3; font-style: normal; }
 
+.diagnostics-notice {
+  width: min(1180px, calc(100vw - 50px));
+  margin: 0 auto 14px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: start;
+  padding: 14px;
+  border: 1px solid rgba(148, 163, 184, .22);
+  border-radius: var(--radius-lg, 18px);
+  background: linear-gradient(180deg, rgba(255, 255, 255, .82), rgba(248, 250, 252, .72));
+  box-shadow: var(--shadow-card, 0 18px 48px rgba(15, 23, 42, .08));
+  contain: layout paint;
+}
+.diagnostics-notice.warn { border-color: rgba(245, 158, 11, .24); background: linear-gradient(180deg, rgba(255, 252, 242, .88), rgba(255, 255, 255, .72)); }
+.diagnostics-notice.bad { border-color: rgba(239, 68, 68, .22); background: linear-gradient(180deg, rgba(255, 246, 246, .9), rgba(255, 255, 255, .72)); }
+.diagnostics-orb {
+  width: 34px;
+  height: 34px;
+  border-radius: 13px;
+  display: grid;
+  place-items: center;
+  font-weight: 900;
+  color: #2563eb;
+  background: rgba(37, 99, 235, .10);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.9);
+}
+.diagnostics-notice.warn .diagnostics-orb { color: #b45309; background: rgba(245, 158, 11, .13); }
+.diagnostics-notice.bad .diagnostics-orb { color: #dc2626; background: rgba(239, 68, 68, .12); }
+.diagnostics-main { display: grid; gap: 10px; min-width: 0; }
+.diagnostics-main > div { display: grid; gap: 2px; }
+.diagnostics-main b { color: #172033; font-size: 14px; letter-spacing: -.01em; }
+.diagnostics-main span { color: #64748b; font-size: 12px; line-height: 1.45; }
+.diagnostics-main ul { list-style: none; padding: 0; margin: 0; display: grid; gap: 6px; }
+.diagnostics-main li {
+  display: grid;
+  grid-template-columns: minmax(130px, 220px) minmax(0, 1fr);
+  gap: 10px;
+  align-items: baseline;
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: rgba(255,255,255,.58);
+}
+.diagnostics-main li b { font-size: 12px; }
+.diagnostics-main li span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.diagnostics-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+.diagnostics-actions button {
+  height: var(--control-height, 32px);
+  border-radius: 10px;
+  border: 1px solid rgba(148, 163, 184, .28);
+  background: rgba(255,255,255,.72);
+  color: #344054;
+  font-weight: 800;
+  padding: 0 11px;
+}
+.diagnostics-actions button:hover { background: #fff; border-color: rgba(47,125,246,.34); }
+
 .table-scroll table td,
 .table-scroll table th {
   height: 36px;
@@ -405,4 +462,37 @@ body.view-switching {
 .chart-card-lean .chart-wrap,
 #usageChart {
   contain:layout paint style;
+}
+
+
+/* 1.16.22 compositor budget: keep native polish, but drop expensive paint during resize/zoom. */
+body.is-resizing,
+body.is-zooming,
+body.view-switching {
+  --native-shadow: 0 1px 0 rgba(255,255,255,.72) inset, 0 6px 14px rgba(27,39,61,.026);
+  --native-shadow-soft: 0 1px 0 rgba(255,255,255,.72) inset, 0 4px 10px rgba(27,39,61,.022);
+  --shadow: 0 1px 0 rgba(255,255,255,.72) inset, 0 6px 14px rgba(27,39,61,.026);
+  --soft: 0 1px 0 rgba(255,255,255,.72) inset, 0 3px 8px rgba(27,39,61,.022);
+}
+body.is-resizing :where(.summary-card,.chart-card,.table-card,.source-card,.usage-total-board,.agent-rhythm-card,.analytics-advanced-shell,.session-simple-shell,.session-overview-card,.session-manager,.session-inspector,.filters,.tabs,.date-range-popover,.chart-tip,.perf-panel),
+body.is-zooming :where(.summary-card,.chart-card,.table-card,.source-card,.usage-total-board,.agent-rhythm-card,.analytics-advanced-shell,.session-simple-shell,.session-overview-card,.session-manager,.session-inspector,.filters,.tabs,.date-range-popover,.chart-tip,.perf-panel),
+body.view-switching :where(.summary-card,.chart-card,.table-card,.source-card,.usage-total-board,.agent-rhythm-card,.analytics-advanced-shell,.session-simple-shell,.session-overview-card,.session-manager,.session-inspector,.filters,.tabs,.date-range-popover,.chart-tip,.perf-panel) {
+  -webkit-backdrop-filter:none !important;
+  backdrop-filter:none !important;
+  filter:none !important;
+  box-shadow:var(--native-shadow-soft, 0 1px 0 rgba(255,255,255,.72) inset, 0 4px 10px rgba(27,39,61,.022)) !important;
+  transition:none !important;
+  animation:none !important;
+}
+body.is-resizing :where(.analytics-advanced-shell,.table-card,.session-simple-shell,.session-inspector),
+body.is-zooming :where(.analytics-advanced-shell,.table-card,.session-simple-shell,.session-inspector),
+body.view-switching :where(.analytics-advanced-shell,.table-card,.session-simple-shell,.session-inspector) {
+  contain:layout paint style;
+  content-visibility:auto;
+}
+.date-range-popover {
+  contain:layout paint style;
+}
+.date-range-field input {
+  font-variant-numeric:tabular-nums;
 }

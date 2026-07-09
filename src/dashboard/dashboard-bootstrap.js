@@ -49,6 +49,9 @@ function mergeByKey(prev = [], next = [], keyFor){
 }
 function mergeLightSnapshotPayload(current, incoming){
   if(!incoming?.ok || !incoming.lightRefresh || !current?.ok) return incoming;
+  if(Number(current.timestamp || 0) !== Number(incoming.timestamp || 0)){
+    try { sessionRequestPageCache?.clear?.(); } catch {}
+  }
   const merged = { ...current, ...incoming };
   const oldRequests = Array.isArray(current.requestLog) ? current.requestLog : [];
   const newRequests = Array.isArray(incoming.requestLog) ? incoming.requestLog : [];
@@ -155,13 +158,11 @@ function setRefreshState(text){ const el = document.getElementById('refreshState
 function applyCustomDateInputs(){
   if(dateRangeDraftStart) customDateStart = dateRangeDraftStart;
   if(dateRangeDraftEnd) customDateEnd = dateRangeDraftEnd;
-  dateRangeFollowNow = false;
   normalizeCustomDateRange(snapshot || {});
   rangeFilter = 'customTime';
   localStorage.setItem('statsRange', rangeFilter);
   localStorage.setItem('customDateStart', String(customDateStart));
   localStorage.setItem('customDateEnd', String(customDateEnd));
-  localStorage.setItem('dateRangeFollowNow', '0');
 }
 function setupAutoRefresh(){ if(autoRefreshTimer) clearInterval(autoRefreshTimer); const sec = Math.max(5, Number(refreshEvery) || 30); autoRefreshTimer = setInterval(refreshNow, sec * 1000); }
 async function load(){ setRefreshState(TXT.refresh); const first = await ipcRenderer.invoke('dashboard:getSnapshot', dashboardPayloadForCurrentView()); render(first, { immediate: true, instantChart: true }); if(!first?.ok) await refreshNow(); setupAutoRefresh(); }

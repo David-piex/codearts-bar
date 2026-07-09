@@ -1,4 +1,6 @@
-﻿'use strict';
+'use strict';
+
+const cacheMetrics = require('./cacheMetrics');
 
 function parseJsonSafe(value, fallback = null) { if (!value || typeof value !== 'string') return fallback; try { return JSON.parse(value); } catch { return fallback; } }
 function num(...values) {
@@ -59,7 +61,7 @@ function sumTokens(rows, partMap = new Map()) {
     acc.messages += 1;
     if (data.error) acc.errors += 1;
   }
-  return acc;
+  return cacheMetrics.withCacheHitMetrics(acc);
 }
 function percentile(values, p) {
   const nums = values.filter((v) => Number.isFinite(v)).sort((a, b) => a - b);
@@ -119,8 +121,10 @@ function buildSessionUsageMap(messages, partMap = new Map(), since = 0) {
   }
   for (const value of map.values()) {
     value.models = [...value.byModel.values()].sort((a, b) => b.total - a.total);
+    value.models.forEach((model) => cacheMetrics.withCacheHitMetrics(model));
     value.topModel = value.models[0] || null;
     delete value.byModel;
+    cacheMetrics.withCacheHitMetrics(value);
   }
   return map;
 }
@@ -211,7 +215,7 @@ function modelStats(rows, since = 0, partMap = new Map(), ttftMap = new Map()) {
     const outputTokensPerSec = summarize(value._outTps);
     const totalTokensPerSec = summarize(value._totalTps);
     delete value._latencies; delete value._firstContent; delete value._outTps; delete value._totalTps; delete value._ttft;
-    return { name, ...value, performance: { latency, ttft, firstContentApprox: firstContent, outputTokensPerSec, totalTokensPerSec } };
+    return cacheMetrics.withCacheHitMetrics({ name, ...value, performance: { latency, ttft, firstContentApprox: firstContent, outputTokensPerSec, totalTokensPerSec } });
   }).sort((a, b) => b.total - a.total);
 }
 function performanceStats(rows, partMap, since = 0, ttftMap = new Map()) {
@@ -309,7 +313,7 @@ function trendStats(messages, partMap, since, bucketMs) {
     if (perf && Number.isFinite(perf.latencyMs)) b.latencies.push(perf.latencyMs);
     buckets.set(key, b);
   }
-  return [...buckets.values()].sort((a, b) => a.start - b.start).map((b) => { const lat = summarize(b.latencies); delete b.latencies; return { ...b, label: new Date(b.start).toLocaleString('zh-CN', { hour12: false }), latencyAvg: lat.avg, latencyP95: lat.p95 }; });
+  return [...buckets.values()].sort((a, b) => a.start - b.start).map((b) => { const lat = summarize(b.latencies); delete b.latencies; return cacheMetrics.withCacheHitMetrics({ ...b, label: new Date(b.start).toLocaleString('zh-CN', { hour12: false }), latencyAvg: lat.avg, latencyP95: lat.p95 }); });
 }
 function buildTrends(messages, partMap, timestamp) {
   const hour = 60 * 60 * 1000;
@@ -321,4 +325,4 @@ function buildQueueTrends(events, timestamp) {
   const day = 24 * hour;
   return { hourly24h: queueTrendStats(events, timestamp - 24 * hour, hour), daily14d: queueTrendStats(events, timestamp - 14 * day, day) };
 }
-module.exports = { parseJsonSafe, pickToken, partTokensForMessage, tokenForMessage, sumTokens, percentile, summarize, buildPartMap, buildSessionUsageMap, toolStats, buildTtftMap, firstPartLatency, messagePerf, modelStats, performanceStats, queueStats, extractError, latestErrors, inferBalance, queueTrendStats, trendStats, buildTrends, buildQueueTrends };
+module.exports = { parseJsonSafe, pickToken, partTokensForMessage, tokenForMessage, sumTokens, percentile, summarize, buildPartMap, buildSessionUsageMap, toolStats, buildTtftMap, firstPartLatency, messagePerf, modelStats, performanceStats, queueStats, extractError, latestErrors, inferBalance, queueTrendStats, trendStats, buildTrends, buildQueueTrends, cacheMetrics };

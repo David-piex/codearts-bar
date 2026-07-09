@@ -30,9 +30,9 @@ function addTokenInto(target, value = {}) {
   target.cacheWrite += Number(value.cacheWrite || 0);
   target.messages += Number(value.messages || value.requests || 0);
   target.errors += Number(value.errors || 0);
-  return target;
+  return agg.cacheMetrics.withCacheHitMetrics(target);
 }
-function emptyUsage() { return { total: 0, input: 0, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0, messages: 0, errors: 0 }; }
+function emptyUsage() { return agg.cacheMetrics.withCacheHitMetrics({ total: 0, input: 0, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0, messages: 0, errors: 0 }); }
 function addUsage(a, b) { return addTokenInto(a, b); }
 function aggregateError(nativeError, page) { if (nativeError) page.nativeError = nativeError; return page; }
 function queryAssistantRows(queryAll, db, source, payload = {}, start = 0, end = 0) {
@@ -197,7 +197,7 @@ function mergeBuckets(items, bucketMs) {
     b.latencyAvg = b._latencySamples ? b._latencyWeighted / b._latencySamples : null;
     delete b._latencyWeighted; delete b._latencySamples;
     b.label = new Date(b.start).toLocaleString('zh-CN', { hour12: false });
-    return b;
+    return agg.cacheMetrics.withCacheHitMetrics(b);
   });
 }
 function getSourceStatsNative(payload = {}) {
@@ -237,7 +237,7 @@ function mergeModelStats(items) {
     prev.sources.push(item.source);
     map.set(key, prev);
   }
-  return [...map.values()].sort((a, b) => b.total - a.total);
+  return [...map.values()].map((item) => agg.cacheMetrics.withCacheHitMetrics(item)).sort((a, b) => b.total - a.total);
 }
 function getModelStatsNative(payload = {}) {
   const result = runNativeAggregate(payload, (args) => nativeSql.modelStatsForSourceSql({ ...args, payload }));

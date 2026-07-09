@@ -55,6 +55,8 @@ function assistantWhere(payload = {}) {
   const { start, end } = normalizeRange(payload.range);
   if (start) { where.push('time_created >= ?'); params.push(start); }
   if (end) { where.push('time_created <= ?'); params.push(end); }
+  const sessionId = String(payload.sessionId || '').trim();
+  if (sessionId) { where.push('session_id = ?'); params.push(sessionId); }
   const q = String(payload.query || '').trim();
   if (q) {
     where.push('(session_id like ? or data like ?)');

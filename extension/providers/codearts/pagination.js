@@ -72,6 +72,26 @@ async function getRequestsPage(payload = {}) {
   page.nativeError = 'CODEARTS_BAR_FORCE_SQLJS=1';
   return page;
 }
+function sessionRequestsPayload(payload = {}) {
+  const sessionId = String(payload.sessionId || '').trim();
+  if (!sessionId) throw new Error('缺少会话 ID');
+  return {
+    ...payload,
+    sessionId,
+    query: '',
+    limit: payload.limit || 50,
+    offset: payload.offset || 0,
+  };
+}
+function getSessionRequestsPageNative(payload = {}) {
+  return getRequestsPageNative(sessionRequestsPayload(payload));
+}
+async function getSessionRequestsPageSqlJs(payload = {}) {
+  return getRequestsPageSqlJs(sessionRequestsPayload(payload));
+}
+async function getSessionRequestsPage(payload = {}) {
+  return getRequestsPage(sessionRequestsPayload(payload));
+}
 function getSessionsPageNative(payload = {}) {
   const { limit, offset } = pageBounds(payload, 80);
   const sources = listDataSources(payload).filter((s) => sourceMatchesPayload(s, payload));
@@ -137,4 +157,4 @@ async function getSessionsPage(payload = {}) {
   return page;
 }
 
-module.exports = { getRequestsPageNative, getRequestsPageSqlJs, getRequestsPage, getSessionsPageNative, getSessionsPageSqlJs, getSessionsPage };
+module.exports = { getRequestsPageNative, getRequestsPageSqlJs, getRequestsPage, getSessionRequestsPageNative, getSessionRequestsPageSqlJs, getSessionRequestsPage, getSessionsPageNative, getSessionsPageSqlJs, getSessionsPage };

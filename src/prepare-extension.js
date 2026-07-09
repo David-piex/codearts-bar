@@ -22,7 +22,26 @@ props['codeartsBar.dbPath'].description = 'CodeArts opencode.db \u8def\u5f84\u30
 props['codeartsBar.dailyLimit'].description = '\u72b6\u6001\u680f\u767e\u5206\u6bd4\u4f7f\u7528\u7684\u6bcf\u65e5 token \u663e\u793a\u8f6f\u4e0a\u9650\u3002';
 props['codeartsBar.windowHours'].description = '\u6eda\u52a8\u7a97\u53e3\u7edf\u8ba1\u5c0f\u65f6\u6570\u3002';
 props['codeartsBar.refreshMs'].description = '\u81ea\u52a8\u5237\u65b0\u95f4\u9694\uff0c\u6beb\u79d2\u3002';
-for (const file of ['core/aggregator.js', 'core/format.js', 'health.js', 'quota.js', 'providers/index.js', 'providers/codeartsLocal.js', 'providers/codeartsOfficial.js', 'providers/codeartsDesktop.js']) if (!extPkg.files.includes(file)) extPkg.files.push(file);
+const runtimeFiles = [
+  'core/aggregator.js',
+  'core/cacheMetrics.js',
+  'core/format.js',
+  'health.js',
+  'quota.js',
+  'providers/index.js',
+  'providers/codeartsLocal.js',
+  'providers/codeartsOfficial.js',
+  'providers/codeartsDesktop.js',
+  'providers/codearts/aggregation-sql.js',
+  'providers/codearts/aggregation.js',
+  'providers/codearts/collect.js',
+  'providers/codearts/logs.js',
+  'providers/codearts/pagination.js',
+  'providers/codearts/session-actions.js',
+  'providers/codearts/sources.js',
+  'providers/codearts/sqlite.js',
+];
+for (const file of runtimeFiles) if (!extPkg.files.includes(file)) extPkg.files.push(file);
 fs.writeFileSync(extPkgPath, asciiJson(extPkg), 'utf8');
 for (const file of ['codeartsData.js', 'officialStats.js', 'authStatus.js', 'settings.js', 'quota.js', 'health.js']) fs.copyFileSync(path.join(root, 'src', file), path.join(extDir, file));
 fs.cpSync(path.join(root, 'src', 'providers'), path.join(extDir, 'providers'), { recursive: true });

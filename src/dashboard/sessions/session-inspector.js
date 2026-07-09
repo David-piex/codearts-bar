@@ -20,8 +20,79 @@ function selectedSessionItems(){
 }
 function isPinnedSession(item){ return pinnedSessionKeys.has(sessionKeyFor(item)); }
 function compactPath(value){ const text = String(value || ''); if(text.length <= 42) return text; return `...${text.slice(-39)}`; }
+function sessionRequestPageKey(item, limit = 80, offset = 0){
+  if(!item) return '';
+  return `${sourceKey(item)}:${item.id || ''}:${Number(limit || 80)}:${Number(offset || 0)}:${item.dbPath || ''}`;
+}
+function normalizeSessionRequestPayload(item, limit = 80, offset = 0){
+  const src = sourceKey(item);
+  return {
+    sessionId: item?.id || '',
+    source: src && src !== 'unknown' ? src : 'all',
+    dbPath: item?.dbPath || undefined,
+    limit: Math.max(1, Math.min(500, Number(limit || 80))),
+    offset: Math.max(0, Number(offset || 0)),
+  };
+}
+function cachedSessionRequests(item, limit = 80){
+  const prefix = `${sourceKey(item)}:${item?.id || ''}:`;
+  const cached = [...(sessionRequestPageCache?.entries?.() || [])]
+    .filter(([key]) => key.startsWith(prefix))
+    .sort(([, a], [, b]) => Number(a?.offset || 0) - Number(b?.offset || 0))
+    .flatMap(([, page]) => Array.isArray(page?.items) ? page.items : []);
+  if(!cached.length) return [];
+  const seen = new Set();
+  const out = [];
+  for(const row of cached.sort((a, b) => (b.time || 0) - (a.time || 0))){
+    const key = requestKeyFor(row);
+    if(seen.has(key)) continue;
+    seen.add(key);
+    out.push(row);
+    if(out.length >= limit) break;
+  }
+  return out;
+}
+async function loadSessionRequestsPage(item, limit = 80, offset = 0){
+  if(!item?.id || typeof ipcRenderer?.invoke !== 'function') return null;
+  const key = sessionRequestPageKey(item, limit, offset);
+  if(!key) return null;
+  const cached = sessionRequestPageCache.get(key);
+  if(cached && Date.now() - Number(cached.timestamp || 0) < 60000) return cached;
+  if(sessionRequestPageInflight.has(key)) return sessionRequestPageInflight.get(key);
+  const payload = normalizeSessionRequestPayload(item, limit, offset);
+  const promise = ipcRenderer.invoke('dashboard:getSessionRequestsPage', payload)
+    .then((page) => {
+      if(page?.ok && Array.isArray(page.items)){
+        const normalized = { ...page, timestamp: Date.now() };
+        sessionRequestPageCache.set(key, normalized);
+        return normalized;
+      }
+      return null;
+    })
+    .catch(() => null)
+    .finally(() => { try { sessionRequestPageInflight.delete(key); } catch {} });
+  sessionRequestPageInflight.set(key, promise);
+  return promise;
+}
+function prefetchSessionRequests(item, limit = 80){
+  if(!item?.id) return;
+  const key = sessionRequestPageKey(item, limit, 0);
+  if(key && sessionRequestPageCache.has(key)) return;
+  const run = () => loadSessionRequestsPage(item, limit, 0).catch(() => {});
+  if(typeof requestIdleCallback === 'function') requestIdleCallback(run, { timeout: 300 });
+  else setTimeout(run, 40);
+}
+async function ensureSessionRequests(item, limit = 80){
+  const cached = cachedSessionRequests(item, limit);
+  if(cached.length >= Math.min(limit, 6)) return cached.slice(0, limit);
+  await loadSessionRequestsPage(item, limit, 0);
+  return sessionRequests(item, limit);
+}
 function sessionRequests(item, limit = 50){
-  if(!item || !snapshot?.requestLog) return [];
+  if(!item) return [];
+  const cached = cachedSessionRequests(item, limit);
+  if(cached.length) return cached;
+  if(!snapshot?.requestLog) return [];
   const out = [];
   const large = typeof isLargeRequestSnapshot === 'function' ? isLargeRequestSnapshot(snapshot) : (snapshot.requestLog || []).length > 5000;
   for(const r of snapshot.requestLog || []){
@@ -88,5 +159,6 @@ function renderSessionInspector(){
   if(!item) return `<aside class="session-inspector empty"><div class="inspector-title">${TXT.selectedSession}</div><p>${TXT.noSessionSelected}</p></aside>`;
   selectedSessionId = sessionKeyFor(item);
   localStorage.setItem('selectedSessionId', selectedSessionId);
+  prefetchSessionRequests(item, 80);
   return renderSessionEssentialInspector(item, selectedSessionId);
 }

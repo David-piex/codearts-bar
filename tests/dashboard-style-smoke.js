@@ -25,10 +25,20 @@ const rendererFiles = [
   "dashboard/i18n.js",
   "dashboard/dashboard-shell.js",
   "dashboard/dashboard-error-state.js",
+  "dashboard/dashboard-diagnostics.js",
   "dashboard/dashboard-bootstrap.js",
   "dashboard/dashboard-perf.js",
   "dashboard/dashboard-slots.js",
+  "dashboard/slots/slot-core.js",
+  "dashboard/slots/analytics-slots.js",
+  "dashboard/slots/data-page-slots.js",
+  "dashboard/slots/session-slots.js",
+  "dashboard/slots/perf-panel-slot.js",
   "dashboard/events/date-events.js",
+  "dashboard/events/chrome-events.js",
+  "dashboard/events/session-events.js",
+  "dashboard/events/analytics-events.js",
+  "dashboard/events/form-events.js",
   "dashboard/dashboard-events.js",
   "dashboard/events/window-events.js",
   "dashboard-state.js",
@@ -225,11 +235,20 @@ assert.match(renderer, /sessionRowHtml/);
 assert.match(renderer, /dashboard\/i18n\.js/);
 assert.match(renderer, /dashboard\/dashboard-shell\.js/);
 assert.match(renderer, /dashboard\/dashboard-error-state\.js/);
+assert.match(renderer, /dashboard\/dashboard-diagnostics\.js/);
 assert.match(renderer, /dashboard\/dashboard-bootstrap\.js/);
 assert.match(renderer, /dashboard\/dashboard-perf\.js/);
 assert.match(renderer, /dashboard\/dashboard-slots\.js/);
+assert.match(renderer, /dashboard\/slots\/analytics-slots\.js/);
+assert.match(renderer, /dashboard\/slots\/data-page-slots\.js/);
+assert.match(renderer, /dashboard\/slots\/session-slots\.js/);
+assert.match(renderer, /dashboard\/slots\/perf-panel-slot\.js/);
 assert.match(renderer, /dashboard\/dashboard-events\.js/);
 assert.match(renderer, /dashboard\/events\/date-events\.js/);
+assert.match(renderer, /dashboard\/events\/chrome-events\.js/);
+assert.match(renderer, /dashboard\/events\/session-events\.js/);
+assert.match(renderer, /dashboard\/events\/analytics-events\.js/);
+assert.match(renderer, /dashboard\/events\/form-events\.js/);
 assert.match(renderer, /dashboard\/events\/window-events\.js/);
 assert.match(renderer, /dashboard\/sessions\/session-meta\.js/);
 assert.match(renderer, /dashboard\/sessions\/session-filters\.js/);

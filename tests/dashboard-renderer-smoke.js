@@ -95,7 +95,12 @@ async function main() {
   const clipboardWrites = [];
   let rafNow = 0;
   const ipcRenderer = {
-    async invoke(channel, ...args){ calls.push([channel, ...args]); if(channel === "dashboard:getSnapshot" || channel === "dashboard:refresh") return snapshot; return null; },
+    async invoke(channel, ...args){
+      calls.push([channel, ...args]);
+      if(channel === "dashboard:getSnapshot" || channel === "dashboard:refresh") return snapshot;
+      if(channel === "dashboard:getSessionRequestsPage") return { ok: true, limit: 12, offset: 0, total: 1, hasMore: false, items: [{ id: "db-only-request", sessionId: "s1", sessionTitle: "Build landing", source: "desktop", sourceLabel: "\u684c\u9762\u7aef", provider: "p", model: "db-only-model", time: now - 1234, input: 1, output: 2, cacheRead: 3, cacheWrite: 0, total: 6, ok: true, status: "200", latencyMs: 11, ttftMs: 7, outputTokensPerSec: 4 }] };
+      return null;
+    },
     on(){},
   };
   const context = {
@@ -201,6 +206,8 @@ async function main() {
     },
   });
   assert.ok(clipboardWrites.some((text) => text.includes("Build landing")));
+  assert.ok(clipboardWrites.some((text) => text.includes("db-only-model")));
+  assert.ok(calls.some((call) => call[0] === "dashboard:getSessionRequestsPage" && call[1].sessionId === "s1"));
   assert.notEqual(storage.getItem("selectedSessionId"), "desktop:s2");
 
   await listeners.click({
@@ -339,6 +346,11 @@ async function main() {
   assert.match(analyticsHtml, /usage-total-request-spark/);
   assert.doesNotMatch(analyticsHtml, /global-cache-pill/);
   assert.doesNotMatch(analyticsHtml, /data-global-cache-action/);
+  assert.doesNotMatch(analyticsHtml, /diagnostics-notice/);
+  const diagnosticsHtml = context.renderDiagnosticsNotice({ ...snapshot, sourceErrors: [{ source: "cli", message: "missing db" }], health: { issues: [{ level: "warning", message: "TTFT high" }] } });
+  assert.match(diagnosticsHtml, /diagnostics-notice/);
+  assert.match(diagnosticsHtml, /data-copy-diagnostics/);
+  assert.match(diagnosticsHtml, /missing db/);
   assert.match(analyticsHtml, /cache-warm/);
   assert.match(analyticsHtml, /--cache-hit:/);
   assert.match(analyticsHtml, /1,100 \/ 2,300/);
@@ -383,6 +395,16 @@ async function main() {
   assert.doesNotMatch(analyticsHtml, /\u73b0\u5728/);
   assert.doesNotMatch(analyticsHtml, /data-date-range-follow/);
   assert.doesNotMatch(analyticsHtml, /data-select="rangeCustom"/);
+
+  await listeners.click({
+    target: {
+      dataset: {},
+      closest(selector){
+        return selector === "[data-settings]" ? { dataset: { settings: "1" } } : null;
+      },
+    },
+  });
+  assert.ok(calls.some((call) => call[0] === "dashboard:settings"));
 
   await listeners.click({
     target: {

@@ -9,6 +9,7 @@ const { buildHealth, notificationEvents } = require('../src/health');
 const { listProviders } = require('../src/providers');
 const localProvider = require('../src/providers/codeartsLocal');
 const agg = require('../src/core/aggregator');
+const cacheMetrics = require('../src/core/cacheMetrics');
 const { getSnapshotAsync } = require('../src/codeartsData');
 
 function testOfficialStatsParser() {
@@ -45,6 +46,18 @@ function testAggregator() {
   assert.equal(agg.sumTokens(rows).total, 3);
   assert.equal(agg.toolStats(parts).byName[0].name, 'read');
   assert.equal(agg.performanceStats(rows, agg.buildPartMap(parts), 0).latency.avg, 1000);
+}
+function testCacheMetricsFormula() {
+  const fixture = { input: 842000, output: 26000, cacheRead: 509000, cacheWrite: 0 };
+  assert.equal(cacheMetrics.cacheHitDenominator(fixture), 1351000);
+  assert.equal(Math.round(cacheMetrics.cacheHitRatePercent(fixture)), 38);
+  assert.equal(cacheMetrics.cacheHitRatePercent({ input: 100, cacheRead: 100, cacheWrite: 100 }), 50);
+  assert.equal(cacheMetrics.cacheHitRatePercent({ input: 0, cacheRead: 0, cacheWrite: 100 }), null);
+  const usage = agg.sumTokens([
+    { id:'a', session_id:'s', time_created:1, time_updated:2, data: JSON.stringify({ role:'assistant', tokens:{ input:100, output:10, cacheRead:100, cacheWrite:100, total:310 } }) },
+  ]);
+  assert.equal(usage.cacheHitDenominator, 200);
+  assert.equal(usage.cacheHitRate, 50);
 }
 function testMultiTurnSessionTokensPreferStepFinish() {
   const base = Date.UTC(2026, 6, 7, 1, 0, 0);
@@ -164,6 +177,16 @@ async function testProviderDbPagination() {
     const reqPage2 = await localProvider.getRequestsPage({ dbPath, limit: 1, offset: 1, source: 'all', query: 'multi-model' });
     assert.equal(reqPage2.items.length, 1);
     assert.notEqual(reqPage2.items[0].id, reqPage.items[0].id);
+    const sessionReqPage = await localProvider.getSessionRequestsPage({ dbPath, sessionId: 'ses_multi', limit: 1, offset: 0, source: 'all' });
+    assert.equal(sessionReqPage.ok, true);
+    assert.equal(sessionReqPage.total, 2);
+    assert.equal(sessionReqPage.items.length, 1);
+    assert.equal(sessionReqPage.items[0].sessionId, 'ses_multi');
+    assert.equal(sessionReqPage.items[0].model, 'multi-model');
+    assert.equal(sessionReqPage.hasMore, true);
+    const sessionReqPage2 = await localProvider.getSessionRequestsPage({ dbPath, sessionId: 'ses_multi', limit: 1, offset: 1, source: 'all' });
+    assert.equal(sessionReqPage2.items.length, 1);
+    assert.notEqual(sessionReqPage2.items[0].id, sessionReqPage.items[0].id);
 
     const sessionPage = await localProvider.getSessionsPage({ dbPath, limit: 1, offset: 0, source: 'all', status: 'active', query: 'Multi' });
     assert.equal(sessionPage.ok, true);
@@ -187,19 +210,24 @@ async function testProviderDbAggregates() {
     assert.equal(summary.ok, true);
     assert.equal(summary.usage.all.total, 220);
     assert.equal(summary.usage.window.messages, 3);
+    assert.equal(summary.usage.all.cacheHitDenominator, 141);
+    assert.equal(Math.round(summary.usage.all.cacheHitRate * 10) / 10, 7.8);
 
     const trend = await localProvider.getTrendBuckets({ dbPath, start: 0, end: Date.UTC(2030, 0, 1), bucketMs: 86400000 });
     assert.equal(trend.ok, true);
     assert.equal(trend.buckets.length, 1);
     assert.equal(trend.buckets[0].total, 220);
+    assert.equal(trend.buckets[0].cacheHitDenominator, 141);
 
     const source = await localProvider.getSourceStats({ dbPath, range: { start: 0, end: Date.UTC(2030, 0, 1) } });
     assert.equal(source.items[0].total, 220);
     assert.equal(source.items[0].requests, 3);
+    assert.equal(source.items[0].cacheHitDenominator, 141);
 
     const models = await localProvider.getModelStats({ dbPath, range: { start: 0, end: Date.UTC(2030, 0, 1) } });
     assert.equal(models.items[0].model, 'fixture-model');
     assert.equal(models.items[0].total, 167);
+    assert.equal(models.items[0].cacheHitDenominator, 105);
 
     const sessions = await localProvider.getSessionSummary({ dbPath, timestamp });
     assert.equal(sessions.total, 2);
@@ -218,6 +246,7 @@ async function testProviderDbAggregates() {
   testQuota();
   testProviders();
   testAggregator();
+  testCacheMetricsFormula();
   testMultiTurnSessionTokensPreferStepFinish();
   testTtftLogFixture();
   testQueueLogFixture();

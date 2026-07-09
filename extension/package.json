@@ -76,7 +76,16 @@
     "providers/codeartsOfficial.js",
     "providers/codeartsDesktop.js",
     "core/aggregator.js",
-    "core/format.js"
+    "core/format.js",
+    "core/cacheMetrics.js",
+    "providers/codearts/aggregation-sql.js",
+    "providers/codearts/aggregation.js",
+    "providers/codearts/collect.js",
+    "providers/codearts/logs.js",
+    "providers/codearts/pagination.js",
+    "providers/codearts/session-actions.js",
+    "providers/codearts/sources.js",
+    "providers/codearts/sqlite.js"
   ],
   "repository": {
     "type": "git",
