@@ -153,6 +153,11 @@ async function main() {
   assert.doesNotMatch(html, /data-global-cache-action/);
   assert.match(html, /session-table simple/);
   assert.match(html, /data-table-limit="sessions"/);
+  assert.match(html, /data-session-page-size/);
+  assert.doesNotMatch(html, /<option value="10"/);
+  assert.match(html, /<option value="20"/);
+  assert.match(html, /<option value="50"/);
+  assert.match(html, /<option value="100"/);
   assert.match(html, /data-session-page-input/);
   assert.match(html, /data-session-page-go/);
   assert.doesNotMatch(html, /session-table detailed/);
@@ -394,6 +399,8 @@ async function main() {
   assert.doesNotMatch(analyticsHtml, /data-table="sessions"/);
   assert.match(analyticsHtml, /date-range-control/);
   assert.match(analyticsHtml, /data-table-limit="requests"/);
+  assert.match(analyticsHtml, /data-request-page-size/);
+  assert.doesNotMatch(analyticsHtml, /<option value="10"/);
   assert.match(analyticsHtml, /data-request-page-input/);
   assert.match(analyticsHtml, /data-request-page-go/);
   assert.match(analyticsHtml, /data-date-range-toggle/);

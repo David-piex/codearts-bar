@@ -5,7 +5,7 @@ const { loadSettings } = require('../settings');
 const { buildHealth } = require('../health');
 const localProvider = require('../providers/codeartsLocal');
 
-const SESSION_PAGE_SIZE = 48;
+const SESSION_PAGE_SIZE = 50;
 
 function usageStatusFromSummary(usage = {}, settings = loadSettings()) {
   const dailyLimit = Number(settings.dailyLimit || process.env.CODEARTS_BAR_DAILY_LIMIT || 200000);

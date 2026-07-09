@@ -60,8 +60,13 @@ let resizeFrameTimer = null;
 let resizeTimer = null;
 let queryRenderTimer = null;
 let analyticsDeferredToken = 0;
-const SESSION_PAGE_SIZE = 48;
-const REQUEST_PAGE_SIZE = 100;
+const TABLE_PAGE_SIZE_OPTIONS = [20, 50, 100];
+function normalizeTablePageSize(value, fallback = 50){
+  const n = Number(value);
+  return TABLE_PAGE_SIZE_OPTIONS.includes(n) ? n : fallback;
+}
+let SESSION_PAGE_SIZE = normalizeTablePageSize(localStorage.getItem('sessionPageSize'), 50);
+let REQUEST_PAGE_SIZE = normalizeTablePageSize(localStorage.getItem('requestPageSize'), 100);
 let requestTableRenderLimit = REQUEST_PAGE_SIZE;
 let sessionTableRenderLimit = SESSION_PAGE_SIZE;
 let requestTablePage = Math.max(0, Number(localStorage.getItem('requestTablePage') || '0') || 0);
