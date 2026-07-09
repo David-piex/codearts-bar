@@ -14,30 +14,56 @@ function requestPageMatchesTable(s){
   const page = s?.requestPage;
   if(!page || !Array.isArray(page.items)) return false;
   const payload = page.payload || {};
+  const hasPayload = Object.keys(payload || {}).length > 0;
   const range = payload.range || {};
   const currentRange = currentPageRangePayload();
+  const expectedOffset = typeof currentRequestPageOffset === 'function' ? currentRequestPageOffset() : Math.max(0, Number(requestTablePage || 0)) * REQUEST_PAGE_SIZE;
+  const expectedLimit = REQUEST_PAGE_SIZE;
+  if(!hasPayload) return Number(requestTablePage || 0) === 0;
   return String(payload.source || 'all') === String(sourceFilter || 'all')
     && String(payload.model || 'all') === String(modelFilter || 'all')
     && String(payload.query || '') === String(analyticsQuery || '')
+    && Number(payload.offset || 0) === Number(expectedOffset || 0)
+    && Number(payload.limit || expectedLimit) === Number(expectedLimit)
     && Number(range.start || 0) === Number(currentRange.start || 0)
     && Number(range.end || 0) === Number(currentRange.end || 0);
 }
 function requestTableData(rows, s){
-  const limit = Math.max(100, Number(requestTableRenderLimit || 100));
-  if(requestPageMatchesTable(s)){
-    const items = s.requestPage.items || [];
-    return { list: items.slice(0, limit), total: Number(s.requestPage.total || items.length), limit };
+  const limit = REQUEST_PAGE_SIZE;
+  const dbPage = typeof requestPageRowsForCurrentView === 'function' ? requestPageRowsForCurrentView(s) : null;
+  if(dbPage?.paged){
+    const items = dbPage.list || [];
+    return { list: items.slice(0, limit), total: Number(dbPage.total || items.length), limit, page: requestTablePage, paged: true };
   }
   const matched = applyTableSearch(rows);
-  return { list: matched.slice(0, limit), total: matched.length, limit };
+  const totalHint = Number(s?.requestTotal || 0);
+  const total = Math.max(matched.length, totalHint || 0);
+  const start = Math.max(0, Number(requestTablePage || 0)) * limit;
+  const canServeFromMemory = start < matched.length || !totalHint || totalHint <= matched.length;
+  if(!canServeFromMemory){
+    return { list: [], total, limit, page: requestTablePage, loading: true };
+  }
+  return { list: matched.slice(start, start + limit), total, limit, page: requestTablePage };
+}
+function tablePaginationHtml(kind, rendered, total, page, pageSize, loading = false){
+  const safeTotal = Math.max(0, Number(total || 0));
+  const safeRendered = Math.max(0, Number(rendered || 0));
+  const totalPages = Math.max(1, Math.ceil(safeTotal / pageSize));
+  const safePage = Math.max(0, Math.min(totalPages - 1, Number(page || 0)));
+  const start = safeTotal ? safePage * pageSize + (safeRendered ? 1 : 0) : 0;
+  const end = Math.min(safeTotal, safePage * pageSize + safeRendered);
+  const isSessions = kind === 'sessions';
+  const prefix = isSessions ? 'session' : 'request';
+  const label = isSessions ? (TXT.sessionPagination || '会话分页') : (TXT.requestPagination || '请求分页');
+  return `<div class="table-limit-note table-page-note ${prefix}-page-note" data-table-limit="${kind}" data-rendered="${safeRendered}" data-total="${safeTotal}" data-page="${safePage}" data-page-size="${pageSize}"><span>${label}：${n(start)}-${n(end)} / ${n(safeTotal)} · ${TXT.page || '第'} ${n(safePage + 1)} / ${n(totalPages)}${loading ? ' · 加载中...' : ''}</span><div class="table-page-actions"><button data-${prefix}-page="prev" ${safePage <= 0 ? 'disabled' : ''}>${TXT.prevPage || '上一页'}</button><label>跳到 <input data-${prefix}-page-input value="${safePage + 1}" inputmode="numeric" pattern="[0-9]*" /> 页</label><button data-${prefix}-page-go>跳转</button><button data-${prefix}-page="next" ${safePage >= totalPages - 1 ? 'disabled' : ''}>${TXT.nextPage || '下一页'}</button></div></div>`;
 }
 function tableRows(rows, s){
   const tableStartedAt = perfNow();
   const data = requestTableData(rows, s);
   const list = data.list;
-  const body = list.length ? list.map(requestRowHtml).join('') : emptyRow(15);
-  const clipped = requestLimitNote(list.length, data.total);
-  const html = `<div class="request-manager request-manager-flat"><div class="request-main request-main-full"><div class="table-scroll"><table><thead><tr><th>${TXT.time}</th><th>${TXT.source}</th><th>${TXT.provider}</th><th>${TXT.model}</th><th>${TXT.input}</th><th>${TXT.output}</th><th>${TXT.cacheWrite}</th><th>${TXT.cacheRead}</th><th>${TXT.cacheHitRate}</th><th>${TXT.total}</th><th>${TXT.ttft}</th><th>${TXT.wait}</th><th>${TXT.speed}</th><th>${TXT.status}</th><th>${TXT.session}</th></tr></thead><tbody>${body}</tbody></table></div>${clipped}</div></div>`;
+  const body = data.loading ? `<tr><td colspan="15" class="empty-cell">正在加载第 ${n(Number(requestTablePage || 0) + 1)} 页...</td></tr>` : (list.length ? list.map(requestRowHtml).join('') : emptyRow(15));
+  const pager = tablePaginationHtml('requests', list.length, data.total, requestTablePage, REQUEST_PAGE_SIZE, data.loading);
+  const html = `<div class="request-manager request-manager-flat"><div class="request-main request-main-full"><div class="table-scroll"><table><thead><tr><th>${TXT.time}</th><th>${TXT.source}</th><th>${TXT.provider}</th><th>${TXT.model}</th><th>${TXT.input}</th><th>${TXT.output}</th><th>${TXT.cacheWrite}</th><th>${TXT.cacheRead}</th><th>${TXT.cacheHitRate}</th><th>${TXT.total}</th><th>${TXT.ttft}</th><th>${TXT.wait}</th><th>${TXT.speed}</th><th>${TXT.status}</th><th>${TXT.session}</th></tr></thead><tbody>${body}</tbody></table></div>${pager}</div></div>`;
   markPerfStage('tableRenderMs', perfNow() - tableStartedAt);
   return html;
 }

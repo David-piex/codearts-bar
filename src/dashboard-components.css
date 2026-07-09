@@ -179,6 +179,144 @@ tr:hover td,
   display: none;
 }
 
+/* 1.19.2 aligned filter toolbar and explicit table pagination */
+.page-head .filters {
+  align-items: center;
+}
+.page-head:not(.session-filter-head) .filters > * {
+  align-self: center;
+  box-sizing: border-box;
+  margin-top: 0;
+  margin-bottom: 0;
+}
+.page-head:not(.session-filter-head) .source-switch,
+.page-head:not(.session-filter-head) .select,
+.page-head:not(.session-filter-head) .date-range-control {
+  height: 42px;
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+}
+.page-head:not(.session-filter-head) .source-switch {
+  padding: 4px;
+}
+.page-head:not(.session-filter-head) .source-switch-btn,
+.page-head:not(.session-filter-head) .icon-chip {
+  height: 32px;
+  min-height: 32px;
+  line-height: 32px;
+}
+.page-head:not(.session-filter-head) .select {
+  padding: 0 12px;
+}
+.page-head:not(.session-filter-head) .select select {
+  height: 32px;
+  line-height: 32px;
+}
+.page-head:not(.session-filter-head) .date-range-control {
+  padding: 0;
+}
+.page-head:not(.session-filter-head) .date-range-trigger {
+  height: 40px;
+  min-height: 40px;
+  margin: 0;
+}
+.table-page-note {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0;
+  border-top: 1px solid rgba(220,226,236,.72);
+  border-right: 0;
+  border-bottom: 0;
+  border-left: 0;
+  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+  background: linear-gradient(180deg,rgba(255,255,255,.72),rgba(247,250,253,.78));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.72);
+}
+.table-page-note span {
+  min-width: 0;
+  overflow: hidden;
+  color: #667085;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 760;
+  font-variant-numeric: tabular-nums;
+}
+.table-page-actions {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+}
+.table-page-actions button {
+  min-height: 28px;
+  padding: 0 10px;
+  border: 1px solid rgba(205,214,228,.72);
+  border-radius: 9px;
+  color: #344054;
+  background: rgba(255,255,255,.74);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.88),0 1px 2px rgba(15,23,42,.03);
+  font-size: 12px;
+  font-weight: 820;
+}
+.table-page-actions button:not(:disabled):hover {
+  border-color: rgba(10,132,255,.32);
+  color: #0a63ce;
+  background: rgba(239,246,255,.86);
+}
+.table-page-actions button:disabled {
+  opacity: .46;
+}
+.table-page-actions label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid rgba(214,222,234,.72);
+  border-radius: 9px;
+  color: #667085;
+  background: rgba(255,255,255,.64);
+  font-size: 12px;
+  font-weight: 760;
+  white-space: nowrap;
+}
+.table-page-actions input {
+  width: 44px;
+  min-height: 22px;
+  height: 22px;
+  padding: 0 4px;
+  border: 0;
+  outline: 0;
+  border-radius: 6px;
+  color: #172033;
+  background: rgba(241,245,249,.82);
+  text-align: center;
+  font: inherit;
+  font-weight: 860;
+  font-variant-numeric: tabular-nums;
+}
+.request-row.selected td,
+.session-row.selected td {
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.68) !important;
+}
+.request-row.selected td:first-child,
+.session-row.selected td:first-child {
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.68), inset 3px 0 0 rgba(10,132,255,.72) !important;
+}
+@media (max-width: 860px) {
+  .table-page-note {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .table-page-actions {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+}
+
 /* Commercial empty/error states and Finder-like density pass. */
 .commercial-error-state {
   min-height: 360px;

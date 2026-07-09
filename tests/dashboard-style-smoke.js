@@ -269,7 +269,13 @@ assert.match(renderer, /dashboard:getAggregates/);
 assert.match(renderer, /scheduleDashboardAggregates/);
 
 
-assert.match(renderer, /requestTableRenderLimit = 100/);
+assert.match(renderer, /REQUEST_PAGE_SIZE = 100/);
+assert.match(renderer, /requestTableRenderLimit = REQUEST_PAGE_SIZE/);
+assert.match(renderer, /requestTablePage/);
+assert.match(renderer, /data-request-page-input/);
+assert.match(renderer, /data-session-page-input/);
+assert.match(html, /1\.19\.2 aligned filter toolbar and explicit table pagination/);
+assert.match(html, /table-page-actions/);
 assert.match(renderer, /SESSION_PAGE_SIZE = 48/);
 assert.match(renderer, /sessionTableRenderLimit = SESSION_PAGE_SIZE/);
 assert.match(renderer, /Math\.ceil\(total \/ SESSION_PAGE_SIZE\)/);

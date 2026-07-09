@@ -20,7 +20,15 @@ function recordPatchPerf(label, startedAt, rows = 0, fields = {}){
   updatePerfPanel();
   return lastRenderPerf;
 }
-function resetIncrementalRenderLimits(scope = 'all'){ if(scope === 'all' || scope === 'requests') requestTableRenderLimit = 100; if(scope === 'all' || scope === 'sessions') sessionTableRenderLimit = SESSION_PAGE_SIZE; }
+function resetIncrementalRenderLimits(scope = 'all'){
+  if(scope === 'all' || scope === 'requests'){
+    requestTableRenderLimit = REQUEST_PAGE_SIZE;
+    requestTablePage = 0;
+    requestPageCache = { key: '', items: null, total: 0, page: 0, timestamp: 0 };
+    localStorage.setItem('requestTablePage', '0');
+  }
+  if(scope === 'all' || scope === 'sessions') sessionTableRenderLimit = SESSION_PAGE_SIZE;
+}
 function commitAppHtml(app, html){
   const next = String(html ?? '');
   if(lastCommittedHtml === next) return false;

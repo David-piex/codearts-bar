@@ -109,10 +109,15 @@ async function handleDashboardSessionClick(e){
       }
     }
     const sessionPage = e.target.closest('[data-session-page]');
-    if(sessionPage){
+    const sessionPageGo = e.target.closest('[data-session-page-go]');
+    if(sessionPage || sessionPageGo){
       const total = Number(document.querySelector('[data-table-limit="sessions"]')?.dataset?.total || 0);
       const maxPage = Math.max(0, Math.ceil(total / SESSION_PAGE_SIZE) - 1);
-      sessionTablePage += sessionPage.dataset.sessionPage === 'next' ? 1 : -1;
+      if(sessionPage) sessionTablePage += sessionPage.dataset.sessionPage === 'next' ? 1 : -1;
+      if(sessionPageGo){
+        const input = document.querySelector('[data-session-page-input]');
+        sessionTablePage = Math.max(0, Number(input?.value || 1) - 1);
+      }
       sessionTablePage = Math.max(0, Math.min(maxPage, sessionTablePage));
       localStorage.setItem('sessionTablePage', String(sessionTablePage));
       if(workspaceMode === 'sessions'){

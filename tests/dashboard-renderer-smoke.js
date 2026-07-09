@@ -152,6 +152,9 @@ async function main() {
   assert.doesNotMatch(html, /global-cache-pill/);
   assert.doesNotMatch(html, /data-global-cache-action/);
   assert.match(html, /session-table simple/);
+  assert.match(html, /data-table-limit="sessions"/);
+  assert.match(html, /data-session-page-input/);
+  assert.match(html, /data-session-page-go/);
   assert.doesNotMatch(html, /session-table detailed/);
   assert.match(html, /session-row-actions/);
   assert.match(html, /session-actions-cell/);
@@ -390,6 +393,9 @@ async function main() {
   assert.doesNotMatch(analyticsHtml, /scrubber-cache/);
   assert.doesNotMatch(analyticsHtml, /data-table="sessions"/);
   assert.match(analyticsHtml, /date-range-control/);
+  assert.match(analyticsHtml, /data-table-limit="requests"/);
+  assert.match(analyticsHtml, /data-request-page-input/);
+  assert.match(analyticsHtml, /data-request-page-go/);
   assert.match(analyticsHtml, /data-date-range-toggle/);
   assert.match(analyticsHtml, /\u65e5\u671f\u8303\u56f4/);
   assert.doesNotMatch(analyticsHtml, /\u73b0\u5728/);

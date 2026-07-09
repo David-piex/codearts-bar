@@ -99,6 +99,7 @@ var TXT = {
   auth: '\u8ba4\u8bc1',
   advanced: '\u9ad8\u7ea7',
   rows: '\u884c',
+  requestPagination: '\u8bf7\u6c42\u5206\u9875',
   sessionPagination: '\u4f1a\u8bdd\u5206\u9875',
   prevPage: '\u4e0a\u4e00\u9875',
   nextPage: '\u4e0b\u4e00\u9875',

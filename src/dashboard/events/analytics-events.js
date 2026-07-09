@@ -1,4 +1,25 @@
 async function handleDashboardAnalyticsClick(e){
+    const requestPage = e.target.closest('[data-request-page]');
+    const requestPageGo = e.target.closest('[data-request-page-go]');
+    if(requestPage || requestPageGo){
+      const total = Number(document.querySelector('[data-table-limit="requests"]')?.dataset?.total || snapshot?.requestTotal || snapshot?.requestPage?.total || (snapshot?.requestLog || []).length || 0);
+      const maxPage = Math.max(0, Math.ceil(total / REQUEST_PAGE_SIZE) - 1);
+      let nextPage = Number(requestTablePage || 0);
+      if(requestPage) nextPage += requestPage.dataset.requestPage === 'next' ? 1 : -1;
+      if(requestPageGo){
+        const input = document.querySelector('[data-request-page-input]');
+        nextPage = Math.max(0, Number(input?.value || 1) - 1);
+      }
+      requestTablePage = Math.max(0, Math.min(maxPage, nextPage));
+      requestTableRenderLimit = REQUEST_PAGE_SIZE;
+      localStorage.setItem('requestTablePage', String(requestTablePage));
+      if(snapshot?.ok){
+        await refreshRequestPageCache(requestTablePage, { force: true });
+        if(patchAnalyticsSlotsForState(snapshot, { tableOnly: true })) throw DASHBOARD_EVENT_HANDLED;
+        render(snapshot, { windowLayout: false, instantChart: true, partial: true });
+      }
+      throw DASHBOARD_EVENT_HANDLED;
+    }
     const requestSelect = e.target.closest('[data-request-select]');
     if(requestSelect){
       selectedRequestKey = requestSelect.dataset.requestSelect;

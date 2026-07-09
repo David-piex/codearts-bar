@@ -155,9 +155,11 @@ function patchAnalyticsFiltersOnly(s = snapshot || {}){
   return patchHtmlSlot('analyticsFiltersSlot', filtersHtml(s));
 }
 function currentRequestTableList(rows = currentAnalyticsRows(snapshot || {})){
+  const data = typeof requestTableData === 'function' ? requestTableData(rows, snapshot || {}) : null;
+  if(data && Array.isArray(data.list)) return data.list;
   const matched = applyTableSearch(rows);
-  const limit = Math.max(100, Number(requestTableRenderLimit || 100));
-  return matched.slice(0, limit);
+  const start = Math.max(0, Number(requestTablePage || 0)) * REQUEST_PAGE_SIZE;
+  return matched.slice(start, start + REQUEST_PAGE_SIZE);
 }
 function patchRequestSelection(){
   if(layoutMode !== 'dashboard' || workspaceMode !== 'analytics' || tableTab !== 'requests') return false;

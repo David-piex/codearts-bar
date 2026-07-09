@@ -39,14 +39,8 @@ function sessionRowHtml(x){
   return `<tr class="session-row ${selected ? 'selected' : ''} ${pinned ? 'pinned' : ''}" data-session-select="${esc(key)}"><td class="check-col"><input type="checkbox" data-session-check="${esc(key)}" ${checked ? 'checked' : ''}></td><td class="pin-col"><button class="pin-btn ${pinned ? 'active' : ''}" data-session-pin="${esc(key)}" title="${pinned ? TXT.unpin : TXT.pin}">${pinned ? '&#9733;' : '&#9734;'}</button></td><td>${esc(dateLabel(x.updatedAt))}</td><td><span class="source-pill">${esc(sourceName(x))}</span></td><td><b>${esc(x.title || TXT.untitled)}</b>${pinned ? `<span class="pin-label">${TXT.pinned}</span>` : ''}<span class="project-chip" title="${esc(x.directory || '')}">${esc(sessionProjectName(x))}</span><div class="muted">${esc(x.id)}</div></td><td>${sessionTagsHtml(x, 3)}</td><td><b>${n(u.total)}</b></td><td class="${x.archived ? 'muted' : 'ok'}">${x.archived ? TXT.archived : TXT.active}</td><td class="session-actions-cell"><div class="session-row-actions"><button data-session-action="copy-summary" data-session-key="${esc(key)}" title="${TXT.copySummary}">${TXT.copy}</button><button data-session-action="open" data-session-key="${esc(key)}" title="${TXT.open}">${TXT.open}</button><button data-session-action="archive" data-session-key="${esc(key)}" data-archive="${x.archived ? 'false' : 'true'}" title="${x.archived ? TXT.restore : TXT.archive}">${x.archived ? TXT.restore : TXT.archive}</button></div></td></tr>`;
 }
 function sessionLimitNote(rendered, total){
-  const pageSize = SESSION_PAGE_SIZE;
-  if(total <= pageSize) return '';
-  const totalPages = Math.max(1, Math.ceil(total / pageSize));
-  const page = Math.max(0, Math.min(totalPages - 1, Number(sessionTablePage || 0)));
-  const displayCount = rendered || Math.min(pageSize, Math.max(0, total - page * pageSize));
-  const start = page * pageSize + (displayCount ? 1 : 0);
-  const end = Math.min(total, page * pageSize + displayCount);
-  return `<div class="table-limit-note table-page-note" data-table-limit="sessions" data-rendered="${rendered}" data-total="${total}"><span>${TXT.sessionPagination || '会话分页'}：${n(start)}-${n(end)} / ${n(total)} · ${TXT.page || '第'} ${n(page + 1)} / ${n(totalPages)}</span><button data-session-page="prev" ${page <= 0 ? 'disabled' : ''}>${TXT.prevPage || '上一页'}</button><button data-session-page="next" ${page >= totalPages - 1 ? 'disabled' : ''}>${TXT.nextPage || '下一页'}</button></div>`;
+  if(typeof tablePaginationHtml === 'function') return tablePaginationHtml('sessions', rendered, total, sessionTablePage, SESSION_PAGE_SIZE);
+  return '';
 }
 function shouldDeferSessionDbFallback(s, dbPage){
   if(dbPage?.paged || typeof canUseDbSessionPage !== 'function' || !canUseDbSessionPage()) return false;
