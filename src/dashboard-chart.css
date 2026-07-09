@@ -371,8 +371,7 @@
     .session-main {
       border-right:1px solid rgba(214,223,236,.80);
     }
-    .session-inspector,
-    .request-inspector {
+    .session-inspector {
       background:
         linear-gradient(180deg,rgba(255,255,255,.66),rgba(247,250,253,.56)),
         radial-gradient(circle at 0% 0%,rgba(10,132,255,.055),transparent 36%);
@@ -463,8 +462,7 @@
     }
     @media (prefers-reduced-transparency: reduce) {
       .table-card,
-      .session-inspector,
-      .request-inspector {
+      .session-inspector {
         -webkit-backdrop-filter:none;
         backdrop-filter:none;
         background:#fff;

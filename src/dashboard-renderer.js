@@ -1,4 +1,4 @@
-const { ipcRenderer } = require('electron');
+﻿const { ipcRenderer } = require('electron');
 
 let snapshot = null;
 let copyResetTimer = null;
@@ -38,7 +38,7 @@ let savedSessionViewNameDraft = '';
 let sessionAdvancedOpen = localStorage.getItem('sessionAdvancedOpen') === '1';
 let selectedRequestKey = localStorage.getItem('selectedRequestKey') || '';
 let refreshEvery = localStorage.getItem('statsRefreshEvery') || '30';
-let layoutMode = 'dashboard';
+let layoutMode = localStorage.getItem('layoutMode') || 'dashboard';
 let zoom = Number(localStorage.getItem('uiZoom') || '1');
 let compactPane = localStorage.getItem('compactPane') || 'overview';
 let compactPinned = localStorage.getItem('compactPinned') === '1';
@@ -49,27 +49,89 @@ let chartHoverFrame = null;
 let chartHover = { idx: -1, x: NaN, y: NaN, tx: NaN, ty: NaN, focusKey: '', pulse: 0 };
 let chartPinnedIndex = -1;
 let lastChartTipKey = '';
+let lastChartHoverKey = '';
 let sessionTableItems = [];
 let lastToastTimer = null;
 let lastWindowLayoutApplied = '';
 let lastRenderMode = '';
 let suppressChartIntro = false;
 let resizeFrame = null;
+let resizeFrameTimer = null;
+let resizeTimer = null;
 let queryRenderTimer = null;
 let analyticsDeferredToken = 0;
+const SESSION_PAGE_SIZE = 48;
 let requestTableRenderLimit = 100;
-let sessionTableRenderLimit = 80;
+let sessionTableRenderLimit = SESSION_PAGE_SIZE;
+let sessionTablePage = Math.max(0, Number(localStorage.getItem('sessionTablePage') || '0') || 0);
 let requestPageLoading = false;
 let sessionPageLoading = false;
+let sessionPageCache = { key: '', items: null, total: 0, page: 0, timestamp: 0 };
+let sessionPageRefreshTimer = null;
 let lastRenderPerf = null;
 let currentRenderPerf = null;
 let tableScrollBindFrame = null;
 let perfPanelOpen = localStorage.getItem('perfPanelOpen') === '1';
 let aggregateRefreshToken = 0;
 let aggregateRefreshTimer = null;
-let visibleSeries = new Set((localStorage.getItem('chartSeries') || 'total,input,output,cacheHitRate').split(',').filter(Boolean));
+let renderScheduleFrame = null;
+let renderScheduleTimer = null;
+let renderScheduled = false;
+let pendingRenderState = null;
+let pendingRenderOptions = null;
+let lastFilteredRows = [];
+let lastFilteredSnapshot = null;
+let lastFilteredModeKey = '';
+let slotHtmlCache = new Map();
+let chartResizeObserver = null;
+let chartResizeObservedCanvas = null;
+let chartResizeSizeKey = '';
+let zoomInteractionUntil = 0;
+let chartCanvasBoxCache = { width: 0, height: 0, dpr: 0, key: '', timestamp: 0, source: '' };
+let chartGeometryDirty = false;
+let chartBindTimer = null;
+let chartBindFrame = null;
+let chartBindToken = 0;
+let chartZoomSettleTimer = null;
+let chartResizeSettleTimer = null;
+let chartResizeQuietUntil = 0;
+let lastChartDrawSignature = '';
+let chartStableBucketCache = new Map();
+let sessionHydrationItems = [];
+let sessionHydrationToken = 0;
+let sessionBulkPatchFrame = null;
+let sessionInspectorPatchToken = 0;
+let sessionInspectorPatchTimer = null;
+let lastSessionSelectedRowKey = '';
+let storedChartSeries = localStorage.getItem('chartSeries') || '';
+if(localStorage.getItem('chartSeriesLeanMigrated') !== '1'){
+  if(!storedChartSeries || storedChartSeries === 'total,input,output,cacheHitRate') storedChartSeries = 'total,input,output,cacheRead';
+  localStorage.setItem('chartSeries', storedChartSeries);
+  localStorage.setItem('chartSeriesLeanMigrated', '1');
+}
+if(localStorage.getItem('chartSeriesMinimalMigrated') !== '1'){
+  const chosen = new Set(String(storedChartSeries || '').split(',').filter(Boolean));
+  if(!chosen.size || chosen.has('cacheHitRate') || chosen.has('cacheWrite') || chosen.has('ttftMs') || chosen.has('waitMs') || chosen.has('queueMs')){
+    storedChartSeries = 'total,input,output,cacheRead';
+    localStorage.setItem('chartSeries', storedChartSeries);
+  }
+  localStorage.setItem('chartSeriesMinimalMigrated', '1');
+}
+if(localStorage.getItem('chartSeriesTokenOnlyMigrated') !== '1'){
+  const chosen = new Set(String(storedChartSeries || '').split(',').filter(Boolean));
+  if(!chosen.size || chosen.has('cacheHitRate') || !chosen.has('cacheRead')){
+    storedChartSeries = 'total,input,output,cacheRead';
+    localStorage.setItem('chartSeries', storedChartSeries);
+  }
+  localStorage.setItem('chartSeriesTokenOnlyMigrated', '1');
+}
+let visibleSeries = new Set((storedChartSeries || 'total,input,output,cacheRead').split(',').filter(Boolean));
 let sessionMeta = {};
 const prefersReducedMotion = Boolean(window.matchMedia?.('(prefers-reduced-motion: reduce)').matches);
+if(workspaceMode === 'analytics' && tableTab === 'sessions'){
+  tableTab = 'requests';
+  localStorage.setItem('statsTableTab', tableTab);
+}
 
 function rendererPartPath(name){
   try {
@@ -93,7 +155,50 @@ let lastCommittedHtml = '';
 let lastRenderCost = 0;
 eval(readRendererPart('dashboard/dashboard-perf.js'));
 eval(readRendererPart('dashboard/dashboard-slots.js'));
+function mergeRenderOptions(prev = {}, next = {}){
+  prev = prev || {};
+  next = next || {};
+  const merged = { ...prev, ...next };
+  if(prev.windowLayout === false || next.windowLayout === false) merged.windowLayout = false;
+  if(prev.instantChart || next.instantChart) merged.instantChart = true;
+  if(prev.deferHeavy || next.deferHeavy) merged.deferHeavy = true;
+  if(prev.partial || next.partial) merged.partial = true;
+  if(prev.skipAggregates || next.skipAggregates) merged.skipAggregates = true;
+  return merged;
+}
 function render(s, opts = {}){
+  if(opts.immediate === true) return renderImmediate(s, opts);
+  pendingRenderState = s;
+  pendingRenderOptions = mergeRenderOptions(pendingRenderOptions, opts);
+  if(renderScheduled) return;
+  renderScheduled = true;
+  const flush = () => {
+    if(!renderScheduled) return;
+    renderScheduled = false;
+    if(renderScheduleFrame){ try { cancelAnimationFrame(renderScheduleFrame); } catch {} }
+    if(renderScheduleTimer) clearTimeout(renderScheduleTimer);
+    renderScheduleFrame = null;
+    renderScheduleTimer = null;
+    const nextState = pendingRenderState;
+    const nextOptions = pendingRenderOptions || {};
+    pendingRenderState = null;
+    pendingRenderOptions = null;
+    renderImmediate(nextState, nextOptions);
+  };
+  renderScheduleFrame = requestAnimationFrame(flush);
+  renderScheduleTimer = setTimeout(flush, 48);
+}
+function schedulePostCommit(fn, timeout = 48){
+  let done = false;
+  const run = () => {
+    if(done) return;
+    done = true;
+    fn();
+  };
+  try { requestAnimationFrame(run); } catch {}
+  setTimeout(run, timeout);
+}
+function renderImmediate(s, opts = {}){
   const renderStartedAt = perfNow();
   perfBucket(viewModeKey());
   rangeFilter = normalizeRangeFilter(rangeFilter);
@@ -106,55 +211,76 @@ function render(s, opts = {}){
   lastRenderMode = modeKey;
   syncFooter();
   applyCompactWindowChrome();
-  if(opts.windowLayout !== false) applyWindowLayout();
-  if(modeChanged) app?.classList.add('view-switching');
+  if(modeChanged){
+    app?.classList.add('view-switching');
+    setAppInteractionMode('view-switching', 170);
+  }
   if(!s || !s.ok) return renderError(s);
   const sourceOpts = sourceOptions(s);
   if(sourceFilter !== 'all' && !sourceOpts.some((x) => x[0] === sourceFilter)) sourceFilter = 'all';
-  if(modelFilter !== 'all' && !modelOptions(s).includes(modelFilter)) modelFilter = 'all';
-  const filterStartedAt = perfNow();
-  const rows = filterRows(s);
-  markPerfStage('filterMs', perfNow() - filterStartedAt);
+  const needsRequestScope = layoutMode === 'compact' || workspaceMode === 'analytics';
+  if(needsRequestScope && modelFilter !== 'all' && !modelOptions(s).includes(modelFilter)) modelFilter = 'all';
+  const rowsForRender = () => {
+    const filterStartedAt = perfNow();
+    const list = getFilteredRowsForView(s);
+    markPerfStage('filterMs', perfNow() - filterStartedAt);
+    return list;
+  };
   if(layoutMode === 'compact'){
+    const rows = rowsForRender();
     commitAppHtml(app, `${headerHtml(true)}${filtersHtml(s)}${renderCompactMenu(s, rows)}`);
     syncFooter();
     if(opts.windowLayout !== false) applyWindowLayout();
     markRenderCost(renderStartedAt, 'compact', rows.length);
-    requestAnimationFrame(() => app?.classList.remove('view-switching'));
+    schedulePostCommit(() => {
+      app?.classList.remove('view-switching');
+      document.body?.classList?.remove?.('view-switching');
+    });
     return;
   }
   if(workspaceMode === 'sessions'){
+    markPerfStage('filterMs', 0);
     const domStartedAt = perfNow();
     const patched = opts.partial === true && !modeChanged && patchSessionView(s, opts);
-    if(!patched) commitAppHtml(app, `${headerHtml(false)}${filtersHtml(s)}${renderSessionWorkspace(s)}`);
+    const deferRows = true;
+    if(!patched) commitAppHtml(app, `${headerHtml(false)}${filtersHtml(s)}${renderSessionWorkspace(s, { deferRows })}`);
     markPerfStage('domCommitMs', perfNow() - domStartedAt);
     syncFooter();
+    if(opts.windowLayout !== false) applyWindowLayout();
     markRenderCost(renderStartedAt, patched ? 'sessions:partial' : 'sessions', sessionTableItems.length);
-    requestAnimationFrame(() => { app?.classList.remove('view-switching'); bindIncrementalTables(); });
+    schedulePostCommit(() => {
+      app?.classList.remove('view-switching');
+      document.body?.classList?.remove?.('view-switching');
+      bindIncrementalTables();
+      if(deferRows && typeof hydrateSessionRows === 'function') hydrateSessionRows();
+    });
     return;
   }
   const deferHeavy = opts.deferHeavy === true;
+  const rows = rowsForRender();
   const domStartedAt = perfNow();
   const patched = opts.partial === true && !modeChanged && patchAnalyticsView(s, rows, opts);
   if(!patched) commitAppHtml(app, analyticsShellHtml(s, rows, opts));
   markPerfStage('domCommitMs', perfNow() - domStartedAt);
   syncFooter();
+  if(opts.windowLayout !== false) applyWindowLayout();
+  markRenderCost(renderStartedAt, patched ? 'analytics:partial' : 'analytics', rows.length);
   const instant = opts.instantChart === true || modeChanged || suppressChartIntro || patched;
-  requestAnimationFrame(() => {
-    bindChart(rows, s, { instant });
+  schedulePostCommit(() => {
     app?.classList.remove('view-switching');
-    markRenderCost(renderStartedAt, patched ? 'analytics:partial' : 'analytics', rows.length);
+    document.body?.classList?.remove?.('view-switching');
     bindIncrementalTables();
     if(deferHeavy && !patched){
       const token = ++analyticsDeferredToken;
-      setTimeout(() => {
-        if(token !== analyticsDeferredToken || snapshot !== s || layoutMode !== 'dashboard' || workspaceMode !== 'analytics') return;
-        patchHtmlSlot('analyticsTableSlot', analyticsTableHtml(rows, s));
-        patchHtmlSlot('analyticsAdvancedSlot', analyticsAdvancedHtml(rows, s));
-        bindIncrementalTables();
-      }, 35);
+      scheduleAnalyticsDeferredPatches(token, rows, s);
     }
     scheduleDashboardAggregates(s, opts);
+    const chartDelay = modeChanged ? 64 : (patched ? 180 : 80);
+    if(typeof scheduleChartBind === 'function') scheduleChartBind(rows, s, { instant }, chartDelay);
+    else {
+      bindChart(rows, s, { instant });
+      if(typeof ensureChartResizeObserver === 'function') ensureChartResizeObserver();
+    }
   });
 }
 
@@ -173,12 +299,7 @@ function bindIncrementalTables(){
     }
     const sessionScroller = document.querySelector('.session-scroll');
     if(sessionScroller && !sessionScroller.dataset.incrementalBound){
-      sessionScroller.dataset.incrementalBound = '1';
-      sessionScroller.addEventListener('scroll', () => {
-        if(workspaceMode !== 'sessions' || !snapshot?.ok) return;
-        if(sessionScroller.scrollTop + sessionScroller.clientHeight < sessionScroller.scrollHeight - 180) return;
-        appendSessionRows();
-      }, { passive:true });
+      sessionScroller.dataset.incrementalBound = 'paged';
     }
   });
 }

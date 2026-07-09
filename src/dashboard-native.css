@@ -17,7 +17,7 @@
   min-height:var(--control-height);
   border-radius:var(--control-radius);
 }
-:where(.summary-card,.chart-card,.table-card,.source-card,.session-simple-shell,.session-advanced-shell,.session-essential-inspector,.request-inspector,.session-inspector,.cache-governance,.usage-total-board,.agent-rhythm-card) {
+:where(.summary-card,.chart-card,.table-card,.source-card,.session-simple-shell,.session-advanced-shell,.session-essential-inspector,.session-inspector,.cache-governance,.usage-total-board,.agent-rhythm-card) {
   border-color:var(--hairline) !important;
   box-shadow:var(--shadow-card) !important;
 }

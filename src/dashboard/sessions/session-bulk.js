@@ -1,9 +1,8 @@
 function sessionBulkHtml(showWhenEmpty = true){
   const selected = selectedSessionItems();
-  if(!showWhenEmpty && !selected.length) return '';
   const disabled = selected.length ? '' : 'disabled';
   const simple = !sessionAdvancedOpen && !showWhenEmpty;
-  if(simple) return `<div class="session-bulk simple"><span>${TXT.selected} ${n(selected.length)}</span><button data-session-bulk="clear" ${disabled}>${TXT.clearSelection}</button><button data-session-bulk="copy-summary" ${disabled}>${TXT.copySelected}</button><button data-session-bulk="archive" ${disabled}>${TXT.archiveSelected}</button><button data-session-bulk="restore" ${disabled}>${TXT.restoreSelected}</button></div>`;
+  if(simple) return `<div class="session-bulk simple ${selected.length ? '' : 'empty'}"><span>${TXT.selected} ${n(selected.length)}</span><button data-session-bulk="clear" ${disabled}>${TXT.clearSelection}</button><button data-session-bulk="copy-summary" ${disabled}>${TXT.copySelected}</button><button data-session-bulk="archive" ${disabled}>${TXT.archiveSelected}</button><button data-session-bulk="restore" ${disabled}>${TXT.restoreSelected}</button></div>`;
   return `<div class="session-bulk"><span>${TXT.selected} ${n(selected.length)}</span><button data-session-bulk="select-all">${TXT.selectAll}</button><button data-session-bulk="clear" ${disabled}>${TXT.clearSelection}</button><button data-session-bulk="tag" ${disabled}>${TXT.bulkTag}</button><button data-session-bulk="copy-summary" ${disabled}>${TXT.copySelected}</button><button data-session-bulk="copy-markdown" ${disabled}>${TXT.exportMarkdown}</button><button data-session-bulk="copy-json" ${disabled}>${TXT.exportJson}</button><button data-session-bulk="copy-csv" ${disabled}>${TXT.exportCsv}</button><button data-session-bulk="archive" ${disabled}>${TXT.archiveSelected}</button><button data-session-bulk="restore" ${disabled}>${TXT.restoreSelected}</button></div>`;
 }
 function renderBulkMetaSheet(){

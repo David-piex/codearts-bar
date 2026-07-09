@@ -80,9 +80,12 @@ function buildSnapshotFromRows({ dbPath, stat, sources = [], dailyLimit, windowH
   const windowStartMs = timestamp - windowHours * 60 * 60 * 1000;
   const weekStartMs = timestamp - 7 * 24 * 60 * 60 * 1000;
   const partMap = agg.buildPartMap(parts);
-  const ttftEvents = localProvider.scanTtftLogs();
+  const perfLogs = typeof localProvider.scanUsageLogs === 'function'
+    ? localProvider.scanUsageLogs()
+    : { ttftEvents: localProvider.scanTtftLogs(), queueEvents: localProvider.scanQueueLogs() };
+  const ttftEvents = perfLogs.ttftEvents || [];
   const ttftMap = agg.buildTtftMap(messages, ttftEvents);
-  const queueEvents = localProvider.scanQueueLogs();
+  const queueEvents = perfLogs.queueEvents || [];
   const todayRows = messages.filter((m) => m.time_created >= dayStartMs);
   const windowRows = messages.filter((m) => m.time_created >= windowStartMs);
   const weekRows = messages.filter((m) => m.time_created >= weekStartMs);

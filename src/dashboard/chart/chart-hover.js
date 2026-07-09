@@ -1,7 +1,29 @@
-function animateChart(rows, s, instant = false){ if(chartAnimationFrame) cancelAnimationFrame(chartAnimationFrame); if(instant || prefersReducedMotion){ drawChart(rows, s, -1, 1); return; } const started = performance.now(); const duration = 420; const frame = (now) => { const raw = Math.min(1, (now - started) / duration); const eased = 1 - Math.pow(1 - raw, 3); drawChart(rows, s, -1, eased); if(raw < 1) chartAnimationFrame = requestAnimationFrame(frame); else chartAnimationFrame = null; }; chartAnimationFrame = requestAnimationFrame(frame); }
+function animateChart(rows, s, instant = false){
+  if(chartAnimationFrame){
+    cancelAnimationFrame(chartAnimationFrame);
+    chartAnimationFrame = null;
+  }
+  if(instant || prefersReducedMotion){
+    drawChart(rows, s, -1, 1);
+    return;
+  }
+  const started = performance.now();
+  const duration = 420;
+  const frame = (now) => {
+    const raw = Math.min(1, (now - started) / duration);
+    const eased = 1 - Math.pow(1 - raw, 3);
+    drawChart(rows, s, -1, eased);
+    if(raw < 1) chartAnimationFrame = requestAnimationFrame(frame);
+    else chartAnimationFrame = null;
+  };
+  chartAnimationFrame = requestAnimationFrame(frame);
+}
 
 function animatePinnedHover(rows, s){
-  if(chartHoverFrame) cancelAnimationFrame(chartHoverFrame);
+  if(chartHoverFrame){
+    cancelAnimationFrame(chartHoverFrame);
+    chartHoverFrame = null;
+  }
   if(prefersReducedMotion || chartPinnedIndex < 0 || !chartPoints[chartPinnedIndex]) return;
   const started = performance.now();
   const pulseFrame = (now) => {
@@ -18,6 +40,9 @@ function bindChart(rows, s, opts = {}){
   if(!canvas) return;
   animateChart(rows, s, opts.instant === true);
   const nearest = (e) => {
+    if(chartGeometryDirty){
+      drawChart(rows, s, -1, 1);
+    }
     const rect = canvas.getBoundingClientRect();
     const mx = e.clientX - rect.left;
     const my = e.clientY - rect.top;
@@ -42,16 +67,20 @@ function bindChart(rows, s, opts = {}){
     card?.classList.toggle('chart-pinned', chartPinnedIndex >= 0);
     const targetPoint = chartPoints[hit.idx];
     if(!targetPoint) return;
+    const nextHoverKey = `${hit.idx}:${hit.focus?.key || ''}:${chartPinnedIndex}`;
     chartHover.idx = hit.idx;
     chartHover.focusKey = hit.focus?.key || '';
     chartHover.x = targetPoint.x;
     chartHover.y = hit.focus?.y ?? (canvas.getBoundingClientRect().height / 2);
     chartHover.pulse = 0;
-    if(chartHoverFrame) cancelAnimationFrame(chartHoverFrame);
-    chartHoverFrame = requestAnimationFrame(() => {
-      chartHoverFrame = null;
-      drawChart(rows, s, hit.idx, 1);
-    });
+    if(nextHoverKey !== lastChartHoverKey){
+      lastChartHoverKey = nextHoverKey;
+      if(chartHoverFrame) cancelAnimationFrame(chartHoverFrame);
+      chartHoverFrame = requestAnimationFrame(() => {
+        chartHoverFrame = null;
+        drawChart(rows, s, hit.idx, 1);
+      });
+    }
     showTip(e, targetPoint.bucket, hit.focus);
   };
   canvas.onclick = (e) => {
@@ -102,5 +131,5 @@ function bindChart(rows, s, opts = {}){
     showTip(fakeEvent, p.bucket, focus);
     animatePinnedHover(rows, s);
   };
-  canvas.onmouseleave = () => clearChartHover();
+  canvas.onmouseleave = () => { lastChartHoverKey = ''; clearChartHover(); };
 }

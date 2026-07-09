@@ -1,5 +1,17 @@
 function sessionOverviewHtml(s){
-  const all = (s.sessions || []).filter((item) => (sourceFilter === 'all' || sourceKey(item) === sourceFilter) && (sessionProjectFilter === 'all' || sessionProjectKey(item) === sessionProjectFilter));
+  const sessionCount = Array.isArray(s?.sessions) ? s.sessions.length : 0;
+  const summary = s?.sessionSummary || {};
+  const shouldUseSummary = sessionCount > 1200;
+  if(shouldUseSummary){
+    const total = Number(summary.total || s.sessionTotal || sessionCount || 0);
+    const active = Number(summary.active ?? (sessionStatusFilter === 'archived' ? 0 : total));
+    const archived = Number(summary.archived || 0);
+    const tagged = Object.values(sessionMeta || {}).filter((meta) => (meta?.tags || []).length || meta?.note).length;
+    const pinned = pinnedSessionKeys?.size || 0;
+    const usage = s?.usage?.all || s?.usage?.week || {};
+    return `<div class="session-overview session-overview-lean"><div class="session-overview-card strong"><span>${TXT.visibleSessions}</span><b>${n(sessionTableItems.length)}</b><em>${TXT.allSessions} ${n(total)}</em></div><div class="session-overview-card"><span>${TXT.activeSessions}</span><b>${n(active)}</b><em>${TXT.archivedSessions} ${n(archived)}</em></div><div class="session-overview-card"><span>${TXT.pinnedSessions}</span><b>${n(pinned)}</b><em>${TXT.taggedSessions} ${n(tagged)}</em></div><div class="session-overview-card"><span>${TXT.total}</span><b>${compact(usage.total || 0)}</b><em>${n(usage.messages || usage.requests || 0)} ${TXT.turns}</em></div></div>`;
+  }
+  const all = (s.sessions || []).filter((item) => (sourceFilter === 'all' || sourceKey(item) === sourceFilter) && (sessionProjectFilter === 'all' || sessionProjectKey(item) === sessionProjectFilter) && (typeof sessionRangeMatches !== 'function' || sessionRangeMatches(item, s)));
   const active = all.filter((item) => !item.archived).length;
   const archived = all.filter((item) => item.archived).length;
   const tagged = all.filter((item) => (metaForSession(item).tags || []).length || metaForSession(item).note).length;
@@ -18,38 +30,78 @@ function addSessionUsage(acc, u){
   acc.calls += Number(u.modelCalls || 0);
   return acc;
 }
-function sessionRowHtml(x, detailed = false){
+function sessionRowHtml(x){
   const u = x.usage || {};
   const key = sessionKeyFor(x);
   const selected = key === selectedSessionId;
   const checked = selectedSessionKeys.has(key);
   const pinned = isPinnedSession(x);
-  const commonStart = `<tr class="session-row ${selected ? 'selected' : ''} ${pinned ? 'pinned' : ''}" data-session-select="${esc(key)}"><td class="check-col"><input type="checkbox" data-session-check="${esc(key)}" ${checked ? 'checked' : ''}></td><td class="pin-col"><button class="pin-btn ${pinned ? 'active' : ''}" data-session-pin="${esc(key)}" title="${pinned ? TXT.unpin : TXT.pin}">${pinned ? '&#9733;' : '&#9734;'}</button></td><td>${esc(dateLabel(x.updatedAt))}</td><td><span class="source-pill">${esc(sourceName(x))}</span></td><td><b>${esc(x.title || '(untitled)')}</b>${pinned ? `<span class="pin-label">${TXT.pinned}</span>` : ''}<span class="project-chip" title="${esc(x.directory || '')}">${esc(sessionProjectName(x))}</span><div class="muted">${esc(x.id)}</div></td><td>${sessionTagsHtml(x, 3)}</td>`;
-  if(detailed){
-    return `${commonStart}<td><b>${n(u.total)}</b></td><td>${n(u.input)}</td><td>${n(u.output)}</td><td class="cache-cell">${cachePillHtml(u)}</td><td>${n(u.userTurns)}</td><td>${n(u.modelCalls)}</td><td><code>${esc(sessionTopModel(x))}</code></td><td class="${x.archived ? 'muted' : 'ok'}">${x.archived ? TXT.archived : TXT.active}</td><td><div class="path-cell" title="${esc(x.directory || '')}">${esc(compactPath(x.directory || ''))}</div></td></tr>`;
-  }
-  return `${commonStart}<td><b>${n(u.total)}</b></td><td class="${x.archived ? 'muted' : 'ok'}">${x.archived ? TXT.archived : TXT.active}</td><td class="session-actions-cell"><div class="session-row-actions"><button data-session-action="copy-summary" data-session-key="${esc(key)}" title="${TXT.copySummary}">${TXT.copy}</button><button data-session-action="open" data-session-key="${esc(key)}" title="${TXT.open}">${TXT.open}</button><button data-session-action="archive" data-session-key="${esc(key)}" data-archive="${x.archived ? 'false' : 'true'}" title="${x.archived ? TXT.restore : TXT.archive}">${x.archived ? TXT.restore : TXT.archive}</button></div></td></tr>`;
+  return `<tr class="session-row ${selected ? 'selected' : ''} ${pinned ? 'pinned' : ''}" data-session-select="${esc(key)}"><td class="check-col"><input type="checkbox" data-session-check="${esc(key)}" ${checked ? 'checked' : ''}></td><td class="pin-col"><button class="pin-btn ${pinned ? 'active' : ''}" data-session-pin="${esc(key)}" title="${pinned ? TXT.unpin : TXT.pin}">${pinned ? '&#9733;' : '&#9734;'}</button></td><td>${esc(dateLabel(x.updatedAt))}</td><td><span class="source-pill">${esc(sourceName(x))}</span></td><td><b>${esc(x.title || TXT.untitled)}</b>${pinned ? `<span class="pin-label">${TXT.pinned}</span>` : ''}<span class="project-chip" title="${esc(x.directory || '')}">${esc(sessionProjectName(x))}</span><div class="muted">${esc(x.id)}</div></td><td>${sessionTagsHtml(x, 3)}</td><td><b>${n(u.total)}</b></td><td class="${x.archived ? 'muted' : 'ok'}">${x.archived ? TXT.archived : TXT.active}</td><td class="session-actions-cell"><div class="session-row-actions"><button data-session-action="copy-summary" data-session-key="${esc(key)}" title="${TXT.copySummary}">${TXT.copy}</button><button data-session-action="open" data-session-key="${esc(key)}" title="${TXT.open}">${TXT.open}</button><button data-session-action="archive" data-session-key="${esc(key)}" data-archive="${x.archived ? 'false' : 'true'}" title="${x.archived ? TXT.restore : TXT.archive}">${x.archived ? TXT.restore : TXT.archive}</button></div></td></tr>`;
 }
 function sessionLimitNote(rendered, total){
-  return rendered < total ? `<div class="table-limit-note" data-table-limit="sessions" data-rendered="${rendered}" data-total="${total}">\u5df2\u5148\u6e32\u67d3 ${n(rendered)} / ${n(total)} \u884c\uff0c\u6eda\u52a8\u5230\u5e95\u90e8\u7ee7\u7eed\u52a0\u8f7d\uff0c\u6216\u7ee7\u7eed\u641c\u7d22 / \u7b5b\u9009\u7f29\u5c0f\u8303\u56f4\u3002</div>` : '';
+  const pageSize = SESSION_PAGE_SIZE;
+  if(total <= pageSize) return '';
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const page = Math.max(0, Math.min(totalPages - 1, Number(sessionTablePage || 0)));
+  const displayCount = rendered || Math.min(pageSize, Math.max(0, total - page * pageSize));
+  const start = page * pageSize + (displayCount ? 1 : 0);
+  const end = Math.min(total, page * pageSize + displayCount);
+  return `<div class="table-limit-note table-page-note" data-table-limit="sessions" data-rendered="${rendered}" data-total="${total}"><span>${TXT.sessionPagination || '会话分页'}：${n(start)}-${n(end)} / ${n(total)} · ${TXT.page || '第'} ${n(page + 1)} / ${n(totalPages)}</span><button data-session-page="prev" ${page <= 0 ? 'disabled' : ''}>${TXT.prevPage || '上一页'}</button><button data-session-page="next" ${page >= totalPages - 1 ? 'disabled' : ''}>${TXT.nextPage || '下一页'}</button></div>`;
 }
-function sessionTable(s){
+function shouldDeferSessionDbFallback(s, dbPage){
+  if(dbPage?.paged || typeof canUseDbSessionPage !== 'function' || !canUseDbSessionPage()) return false;
+  const inMemory = Array.isArray(s?.sessions) ? s.sessions.length : 0;
+  const totalHint = Number(s?.sessionTotal || s?.sessionSummary?.active || s?.sessionSummary?.total || inMemory || 0);
+  return inMemory > 1200 || totalHint > inMemory || sessionTablePage > 0;
+}
+function sessionTableLoadingHtml(total){
+  sessionTableItems = [];
+  const head = `<tr><th class="check-col"><input type="checkbox" data-session-check-all disabled></th><th></th><th>${TXT.updated}</th><th>${TXT.source}</th><th>${TXT.session}</th><th>${TXT.notesTags}</th><th>${TXT.total}</th><th>${TXT.status}</th><th></th></tr>`;
+  const loading = `<div class="session-row-loading">${TXT.loading || '正在加载'} ${n(Math.min(SESSION_PAGE_SIZE, Math.max(0, Number(total || 0))))} / ${n(total || 0)} ${TXT.rows}</div>`;
+  const rows = `<div class="table-scroll session-scroll"><table class="session-table simple"><thead>${head}</thead><tbody></tbody></table>${loading}</div>${sessionLimitNote(0, total)}`;
+  return `<div class="session-manager"><div id="sessionTableSlot" class="session-main">${rows}</div><div id="sessionInspectorSlot">${renderSessionInspector()}</div></div>`;
+}
+function resetSessionPaging(){
+  sessionTablePage = 0;
+  sessionTableRenderLimit = SESSION_PAGE_SIZE;
+  if(typeof invalidateSessionPageCache === 'function') invalidateSessionPageCache();
+  localStorage.setItem('sessionTablePage', '0');
+}
+function sessionTable(s, opts = {}){
   const tableStartedAt = perfNow();
-  const filtered = sortSessions((s.sessions || []).filter(sessionMatches));
-  const limit = Math.max(80, Number(sessionTableRenderLimit || 80));
-  const list = filtered.slice(0, limit);
+  const limit = SESSION_PAGE_SIZE;
+  const dbPage = typeof sessionPageRowsForCurrentView === 'function' ? sessionPageRowsForCurrentView(s) : null;
+  if(shouldDeferSessionDbFallback(s, dbPage)){
+    const total = Number(s?.sessionTotal || s?.sessionSummary?.total || (s.sessions || []).length || 0);
+    if(typeof scheduleSessionPageRefresh === 'function') scheduleSessionPageRefresh(s, sessionTablePage);
+    const html = sessionTableLoadingHtml(total);
+    markPerfStage('tableRenderMs', perfNow() - tableStartedAt);
+    return html;
+  }
+  const filtered = dbPage?.paged ? sortSessions((dbPage.list || []).filter(sessionMatches)) : sortSessions((s.sessions || []).filter(sessionMatches));
+  const total = dbPage?.paged ? Math.max(Number(dbPage.total || 0), filtered.length) : filtered.length;
+  const totalPages = Math.max(1, Math.ceil(total / limit));
+  sessionTablePage = Math.max(0, Math.min(totalPages - 1, Number(sessionTablePage || 0)));
+  localStorage.setItem('sessionTablePage', String(sessionTablePage));
+  const start = sessionTablePage * limit;
+  const list = dbPage?.paged ? filtered.slice(0, limit) : filtered.slice(start, start + limit);
+  sessionTableRenderLimit = limit;
   sessionTableItems = list;
-  for(const key of [...selectedSessionKeys]) if(!filtered.some((x) => sessionKeyFor(x) === key)) selectedSessionKeys.delete(key);
+  const visibleKeys = new Set(list.map(sessionKeyFor));
+  for(const key of [...selectedSessionKeys]) if(dbPage?.paged ? !visibleKeys.has(key) : !filtered.some((x) => sessionKeyFor(x) === key)) selectedSessionKeys.delete(key);
   saveSelectedSessions();
-  if(selectedSessionId && !filtered.some((x) => sessionKeyFor(x) === selectedSessionId)) selectedSessionId = '';
+  if(selectedSessionId && (dbPage?.paged ? !visibleKeys.has(selectedSessionId) : !filtered.some((x) => sessionKeyFor(x) === selectedSessionId))) selectedSessionId = '';
   if(!selectedSessionId && list[0]) selectedSessionId = sessionKeyFor(list[0]);
   const allChecked = list.length && list.every((x) => selectedSessionKeys.has(sessionKeyFor(x)));
-  const detailed = false;
-  const head = detailed
-    ? `<tr><th class="check-col"><input type="checkbox" data-session-check-all ${allChecked ? 'checked' : ''}></th><th></th><th>${TXT.updated}</th><th>${TXT.source}</th><th>${TXT.session}</th><th>${TXT.notesTags}</th><th>${TXT.total}</th><th>${TXT.input}</th><th>${TXT.output}</th><th>${TXT.cacheHitRate}</th><th>${TXT.turns}</th><th>${TXT.calls}</th><th>${TXT.topModel}</th><th>${TXT.status}</th><th>${TXT.directory}</th></tr>`
-    : `<tr><th class="check-col"><input type="checkbox" data-session-check-all ${allChecked ? 'checked' : ''}></th><th></th><th>${TXT.updated}</th><th>${TXT.source}</th><th>${TXT.session}</th><th>${TXT.notesTags}</th><th>${TXT.total}</th><th>${TXT.status}</th><th></th></tr>`;
-  const body = list.length ? list.map((x) => sessionRowHtml(x, detailed)).join('') : emptyRow(detailed ? 15 : 9);
-  const rows = `<div class="table-scroll session-scroll"><table class="session-table ${detailed ? 'detailed' : 'simple'}"><thead>${head}</thead><tbody>${body}</tbody></table></div>${sessionLimitNote(list.length, filtered.length)}`;
+  const head = `<tr><th class="check-col"><input type="checkbox" data-session-check-all ${allChecked ? 'checked' : ''}></th><th></th><th>${TXT.updated}</th><th>${TXT.source}</th><th>${TXT.session}</th><th>${TXT.notesTags}</th><th>${TXT.total}</th><th>${TXT.status}</th><th></th></tr>`;
+  const deferRows = opts.deferRows === true && list.length > 18;
+  if(deferRows){
+    sessionHydrationItems = list;
+    sessionHydrationToken += 1;
+  }
+  const body = deferRows ? '' : (list.length ? list.map(sessionRowHtml).join('') : emptyRow(9));
+  const bodyAttrs = deferRows ? ' data-session-deferred="1"' : '';
+  const rows = `<div class="table-scroll session-scroll"><table class="session-table simple"><thead>${head}</thead><tbody${bodyAttrs}>${body}</tbody></table>${deferRows ? `<div class="session-row-loading">${TXT.loading || '正在加载'} ${n(list.length)} ${TXT.rows}</div>` : ''}</div>${sessionLimitNote(list.length, total)}`;
   const html = `<div class="session-manager"><div id="sessionTableSlot" class="session-main">${rows}</div><div id="sessionInspectorSlot">${renderSessionInspector()}</div></div>`;
   markPerfStage('tableRenderMs', perfNow() - tableStartedAt);
   return html;

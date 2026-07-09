@@ -11,8 +11,11 @@ const { diagnose } = require('./diagnose');
 const { buildHealth, notificationEvents } = require('./health');
 const localProvider = require('./providers/codeartsLocal');
 
+const SESSION_PAGE_SIZE = 48;
+
 let tray = null;
 let lastSnapshot = null;
+let lastDashboardSnapshot = null;
 let refreshTimer = null;
 let settingsWindow = null;
 let dashboardWindow = null;
@@ -44,6 +47,29 @@ function makeTrayIcon(snapshot) {
 }
 function menuItem(label, sublabel) { return { label: sublabel ? `${label}    ${sublabel}` : label, enabled: false }; }
 function trim(text, max) { text = String(text || '').replace(/\s+/g, ' ').trim(); return text.length > max ? `${text.slice(0, max - 1)}…` : text; }
+function usageStatusFromSummary(usage = {}, settings = loadSettings()) {
+  const dailyLimit = Number(settings.dailyLimit || process.env.CODEARTS_BAR_DAILY_LIMIT || 200000);
+  const today = usage.today || {};
+  const usagePercent = dailyLimit > 0 ? Math.min(999, Math.max(0, (Number(today.total || 0) / dailyLimit) * 100)) : 0;
+  return { label: `${Math.round(usagePercent)}%`, usagePercent, level: usagePercent >= 90 ? 'danger' : usagePercent >= 70 ? 'warning' : 'ok' };
+}
+function traySummaryText(snapshot) {
+  if (!snapshot || !snapshot.ok) return snapshot ? `\u7801\u9053 Bar\n${snapshot.error}` : '\u7801\u9053 Bar';
+  const u = snapshot.usage || {};
+  return [
+    `\u7801\u9053 Bar \u00b7 \u4eca\u65e5 ${snapshot.status?.label || '0%'}`,
+    `\u66f4\u65b0\uff1a${snapshot.updatedAt}`,
+    `\u4eca\u65e5\uff1a${fmtInt(u.today?.total || 0)} token`,
+    `24h\uff1a${fmtInt(u.window?.total || 0)} token`,
+    `7d\uff1a${fmtInt(u.week?.total || 0)} token`,
+  ].join('\n');
+}
+function updateTray(snapshot = lastSnapshot) {
+  if (!tray) return;
+  tray.setImage(makeTrayIcon(snapshot));
+  tray.setToolTip(snapshot?.ok ? traySummaryText(snapshot) : `\u7801\u9053 Bar\n${snapshot?.error || '\u5c1a\u672a\u5237\u65b0'}`);
+  tray.setContextMenu(buildMenu(snapshot));
+}
 function safeUserDataPath() {
   try { return app.getPath('userData'); } catch { return os.tmpdir(); }
 }
@@ -82,7 +108,7 @@ function buildMenu(snapshot) {
       { label: trim(snapshot ? snapshot.error : '尚未刷新', 120), enabled: false },
       { type: 'separator' },
       { label: '打开面板', click: openDashboardWindow },
-      { label: '刷新', click: refreshNow },
+      { label: '刷新', click: refreshTraySummaryOnly },
       { label: '打开日志', click: openLogFile },
       { type: 'separator' },
       { label: '退出', click: quitApp },
@@ -100,7 +126,7 @@ function buildMenu(snapshot) {
   ];
   template.push({ type: 'separator' });
   template.push({ label: '打开面板', click: openDashboardWindow });
-  template.push({ label: '刷新', click: refreshNow });
+  template.push({ label: '刷新', click: refreshTraySummaryOnly });
   template.push({ label: '设置', click: openSettingsWindow });
   template.push({ label: '打开日志', click: openLogFile });
   template.push({ label: '检查更新 / 安装包', click: openReleaseFolder });
@@ -185,13 +211,12 @@ function quitApp() {
 async function refreshNow() {
   const previousLevel = lastSnapshot && lastSnapshot.ok ? lastSnapshot.status.level : null;
   const previousHealth = lastSnapshot && lastSnapshot.ok ? lastSnapshot.health : null;
-  try { lastSnapshot = await getSnapshotWithCache(loadSettings()); }
-  catch (error) { appendLog('error', 'refresh', error.message, { stack: error.stack }); lastSnapshot = errorSnapshot(error); }
-  if (tray) {
-    tray.setImage(makeTrayIcon(lastSnapshot));
-    tray.setToolTip(lastSnapshot.ok ? snapshotToText(lastSnapshot) : `码道 Bar\n${lastSnapshot.error}`);
-    tray.setContextMenu(buildMenu(lastSnapshot));
+  try {
+    lastSnapshot = await getSnapshotWithCache(loadSettings());
+    lastDashboardSnapshot = buildDashboardPreviewSnapshot(lastSnapshot);
   }
+  catch (error) { appendLog('error', 'refresh', error.message, { stack: error.stack }); lastSnapshot = errorSnapshot(error); lastDashboardSnapshot = lastSnapshot; }
+  updateTray(lastSnapshot);
   if (lastSnapshot.ok && loadSettings().notifyDanger && previousLevel !== 'danger' && lastSnapshot.status.level === 'danger' && Notification.isSupported()) {
     new Notification({ title: '码道 Bar', body: `今日 token 使用偏高：${lastSnapshot.status.label}` }).show();
   }
@@ -203,6 +228,51 @@ async function refreshNow() {
   }
   pushDashboard();
   refreshOfficialInBackground();
+}
+
+
+async function refreshTraySummaryOnly() {
+  if (!lastSnapshot || !lastSnapshot.ok) return refreshNow();
+  const previousLevel = lastSnapshot.status?.level || null;
+  const settings = loadSettings();
+  const timestamp = Date.now();
+  try {
+    const summary = await localProvider.getSummary(dashboardAggregatePayload({ timestamp }));
+    if (summary?.ok && summary.usage) {
+      lastSnapshot = {
+        ...lastSnapshot,
+        timestamp,
+        updatedAt: lightUpdatedAt(timestamp),
+        usage: summary.usage,
+        sources: summary.sources || lastSnapshot.sources || [],
+        config: { ...(lastSnapshot.config || {}), dailyLimit: Number(settings.dailyLimit || process.env.CODEARTS_BAR_DAILY_LIMIT || 200000), windowHours: Number(settings.windowHours || process.env.CODEARTS_BAR_WINDOW_HOURS || 24) },
+        status: { ...(lastSnapshot.status || {}), ...usageStatusFromSummary(summary.usage, settings) },
+        freshness: { stale: false, source: 'summary', ageMs: 0 },
+      };
+    }
+  } catch (error) {
+    appendLog('warn', 'tray:summary', error.message);
+  }
+  updateTray(lastSnapshot);
+  if (lastSnapshot?.ok && settings.notifyDanger && previousLevel !== 'danger' && lastSnapshot.status?.level === 'danger' && Notification.isSupported()) {
+    new Notification({ title: '\u7801\u9053 Bar', body: `\u4eca\u65e5 token \u4f7f\u7528\u504f\u9ad8\uff1a${lastSnapshot.status.label}` }).show();
+  }
+  return lastSnapshot;
+}
+async function refreshLightAndPush(reason = 'watch') {
+  if (!lastSnapshot || !lastSnapshot.ok) return refreshNow();
+  try {
+    await buildDashboardLightSnapshot({ reason, timestamp: Date.now() });
+  } catch (error) {
+    appendLog('warn', 'refresh:light', error.message, { reason });
+    return refreshTraySummaryOnly();
+  }
+  updateTray(lastSnapshot);
+  pushDashboard();
+  return lastSnapshot;
+}
+function dashboardWindowVisible() {
+  return Boolean(dashboardWindow && !dashboardWindow.isDestroyed() && dashboardWindow.isVisible());
 }
 
 function openSessionDir(session) {
@@ -220,11 +290,14 @@ function openCodeArts(targetDir) {
 
 function scheduleRefresh() {
   if (refreshTimer) clearInterval(refreshTimer);
-  refreshTimer = setInterval(refreshNow, loadSettings().refreshMs);
+  refreshTimer = setInterval(refreshTraySummaryOnly, loadSettings().refreshMs);
 }
 function triggerRefreshSoon(reason = 'watch') {
   if (dbRefreshDebounce) clearTimeout(dbRefreshDebounce);
-  dbRefreshDebounce = setTimeout(refreshNow, reason === 'poll' ? 250 : 500);
+  dbRefreshDebounce = setTimeout(() => {
+    if (dashboardWindowVisible()) refreshLightAndPush(reason);
+    else refreshTraySummaryOnly();
+  }, reason === 'poll' ? 450 : 700);
 }
 function targetFingerprint(targets) {
   return targets.map((target) => {
@@ -318,14 +391,18 @@ function setDashboardLayoutMode(mode = 'dashboard') {
   if (!dashboardWindow || dashboardWindow.isDestroyed()) return { ok: false, reason: 'no-window' };
   const compact = mode === 'compact';
   try {
+    const targetWidth = compact ? 560 : 1280;
+    const targetHeight = compact ? 760 : 860;
     if (compact) {
       dashboardWindow.setMinimumSize(500, 620);
-      dashboardWindow.setSize(560, 760, true);
     } else {
       dashboardWindow.setMinimumSize(980, 680);
-      dashboardWindow.setSize(1280, 860, true);
     }
-    dashboardWindow.center();
+    const [width, height] = dashboardWindow.getSize();
+    if (Math.abs(width - targetWidth) > 2 || Math.abs(height - targetHeight) > 2) {
+      dashboardWindow.setSize(targetWidth, targetHeight, false);
+      dashboardWindow.center();
+    }
     return { ok: true, mode: compact ? 'compact' : 'dashboard' };
   } catch (error) {
     return { ok: false, error: error.message };
@@ -337,7 +414,19 @@ function setDashboardPinned(pinned = false) {
   return { ok: true, pinned: Boolean(pinned) };
 }
 function pushDashboard() {
-  if (dashboardWindow && !dashboardWindow.isDestroyed() && lastSnapshot) dashboardWindow.webContents.send('dashboard:snapshot', lastSnapshot);
+  if (dashboardWindow && !dashboardWindow.isDestroyed() && (lastDashboardSnapshot || lastSnapshot)) dashboardWindow.webContents.send('dashboard:snapshot', lastDashboardSnapshot || lastSnapshot);
+}
+function sameSessionIdentity(a = {}, b = {}) {
+  if (!a || !b || !a.id || !b.id || String(a.id) !== String(b.id)) return false;
+  if (a.dbPath && b.dbPath && String(a.dbPath) !== String(b.dbPath)) return false;
+  if (a.source && b.source && String(a.source) !== String(b.source)) return false;
+  return true;
+}
+function patchSessionInMemory(session, patch = {}) {
+  for (const snap of [lastSnapshot, lastDashboardSnapshot]) {
+    if (!snap || !snap.ok || !Array.isArray(snap.sessions)) continue;
+    snap.sessions = snap.sessions.map((item) => sameSessionIdentity(item, session) ? { ...item, ...patch } : item);
+  }
 }
 async function refreshOfficialInBackground() {
   return;
@@ -396,7 +485,11 @@ ipcMain.handle('settings:get', () => loadSettings());
 ipcMain.handle('settings:set', async (_event, next) => { const saved = saveSettings(next); scheduleRefresh(); scheduleDbWatch(); await refreshNow(); return saved; });
 ipcMain.handle('diagnose:get', async () => diagnose());
 ipcMain.handle('auth:get', async () => ({}));
-ipcMain.handle('dashboard:getSnapshot', () => lastSnapshot || errorSnapshot(new Error('尚未刷新')));
+ipcMain.handle('dashboard:getSnapshot', async (_event, payload = {}) => {
+  if (!lastSnapshot || !lastSnapshot.ok) return lastDashboardSnapshot || lastSnapshot || errorSnapshot(new Error('尚未刷新'));
+  if (payload && Object.keys(payload).length) return buildDashboardLightSnapshot(payload);
+  return lastDashboardSnapshot || buildDashboardPreviewSnapshot(lastSnapshot);
+});
 ipcMain.handle('dashboard:getRequestsPage', async (_event, payload = {}) => {
   try { return await localProvider.getRequestsPage(payload); }
   catch (error) {
@@ -427,6 +520,15 @@ function dashboardAggregatePayload(payload = {}) {
     timestamp: Number(payload.timestamp || Date.now()),
   };
 }
+function trendScopeKeyForPayload(payload = {}, bucketMs = 3600000) {
+  const range = payload.range || {};
+  const startRaw = Number(payload.start ?? range.start ?? 0) || 0;
+  const endRaw = Number(payload.end ?? range.end ?? payload.timestamp ?? Date.now()) || 0;
+  const safeBucketMs = Math.max(1, Number(bucketMs || payload.bucketMs || 3600000));
+  const start = startRaw > 0 ? Math.floor(startRaw / safeBucketMs) * safeBucketMs : 0;
+  const end = endRaw > 0 ? Math.ceil(endRaw / safeBucketMs) * safeBucketMs : 0;
+  return `${payload.source || 'all'}|${payload.model || 'all'}|${safeBucketMs}|${start}|${end}`;
+}
 function snapshotUsageFallback(scope) {
   const snap = lastSnapshot || null;
   if (!snap || !snap.ok) return null;
@@ -436,6 +538,123 @@ function snapshotUsageFallback(scope) {
   if (scope === 'model') return { ok: true, timestamp: snap.timestamp || 0, items: snap.models || [], fallback: 'snapshot' };
   if (scope === 'session') return { ok: true, timestamp: snap.timestamp || 0, ...(snap.sessionSummary || {}), fallback: 'snapshot' };
   return null;
+}
+
+function defaultRequestPagePayload(payload = {}) {
+  return {
+    limit: 100,
+    offset: 0,
+    source: payload.source || 'all',
+    model: payload.model || 'all',
+    range: payload.range || {},
+    query: payload.query || '',
+  };
+}
+function defaultSessionPagePayload(payload = {}) {
+  return {
+    limit: SESSION_PAGE_SIZE,
+    offset: 0,
+    source: payload.source || 'all',
+    status: payload.status || 'active',
+    project: payload.project || 'all',
+    range: payload.range || {},
+    query: payload.sessionQuery || payload.query || '',
+  };
+}
+function pageEnvelope(page = {}, payload = {}, fallbackItems = [], fallbackTotal = 0) {
+  const items = Array.isArray(page.items) ? page.items : fallbackItems;
+  const total = Number(page.total ?? fallbackTotal ?? items.length);
+  const limit = Number(page.limit || payload.limit || items.length || 1);
+  const offset = Number(page.offset || payload.offset || 0);
+  return {
+    limit,
+    offset,
+    total,
+    hasMore: Boolean(page.hasMore ?? (offset + items.length < total)),
+    items,
+    payload,
+    snapshotTimestamp: Number(page.snapshotTimestamp || Date.now()),
+  };
+}
+function buildDashboardPreviewSnapshot(full = lastSnapshot, payload = {}) {
+  if (!full || !full.ok) return full;
+  const requestPayload = defaultRequestPagePayload(payload);
+  const sessionPayload = defaultSessionPagePayload(payload);
+  const requestItems = ((full.requestLog || []).filter((item) => matchesPageFilters(item, requestPayload))).slice(0, requestPayload.limit);
+  const sessionItems = ((full.sessions || []).filter((item) => matchesPageFilters(item, sessionPayload))).slice(0, sessionPayload.limit);
+  const requestTotal = Number(full.requestTotal || (full.requestLog || []).length || requestItems.length);
+  const sessionTotal = Number(full.sessionTotal || full.sessionSummary?.active || full.sessionSummary?.total || (full.sessions || []).length || sessionItems.length);
+  return {
+    ...full,
+    requestLog: requestItems,
+    sessions: sessionItems,
+    requestTotal,
+    sessionTotal,
+    requestPage: pageEnvelope({}, requestPayload, requestItems, requestTotal),
+    sessionPage: pageEnvelope({}, sessionPayload, sessionItems, sessionTotal),
+    lightRefresh: true,
+    freshness: { ...(full.freshness || {}), source: full.freshness?.source || 'preview' },
+  };
+}
+
+
+function lightUpdatedAt(ts = Date.now()) {
+  try { return new Date(ts).toLocaleString('zh-CN', { hour12: false }); }
+  catch { return String(ts); }
+}
+async function buildDashboardLightSnapshot(payload = {}) {
+  if (!lastSnapshot || !lastSnapshot.ok) {
+    await refreshNow();
+    return lastDashboardSnapshot || lastSnapshot;
+  }
+  const fullBase = lastSnapshot;
+  const timestamp = Number(payload.timestamp || Date.now());
+  const basePayload = dashboardAggregatePayload({ ...payload, timestamp });
+  const dayMode = Number(basePayload.bucketMs || 3600000) >= 86400000;
+  const requestPayload = defaultRequestPagePayload(payload);
+  const sessionPayload = defaultSessionPagePayload(payload);
+  const [aggregates, requestsPage, sessionsPage] = await Promise.all([
+    localProvider.getDashboardAggregates(basePayload).catch((error) => ({ ok: false, error: error.message })),
+    localProvider.getRequestsPage(requestPayload).catch((error) => ({ ok: false, error: error.message })),
+    localProvider.getSessionsPage(sessionPayload).catch((error) => ({ ok: false, error: error.message })),
+  ]);
+  const settings = loadSettings();
+  const fullSnap = {
+    ...fullBase,
+    timestamp,
+    updatedAt: lightUpdatedAt(timestamp),
+    freshness: { stale: false, source: 'light', ageMs: 0 },
+  };
+  if (aggregates?.ok && aggregates.usage) {
+    fullSnap.usage = aggregates.usage;
+    fullSnap.status = { ...(fullSnap.status || {}), ...usageStatusFromSummary(aggregates.usage, settings) };
+  }
+  if (aggregates?.ok && Array.isArray(aggregates.buckets)) {
+    fullSnap.trends = { ...(fullSnap.trends || {}) };
+    if (dayMode) fullSnap.trends.daily14d = aggregates.buckets;
+    else fullSnap.trends.hourly24h = aggregates.buckets;
+    fullSnap.trendsSource = 'db-light';
+    fullSnap.trendsScope = trendScopeKeyForPayload(basePayload, dayMode ? 86400000 : 3600000);
+    fullSnap.aggregateScope = fullSnap.trendsScope;
+    fullSnap.aggregateAt = timestamp;
+  }
+  if (aggregates?.ok && Array.isArray(aggregates.sourceStats)) fullSnap.sourceStats = aggregates.sourceStats;
+  if (aggregates?.ok && Array.isArray(aggregates.modelStats)) fullSnap.models = aggregates.modelStats.slice(0, 12);
+  if (aggregates?.ok && aggregates.sessionSummary) fullSnap.sessionSummary = aggregates.sessionSummary;
+  delete fullSnap.lightRefresh;
+  lastSnapshot = fullSnap;
+  const dashboardSnap = {
+    ...fullSnap,
+    requestLog: requestsPage?.ok && Array.isArray(requestsPage.items) ? requestsPage.items : [],
+    sessions: sessionsPage?.ok && Array.isArray(sessionsPage.items) ? sessionsPage.items : [],
+    requestTotal: Number(requestsPage?.total || 0),
+    sessionTotal: Number(sessionsPage?.total || 0),
+    requestPage: requestsPage?.ok ? pageEnvelope(requestsPage, requestPayload, requestsPage.items || [], requestsPage.total || 0) : null,
+    sessionPage: sessionsPage?.ok ? pageEnvelope(sessionsPage, sessionPayload, sessionsPage.items || [], sessionsPage.total || 0) : null,
+    lightRefresh: true,
+  };
+  lastDashboardSnapshot = dashboardSnap;
+  return dashboardSnap;
 }
 ipcMain.handle('dashboard:getSummary', async (_event, payload = {}) => {
   try { return await localProvider.getSummary(dashboardAggregatePayload(payload)); }
@@ -472,6 +691,29 @@ ipcMain.handle('dashboard:getSessionSummary', async (_event, payload = {}) => {
     return snapshotUsageFallback('session') || { ok: false, error: error.message };
   }
 });
+ipcMain.handle('dashboard:getAggregates', async (_event, payload = {}) => {
+  try { return await localProvider.getDashboardAggregates(dashboardAggregatePayload(payload)); }
+  catch (error) {
+    appendLog('warn', 'dashboard:getAggregates', error.message, { payload });
+    const summary = snapshotUsageFallback('summary');
+    const trend = snapshotUsageFallback('trend');
+    const source = snapshotUsageFallback('source');
+    const model = snapshotUsageFallback('model');
+    const session = snapshotUsageFallback('session');
+    return {
+      ok: Boolean(summary || trend || source || model || session),
+      timestamp: Date.now(),
+      usage: summary?.usage || {},
+      sources: summary?.sources || [],
+      buckets: trend?.buckets || [],
+      sourceStats: source?.items || [],
+      modelStats: model?.items || [],
+      sessionSummary: session || {},
+      fallback: 'snapshot',
+      error: error.message,
+    };
+  }
+});
 ipcMain.handle('dashboard:getDatabaseHealth', async (_event, payload = {}) => {
   try { return await localProvider.getDatabaseHealth(dashboardAggregatePayload(payload)); }
   catch (error) {
@@ -479,19 +721,25 @@ ipcMain.handle('dashboard:getDatabaseHealth', async (_event, payload = {}) => {
     return { ok: false, error: error.message };
   }
 });
-ipcMain.handle('dashboard:getDiff', (_event, payload = {}) => {
+ipcMain.handle('dashboard:getDiff', async (_event, payload = {}) => {
   const since = Number(payload.since || 0);
   const snap = lastSnapshot || errorSnapshot(new Error('尚未刷新'));
   if (!snap.ok) return snap;
-  return {
-    ok: true,
-    timestamp: snap.timestamp || 0,
-    changed: !since || Number(snap.timestamp || 0) > since,
-    requests: (snap.requestLog || []).filter((item) => Number(item.time || 0) > since),
-    sessions: (snap.sessions || []).filter((item) => Number(item.updatedAt || 0) > since),
-  };
+  try {
+    const range = { start: since || 0, end: Date.now() };
+    const [requests, sessions] = await Promise.all([
+      localProvider.getRequestsPage({ limit: 100, offset: 0, source: payload.source || 'all', range, query: payload.query || '' }),
+      localProvider.getSessionsPage({ limit: SESSION_PAGE_SIZE, offset: 0, source: payload.source || 'all', status: payload.status || 'active', project: payload.project || 'all', range, query: payload.sessionQuery || '' }),
+    ]);
+    return { ok: true, timestamp: Date.now(), changed: Boolean((requests.items || []).length || (sessions.items || []).length), requests: requests.items || [], sessions: sessions.items || [], requestTotal: requests.total || 0, sessionTotal: sessions.total || 0, source: 'db-page' };
+  } catch (error) {
+    appendLog('warn', 'dashboard:getDiff', error.message, { payload });
+    return { ok: true, timestamp: snap.timestamp || 0, changed: !since || Number(snap.timestamp || 0) > since, requests: (snap.requestLog || []).filter((item) => Number(item.time || 0) > since), sessions: (snap.sessions || []).filter((item) => Number(item.updatedAt || 0) > since), fallback: 'snapshot', error: error.message };
+  }
 });
-ipcMain.handle('dashboard:refresh', async () => { await refreshNow(); return lastSnapshot; });
+ipcMain.handle('dashboard:refreshLight', async (_event, payload = {}) => buildDashboardLightSnapshot(payload));
+ipcMain.handle('dashboard:refresh', async (_event, payload = {}) => buildDashboardLightSnapshot(payload));
+ipcMain.handle('dashboard:refreshFull', async () => { await refreshNow(); return lastSnapshot; });
 ipcMain.handle('dashboard:settings', () => openSettingsWindow());
 ipcMain.handle('dashboard:setLayoutMode', (_event, mode) => setDashboardLayoutMode(mode));
 ipcMain.handle('dashboard:setPinned', (_event, pinned) => setDashboardPinned(pinned));
@@ -502,13 +750,15 @@ ipcMain.handle('dashboard:log', (_event, entry) => { appendLog(entry?.level || '
 ipcMain.handle('dashboard:getDiagnostics', () => ({ ok: true, version: app.getVersion(), logPath: logPath(), userData: app.getPath('userData'), distPath: path.join(__dirname, '..', 'dist') }));
 ipcMain.handle('dashboard:openLogs', () => openLogFile());
 ipcMain.handle('dashboard:archiveSession', async (_event, session, archived = true) => {
-  const result = await localProvider.archiveSession({ dbPath: session.dbPath, id: session.id, archived: archived !== false });
-  await refreshNow();
+  const nextArchived = archived !== false;
+  const result = await localProvider.archiveSession({ dbPath: session.dbPath, id: session.id, archived: nextArchived });
+  patchSessionInMemory(session, { archived: nextArchived, archivedAt: nextArchived ? Date.now() : null });
   return result;
 });
 ipcMain.handle('dashboard:renameSession', async (_event, session, title) => {
-  const result = await localProvider.renameSession({ dbPath: session.dbPath, id: session.id, title });
-  await refreshNow();
+  const nextTitle = String(title || '').trim();
+  const result = await localProvider.renameSession({ dbPath: session.dbPath, id: session.id, title: nextTitle });
+  if (nextTitle) patchSessionInMemory(session, { title: nextTitle });
   return result;
 });
 

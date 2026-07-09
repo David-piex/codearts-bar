@@ -6,6 +6,7 @@ const { loadSettings, saveSettings, settingsPath } = require('./settings');
 const { getAuthStatus, authStatusToText } = require('./authStatus');
 const { officialStatsCacheStatus } = require('./officialStats');
 const { listProviders } = require('./providers');
+const { sqliteRuntimeStatus } = require('./providers/codearts/sqlite');
 
 const cmd = process.argv[2] || 'snapshot';
 const rest = process.argv.slice(3);
@@ -51,6 +52,15 @@ async function run() {
       console.log(JSON.stringify(listProviders(), null, 2));
       return;
     }
+    if (cmd === 'runtime') {
+      console.log(JSON.stringify({
+        app: 'CodeArts Bar CLI',
+        node: process.version,
+        execPath: process.execPath,
+        sqlite: sqliteRuntimeStatus(),
+      }, null, 2));
+      return;
+    }
     if (cmd === 'diagnose' || cmd === 'doctor') {
       const json = rest.includes('--json');
       const report = await diagnose();
@@ -85,7 +95,19 @@ async function run() {
       return;
     }
     if (cmd === 'help' || cmd === '--help' || cmd === '-h') {
-      console.log(`CodeArts Bar CLI\n\nUsage:\n  codearts-bar snapshot             输出 JSON 快照\n  codearts-bar stats                输出文本统计\n  codearts-bar auth [--json]        查看 CLI/桌面端/DB 登录状态\n  codearts-bar providers            查看 provider 注册表\n  codearts-bar official-cache       查看官方 stats 缓存状态\n  codearts-bar diagnose [--json]    诊断数据源/日志/缓存\n  codearts-bar config show          查看配置\n  codearts-bar config set --db <p> --daily-limit <n> --refresh-ms <n> --official-stats-ttl-ms <n>\n  codearts-bar self-test            验证本地数据读取`);
+      console.log(`CodeArts Bar CLI
+
+Usage:
+  codearts-bar snapshot             输出 JSON 快照
+  codearts-bar stats                输出文本统计
+  codearts-bar auth [--json]        查看 CLI/桌面端/DB 登录状态
+  codearts-bar providers            查看 provider 注册表
+  codearts-bar runtime              查看 Node / SQLite 运行时
+  codearts-bar official-cache       查看官方 stats 缓存状态
+  codearts-bar diagnose [--json]    诊断数据源/日志/缓存
+  codearts-bar config show          查看配置
+  codearts-bar config set --db <p> --daily-limit <n> --refresh-ms <n> --official-stats-ttl-ms <n>
+  codearts-bar self-test            验证本地数据读取`);
       return;
     }
     console.error(`Unknown command: ${cmd}`);

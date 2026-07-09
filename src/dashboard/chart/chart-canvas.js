@@ -43,166 +43,238 @@ function drawHoverAperture(ctx, guideX, guideY, bounds, focus, isPinned){
   ctx.restore();
 }
 
-function drawCacheLens(ctx, b, bounds, guideX, isPinned){
-  if(!b) return;
-  const hitRaw = cacheHitRate(b);
-  const hit = Math.max(0, Math.min(100, Number.isFinite(hitRaw) ? hitRaw : 0));
-  const tone = cacheToneColor(b);
-  const boxW = 164;
-  const boxH = 46;
-  const x = Math.max(bounds.l + 8, Math.min(bounds.l + bounds.w - boxW - 8, guideX - boxW / 2));
-  const y = Math.max(bounds.t + 12, bounds.t + bounds.h - 66);
-  const ringX = x + 22;
-  const ringY = y + 23;
-  const lineW = 86;
-  ctx.save();
-  ctx.shadowColor = 'rgba(15,23,42,.12)';
-  ctx.shadowBlur = isPinned ? 18 : 12;
-  ctx.shadowOffsetY = 8;
-  const glass = ctx.createLinearGradient(0, y, 0, y + boxH);
-  glass.addColorStop(0, isPinned ? 'rgba(255,255,255,.94)' : 'rgba(255,255,255,.86)');
-  glass.addColorStop(1, 'rgba(247,251,255,.74)');
-  ctx.fillStyle = glass;
-  ctx.strokeStyle = isPinned ? 'rgba(10,132,255,.34)' : 'rgba(196,205,218,.62)';
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.roundRect(x, y, boxW, boxH, 15);
-  ctx.fill();
-  ctx.shadowColor = 'transparent';
-  ctx.stroke();
-  ctx.strokeStyle = 'rgba(226,232,240,.92)';
-  ctx.lineWidth = 4;
-  ctx.beginPath();
-  ctx.arc(ringX, ringY, 11, -Math.PI / 2, Math.PI * 1.5);
-  ctx.stroke();
-  ctx.strokeStyle = tone;
-  ctx.lineCap = 'round';
-  ctx.beginPath();
-  ctx.arc(ringX, ringY, 11, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * (hit / 100));
-  ctx.stroke();
-  ctx.lineCap = 'butt';
-  ctx.fillStyle = '#172033';
-  ctx.font = '800 12px Segoe UI, Microsoft YaHei UI, sans-serif';
-  ctx.textAlign = 'left';
-  ctx.fillText(cacheHitText(b), x + 43, y + 18);
-  ctx.fillStyle = 'rgba(100,116,139,.88)';
-  ctx.font = '10px Segoe UI, Microsoft YaHei UI, sans-serif';
-  ctx.fillText(TXT.cacheHitBasis, x + 43, y + 32);
-  ctx.fillStyle = 'rgba(226,232,240,.92)';
-  ctx.beginPath();
-  ctx.roundRect(x + 43, y + 36, lineW, 4, 2);
-  ctx.fill();
-  ctx.fillStyle = tone;
-  ctx.beginPath();
-  ctx.roundRect(x + 43, y + 36, Math.max(4, lineW * hit / 100), 4, 2);
-  ctx.fill();
-  ctx.fillStyle = tone;
-  ctx.font = '900 10px Segoe UI, Microsoft YaHei UI, sans-serif';
-  ctx.textAlign = 'right';
-  ctx.fillText(cacheHealth(b).label, x + boxW - 12, y + 18);
-  ctx.restore();
+function chartLightMode(hover = -1){
+  try {
+    const body = document.body;
+    const interactionLight = chartInteractionLightMode();
+    const restingChart = Number(hover || -1) < 0 && Number(chartPinnedIndex || -1) < 0;
+    return Boolean(interactionLight || restingChart);
+  } catch { return false; }
+}
+
+function chartInteractionLightMode(){
+  try {
+    const body = document.body;
+    const app = document.getElementById('app');
+    const now = Date.now();
+    return now < Number(zoomInteractionUntil || 0)
+      || now < Number(chartResizeQuietUntil || 0)
+      || body?.classList?.contains('is-resizing')
+      || body?.classList?.contains('is-zooming')
+      || body?.classList?.contains('view-switching')
+      || app?.classList?.contains('is-resizing')
+      || app?.classList?.contains('is-zooming')
+      || app?.classList?.contains('view-switching');
+  } catch { return false; }
+}
+
+function rememberChartCanvasBox(canvas, width, height, dpr, source = 'draw'){
+  const w = Math.max(1, Number(width || 0));
+  const h = Math.max(1, Number(height || 0));
+  const ratio = Number(dpr || window.devicePixelRatio || 1) || 1;
+  const key = `${Math.round(w)}x${Math.round(h)}@${ratio}`;
+  chartCanvasBoxCache = { width: w, height: h, dpr: ratio, key, timestamp: Date.now(), source };
+  try {
+    if(canvas?.dataset){
+      canvas.dataset.cssW = String(w);
+      canvas.dataset.cssH = String(h);
+      canvas.dataset.dpr = String(ratio);
+      canvas.dataset.sizeKey = key;
+    }
+  } catch {}
+  return chartCanvasBoxCache;
+}
+
+function invalidateChartCanvasBox(){
+  chartCanvasBoxCache = { width: 0, height: 0, dpr: 0, key: '', timestamp: 0, source: '' };
+}
+
+function estimateChartCanvasBox(){
+  const viewportW = Number(window.innerWidth || 1280);
+  const viewportH = Number(window.innerHeight || 860);
+  const width = Math.max(520, Math.min(2600, viewportW - 136));
+  const fluidHeight = viewportH * 0.29;
+  const height = Math.max(252, Math.min(286, fluidHeight));
+  return { width, height };
+}
+
+function chartCanvasBox(canvas, opts = {}){
+  const dpr = window.devicePixelRatio || 1;
+  const force = opts.force === true;
+  const cachedW = Number(canvas?.dataset?.cssW || chartCanvasBoxCache?.width || 0);
+  const cachedH = Number(canvas?.dataset?.cssH || chartCanvasBoxCache?.height || 0);
+  const cachedDpr = Number(canvas?.dataset?.dpr || chartCanvasBoxCache?.dpr || 0);
+  const canUseCached = !force
+    && cachedW > 0
+    && cachedH > 0
+    && Math.abs(cachedDpr - dpr) < 0.001
+    && canvas?.width > 0
+    && canvas?.height > 0;
+  if(canUseCached){
+    return { width: cachedW, height: cachedH, dpr, cached: true };
+  }
+  if(!force && opts.allowEstimate !== false){
+    const estimated = estimateChartCanvasBox();
+    rememberChartCanvasBox(canvas, estimated.width, estimated.height, dpr, opts.source || 'estimate');
+    return { width: estimated.width, height: estimated.height, dpr, cached: false, estimated: true };
+  }
+  const layoutStarted = perfNow();
+  const rect = canvas.getBoundingClientRect();
+  markPerfStage('chartLayoutReadMs', perfNow() - layoutStarted);
+  const width = Math.max(1, Number(rect.width || cachedW || 0));
+  const height = Math.max(1, Number(rect.height || cachedH || 0));
+  rememberChartCanvasBox(canvas, width, height, dpr, opts.source || 'layout');
+  return { width, height, dpr, cached: false };
+}
+
+function chartDrawSignature(data, active, box, hover = -1, progress = 1){
+  try {
+    const last = data[data.length - 1] || {};
+    const first = data[0] || {};
+    const sum = data.reduce((acc, b) => {
+      acc.total += Number(b.total || 0);
+      acc.input += Number(b.input || 0);
+      acc.output += Number(b.output || 0);
+      acc.cacheRead += Number(b.cacheRead || 0);
+      acc.requests += Number(b.requests || 0);
+      return acc;
+    }, { total: 0, input: 0, output: 0, cacheRead: 0, requests: 0 });
+    return [
+      Math.round(Number(box.width || 0)),
+      Math.round(Number(box.height || 0)),
+      Number(box.dpr || 1),
+      rangeFilter || '',
+      sourceFilter || '',
+      modelFilter || '',
+      customDateStart || 0,
+      customDateEnd || 0,
+      active.map((cfg) => cfg.key).join(','),
+      Number(hover || -1),
+      Number(chartPinnedIndex || -1),
+      chartHover.focusKey || '',
+      Math.round(Number(progress || 1) * 1000),
+      data.length,
+      Number(first.start || 0),
+      Number(last.start || 0),
+      sum.total,
+      sum.input,
+      sum.output,
+      sum.cacheRead,
+      sum.requests,
+    ].join('|');
+  } catch { return ''; }
 }
 
 function drawChart(rows, s, hover = -1, progress = 1){
   const chartDrawStartedAt = perfNow();
+  const ownPerfBucket = !currentRenderPerf;
+  const light = chartLightMode(hover);
+  if(ownPerfBucket) perfBucket(light ? 'chart:light-redraw' : (hover >= 0 ? 'chart:hover' : 'chart:redraw'));
   ensureVisibleSeries();
   const canvas = document.getElementById('usageChart');
-  if(!canvas) return;
+  if(!canvas){
+    if(ownPerfBucket){ finishPerfBucket(0); try { updatePerfPanel(); } catch {} }
+    return;
+  }
+  const bucketStartedAt = perfNow();
   const data = bucketRows(rows, s);
-  const rect = canvas.getBoundingClientRect();
-  const dpr = window.devicePixelRatio || 1;
-  canvas.width = Math.max(1, rect.width * dpr);
-  canvas.height = Math.max(1, rect.height * dpr);
-  const ctx = canvas.getContext('2d');
-  ctx.scale(dpr, dpr);
-  ctx.clearRect(0, 0, rect.width, rect.height);
+  markPerfStage('chartBucketMs', perfNow() - bucketStartedAt);
+  const canvasStartedAt = perfNow();
+  const app = document.getElementById('app');
+  const zoomSettling = Date.now() < Number(zoomInteractionUntil || 0) || Boolean(document.body?.classList?.contains?.('is-zooming')) || Boolean(app?.classList?.contains?.('is-zooming'));
+  const resizeSettling = Date.now() < Number(chartResizeQuietUntil || 0) || Boolean(document.body?.classList?.contains?.('is-resizing')) || Boolean(app?.classList?.contains?.('is-resizing'));
+  const canReuseExistingBitmap = chartPoints.length && canvas.width > 0 && canvas.height > 0 && hover < 0 && Number(chartPinnedIndex || -1) < 0;
+  if(light && (zoomSettling || resizeSettling) && canReuseExistingBitmap){
+    markPerfStage('chartCanvasMs', perfNow() - canvasStartedAt);
+    markPerfStage('chartDrawMs', perfNow() - chartDrawStartedAt);
+    if(ownPerfBucket){
+      finishPerfBucket(data.length);
+      try { updatePerfPanel(); } catch {}
+    }
+    return;
+  }
+  const box = chartCanvasBox(canvas, { source: light ? 'light-redraw' : 'draw', allowEstimate: chartInteractionLightMode() });
+  const rect = { width: box.width, height: box.height };
+  const dpr = box.dpr || window.devicePixelRatio || 1;
+  const nextWidth = Math.max(1, Math.round(box.width * dpr));
+  const nextHeight = Math.max(1, Math.round(box.height * dpr));
+  const canvasDpr = canvas.dataset ? canvas.dataset.dpr : canvas.__dashboardDpr;
+  const active = SERIES.filter((cfg) => visibleSeries.has(cfg.key));
+  const drawSig = chartDrawSignature(data, active, box, hover, progress);
+  if(drawSig && drawSig === lastChartDrawSignature && canvas.width === nextWidth && canvas.height === nextHeight && String(canvasDpr || '') === String(dpr)){
+    markPerfStage('chartCanvasMs', perfNow() - canvasStartedAt);
+    markPerfStage('chartDrawMs', perfNow() - chartDrawStartedAt);
+    if(ownPerfBucket){
+      finishPerfBucket(data.length);
+      try { updatePerfPanel(); } catch {}
+    }
+    return;
+  }
+  const resizeStartedAt = perfNow();
+  let resizedCanvas = false;
+  if(canvas.width !== nextWidth || canvas.height !== nextHeight || canvasDpr !== String(dpr)){
+    canvas.width = nextWidth;
+    canvas.height = nextHeight;
+    resizedCanvas = true;
+    if(canvas.dataset) canvas.dataset.dpr = String(dpr);
+    else canvas.__dashboardDpr = String(dpr);
+  }
+  rememberChartCanvasBox(canvas, box.width, box.height, dpr, resizedCanvas ? 'resize' : (box.cached ? 'cached' : 'draw'));
+  if(resizedCanvas) markPerfStage('chartResizeMs', perfNow() - resizeStartedAt);
+  const paintStartedAt = perfNow();
+  const ctx = canvas.getContext('2d', { alpha: false, desynchronized: true });
+  if(ctx.setTransform) ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  else {
+    if(ctx.resetTransform) ctx.resetTransform();
+    ctx.scale(dpr, dpr);
+  }
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, rect.width, rect.height);
   const pad = { l: 58, r: 28, t: 18, b: 36 };
   const w = Math.max(1, rect.width - pad.l - pad.r);
   const h = Math.max(1, rect.height - pad.t - pad.b);
-  const active = SERIES.filter((cfg) => visibleSeries.has(cfg.key));
   const mixedScale = new Set(active.map((cfg) => cfg.kind)).size > 1;
   const globalMax = Math.max(1, ...data.flatMap((b) => active.map((cfg) => b[cfg.key] || 0)));
   const seriesMax = new Map(active.map((cfg) => [cfg.key, Math.max(1, ...data.map((b) => Number(b[cfg.key] || 0)))]));
   const scaleFor = (cfg) => mixedScale ? (seriesMax.get(cfg.key) || 1) : globalMax;
-  const plotBg = ctx.createLinearGradient(0, pad.t, 0, pad.t + h);
-  plotBg.addColorStop(0, 'rgba(22,135,245,.035)');
-  plotBg.addColorStop(1, 'rgba(255,255,255,0)');
-  ctx.fillStyle = plotBg;
+  const plotBg = light ? null : ctx.createLinearGradient(0, pad.t, 0, pad.t + h);
+  if(plotBg){
+    plotBg.addColorStop(0, 'rgba(22,135,245,.035)');
+    plotBg.addColorStop(1, 'rgba(255,255,255,0)');
+  }
+  ctx.fillStyle = plotBg || 'rgba(22,135,245,.018)';
   ctx.fillRect(pad.l, pad.t, w, h);
-  const idleBandGrad = ctx.createLinearGradient(0, pad.t, 0, pad.t + h);
-  idleBandGrad.addColorStop(0, 'rgba(148,163,184,.075)');
-  idleBandGrad.addColorStop(1, 'rgba(148,163,184,.018)');
-  data.forEach((b, i) => {
-    if(Number(b.requests || 0) !== 0) return;
-    const x = pad.l + (data.length <= 1 ? w / 2 : i * w / (data.length - 1));
-    const nextX = pad.l + (data.length <= 1 ? w : Math.min(w, (i + .5) * w / Math.max(1, data.length - 1)));
-    const prevX = pad.l + (data.length <= 1 ? 0 : Math.max(0, (i - .5) * w / Math.max(1, data.length - 1)));
-    ctx.fillStyle = idleBandGrad;
-    ctx.fillRect(prevX, pad.t, Math.max(2, nextX - prevX), h);
-    ctx.fillStyle = 'rgba(148,163,184,.18)';
-    ctx.fillRect(Math.max(prevX, x - .5), pad.t, 1, h);
-  });
+  if(!light){
+    const idleBandGrad = ctx.createLinearGradient(0, pad.t, 0, pad.t + h);
+    idleBandGrad.addColorStop(0, 'rgba(148,163,184,.075)');
+    idleBandGrad.addColorStop(1, 'rgba(148,163,184,.018)');
+    data.forEach((b, i) => {
+      if(Number(b.requests || 0) !== 0) return;
+      const x = pad.l + (data.length <= 1 ? w / 2 : i * w / (data.length - 1));
+      const nextX = pad.l + (data.length <= 1 ? w : Math.min(w, (i + .5) * w / Math.max(1, data.length - 1)));
+      const prevX = pad.l + (data.length <= 1 ? 0 : Math.max(0, (i - .5) * w / Math.max(1, data.length - 1)));
+      ctx.fillStyle = idleBandGrad;
+      ctx.fillRect(prevX, pad.t, Math.max(2, nextX - prevX), h);
+      ctx.fillStyle = 'rgba(148,163,184,.18)';
+      ctx.fillRect(Math.max(prevX, x - .5), pad.t, 1, h);
+    });
+  }
   ctx.strokeStyle = 'rgba(149,164,184,.18)';
   ctx.fillStyle = '#7b8190';
   ctx.font = '12px Segoe UI, Microsoft YaHei UI, sans-serif';
   ctx.textAlign = 'left';
   ctx.lineWidth = 1;
-  for(let i = 0; i <= 4; i++){
-    const y = pad.t + h * i / 4;
+  const gridSteps = light ? 3 : 4;
+  for(let i = 0; i <= gridSteps; i++){
+    const y = pad.t + h * i / gridSteps;
     ctx.beginPath();
     ctx.moveTo(pad.l, y);
     ctx.lineTo(pad.l + w, y);
     ctx.stroke();
-    const val = mixedScale ? `${Math.round((1 - i / 4) * 100)}%` : axisLabel(active, globalMax * (1 - i / 4));
-    ctx.fillText(val, 8, y + 4);
-  }
-  const cacheY = pad.t + h - 7;
-  const cacheStep = data.length <= 1 ? w : w / Math.max(1, data.length - 1);
-  data.forEach((b, i) => {
-    const cacheTotal = Number(b.cacheRead || 0) + Number(b.cacheWrite || 0);
-    if(!cacheTotal) return;
-    const x = pad.l + (data.length <= 1 ? w / 2 : i * w / (data.length - 1));
-    const hit = Math.max(0, Math.min(100, cacheHitRate(b) || 0));
-    const segW = Math.max(7, Math.min(28, cacheStep * .52));
-    const segH = hover === i ? 6 : 4;
-    ctx.save();
-    ctx.globalAlpha = hover === i ? .96 : .34 + hit / 100 * .34;
-    ctx.fillStyle = cacheToneColor(b);
-    ctx.beginPath();
-    ctx.roundRect(x - segW / 2, cacheY - segH / 2, segW, segH, segH / 2);
-    ctx.fill();
-    if(hover === i){
-      ctx.strokeStyle = 'rgba(255,255,255,.92)';
-      ctx.lineWidth = 1.5;
-      ctx.stroke();
+    if(!light){
+      const val = mixedScale ? `${Math.round((1 - i / gridSteps) * 100)}%` : axisLabel(active, globalMax * (1 - i / gridSteps));
+      ctx.fillText(val, 8, y + 4);
     }
-    ctx.restore();
-  });
-  if(data.some((b) => Number(b.cacheRead || 0) + Number(b.cacheWrite || 0) > 0)){
-    ctx.save();
-    ctx.fillStyle = 'rgba(100,116,139,.72)';
-    ctx.font = '11px Segoe UI, Microsoft YaHei UI, sans-serif';
-    ctx.textAlign = 'right';
-    ctx.fillText(TXT.cacheHeatline, pad.l + w, pad.t + h - 13);
-    ctx.restore();
-  }
-  const tokenActive = active.filter((cfg) => cfg.kind === 'token');
-  if(tokenActive.length){
-    const barValues = data.map((b) => tokenActive.reduce((sum, cfg) => sum + (cfg.key === 'total' ? 0 : Number(b[cfg.key] || 0)), 0) || Number(b.total || 0));
-    const barMax = Math.max(1, ...barValues);
-    const bw = Math.max(3, Math.min(18, (w / Math.max(1, data.length)) * .56));
-    const barGrad = ctx.createLinearGradient(0, pad.t, 0, pad.t + h);
-    barGrad.addColorStop(0, 'rgba(10,132,255,.18)');
-    barGrad.addColorStop(1, 'rgba(10,132,255,.035)');
-    data.forEach((b, i) => {
-      const x = pad.l + (data.length <= 1 ? 0 : i * w / (data.length - 1));
-      const bh = Math.max(0, (barValues[i] / barMax) * h * progress);
-      if(bh < 1) return;
-      ctx.fillStyle = hover === i ? 'rgba(10,132,255,.24)' : barGrad;
-      ctx.beginPath();
-      ctx.roundRect(x - bw / 2, pad.t + h - bh, bw, bh, 5);
-      ctx.fill();
-    });
   }
   function xy(i, cfg){
     const x = pad.l + (data.length <= 1 ? 0 : i * w / (data.length - 1));
@@ -213,13 +285,15 @@ function drawChart(rows, s, hover = -1, progress = 1){
   function line(cfg){
     const points = data.map((_, i) => xy(i, cfg));
     ctx.save();
-    ctx.strokeStyle = rgba(cfg.color, cfg.key === 'total' ? .18 : .12);
-    ctx.lineWidth = (cfg.key === 'total' ? 2.35 : 1.85) + 3;
-    ctx.lineJoin = 'round';
-    ctx.lineCap = 'round';
-    ctx.setLineDash([]);
-    drawSmooth(ctx, points);
-    ctx.stroke();
+    if(!light){
+      ctx.strokeStyle = rgba(cfg.color, cfg.key === 'total' ? .18 : .12);
+      ctx.lineWidth = (cfg.key === 'total' ? 2.35 : 1.85) + 3;
+      ctx.lineJoin = 'round';
+      ctx.lineCap = 'round';
+      ctx.setLineDash([]);
+      drawSmooth(ctx, points);
+      ctx.stroke();
+    }
     ctx.strokeStyle = cfg.color;
     ctx.lineWidth = cfg.key === 'total' ? 2.35 : 1.85;
     ctx.lineJoin = 'round';
@@ -228,7 +302,7 @@ function drawChart(rows, s, hover = -1, progress = 1){
     ctx.setLineDash(cfg.dash || []);
     drawSmooth(ctx, points);
     ctx.stroke();
-    if(cfg.key === 'total'){
+    if(!light && cfg.key === 'total'){
       const grad = ctx.createLinearGradient(0, pad.t, 0, pad.t + h);
       grad.addColorStop(0, 'rgba(244,63,94,.15)');
       grad.addColorStop(.62, 'rgba(244,63,94,.045)');
@@ -251,7 +325,7 @@ function drawChart(rows, s, hover = -1, progress = 1){
   ctx.fillStyle = '#8a909c';
   ctx.textAlign = 'center';
   const step = Math.max(1, Math.ceil(data.length / 8));
-  data.forEach((b, i) => {
+  if(!light) data.forEach((b, i) => {
     if(i % step === 0 || i === data.length - 1){
       const label = bucketAxisLabel(b, s);
       ctx.fillText(label, chartPoints[i].x, pad.t + h + 25);
@@ -263,7 +337,7 @@ function drawChart(rows, s, hover = -1, progress = 1){
     ctx.font = '14px Segoe UI, Microsoft YaHei UI, sans-serif';
     ctx.fillText(TXT.emptyHint, pad.l + w / 2, pad.t + h / 2);
   }
-  if(hover >= 0 && chartPoints[hover]){
+  if(!light && hover >= 0 && chartPoints[hover]){
     const point = chartPoints[hover];
     const focus = point.series.find((p) => p.key === chartHover.focusKey) || point.series[0];
     const guideX = Number.isFinite(chartHover.x) ? chartHover.x : point.x;
@@ -290,7 +364,6 @@ function drawChart(rows, s, hover = -1, progress = 1){
       ctx.fillText(axisText, axisX + axisW / 2, axisY + 15);
       ctx.restore();
     }
-    drawCacheLens(ctx, point.bucket, { l: pad.l, t: pad.t, w, h }, guideX, isPinned);
     if(isPinned){
       ctx.fillStyle = 'rgba(10,132,255,.92)';
       ctx.beginPath();
@@ -339,5 +412,13 @@ function drawChart(rows, s, hover = -1, progress = 1){
     }
     ctx.restore();
   }
+  markPerfStage('chartPaintMs', perfNow() - paintStartedAt);
+  markPerfStage('chartCanvasMs', perfNow() - canvasStartedAt);
   markPerfStage('chartDrawMs', perfNow() - chartDrawStartedAt);
+  lastChartDrawSignature = drawSig;
+  chartGeometryDirty = false;
+  if(ownPerfBucket){
+    finishPerfBucket(data.length);
+    try { updatePerfPanel(); } catch {}
+  }
 }

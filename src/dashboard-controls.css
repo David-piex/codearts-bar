@@ -759,17 +759,6 @@
     .request-row.selected td:first-child {
       box-shadow:inset 3px 0 0 var(--blue);
     }
-    .request-inspector {
-      padding:15px;
-      background:linear-gradient(180deg,rgba(255,255,255,.58),rgba(245,248,252,.76));
-      min-width:0;
-    }
-    .request-inspector.empty {
-      display:grid;
-      place-content:center;
-      text-align:center;
-      color:#8a909c;
-    }
     .chart-wrap canvas:focus-visible {
       outline:0;
       box-shadow:0 0 0 3px rgba(10,132,255,.12) inset;

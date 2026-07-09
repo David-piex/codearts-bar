@@ -1,4 +1,4 @@
-body:not(.view-switching) .table-tabs button { transition:background .16s ease,border-color .16s ease,box-shadow .16s ease,transform .16s ease; }
+body:not(.view-switching) .content:not(.view-switching) .table-tabs button { transition:background .16s ease,border-color .16s ease,box-shadow .16s ease,transform .16s ease; }
     .analytics-deferred { color:#64748b; }
     @media (max-width:760px) { .dashboard-empty-state { align-items:stretch; flex-direction:column; } .dashboard-empty-state button { width:100%; } }
 

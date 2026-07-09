@@ -1,3 +1,20 @@
+
+:root {
+  --ui-scale: 1;
+}
+body {
+  --scaled-font-size: clamp(13px, calc(14px * var(--ui-scale, 1)), 15px);
+  font-size: var(--ui-font-size, var(--scaled-font-size));
+}
+body[data-density="compact"] .content { --density-pad-x: 22px; --density-pad-y: 20px; }
+body[data-density="large"] .content { --density-pad-x: 30px; --density-pad-y: 26px; }
+body.is-resizing,
+body.is-zooming,
+body.view-switching {
+  --shadow-card: 0 1px 0 rgba(255,255,255,.74) inset,0 6px 14px rgba(27,39,61,.026);
+  --shadow-popover: 0 1px 0 rgba(255,255,255,.78) inset,0 10px 24px rgba(27,39,61,.055);
+  --shadow-control: 0 1px 0 rgba(255,255,255,.72) inset,0 3px 8px rgba(27,39,61,.022);
+}
 /* 1.19.0 denser commercial table, hover and state polish */
 .table-scroll table tr,
 .session-table.simple tr {
@@ -111,7 +128,7 @@ button:active,
 .session-simple-shell,
 .session-advanced-shell,
 .session-inspector,
-.request-inspector,
+
 .usage-total-board,
 .agent-rhythm-card,
 .cache-insights,
@@ -210,4 +227,182 @@ tr:hover td,
   background: rgba(247,249,252,.78);
   border-color: rgba(216,224,235,.76);
   color: #475467;
+}
+
+body {
+  font-size: var(--ui-font-size, 14px);
+}
+body[data-density="compact"] {
+  --ui-font-size:13px;
+  --control-height:30px;
+  --control-height-lg:36px;
+}
+body[data-density="large"] {
+  --ui-font-size:15px;
+  --control-height:34px;
+  --control-height-lg:40px;
+}
+body.is-resizing::before,
+body.is-resizing::after,
+body.is-zooming::before,
+body.is-zooming::after,
+body.view-switching::before,
+body.view-switching::after {
+  filter:none !important;
+  opacity:.08 !important;
+}
+.content.is-resizing,
+.content.is-zooming,
+.content.view-switching {
+  scroll-behavior:auto !important;
+}
+.content.is-resizing .chart-hover-scrubber,
+.content.is-zooming .chart-hover-scrubber,
+.content.view-switching .chart-hover-scrubber {
+  opacity:0 !important;
+}
+
+.chart-card-lean .card-head {
+  align-items:center;
+}
+.chart-card-lean .chart-wrap {
+  height: clamp(252px, 29vh, 286px);
+}
+.series-panel-lean {
+  max-width:520px;
+  gap:6px;
+}
+.series-panel-lean .series-chip {
+  min-height:28px;
+  padding:0 9px;
+  font-size:11px;
+}
+.chart-underbar-lean {
+  grid-template-columns:minmax(0,1fr) auto;
+  min-height:30px;
+}
+.chart-underbar-minimal {
+  grid-template-columns:minmax(0,1fr) auto;
+}
+.chart-underbar-lean > em {
+  color:#8a93a3;
+  font-size:11px;
+  font-style:normal;
+  font-weight:760;
+  white-space:nowrap;
+}
+.chart-legend-lean {
+  justify-content:flex-end;
+}
+.chart-legend-lean .legend-item {
+  display:none;
+}
+.chart-legend-lean em {
+  padding:0;
+  border:0;
+  background:transparent;
+}
+.table-page-note {
+  display:flex;
+  align-items:center;
+  justify-content:flex-end;
+  gap:8px;
+}
+.table-page-note span {
+  margin-right:auto;
+}
+.table-page-note button {
+  border:1px solid rgba(211,220,232,.92);
+  border-radius:9px;
+  min-height:28px;
+  padding:0 10px;
+  background:rgba(255,255,255,.76);
+  color:#475569;
+  font-weight:850;
+}
+.table-page-note button:disabled {
+  opacity:.42;
+  cursor:default;
+}
+
+
+.chart-card-lean:not(.chart-active):not(.chart-pinned) .chart-hover-scrubber {
+  min-height:0;
+  height:0;
+  padding:0;
+  margin:0;
+  opacity:0;
+  overflow:hidden;
+  border:0;
+}
+.chart-card-lean:not(.chart-active):not(.chart-pinned) .chart-underbar-lean {
+  min-height:22px;
+  padding-top:2px;
+  padding-bottom:2px;
+  opacity:.72;
+}
+.chart-card-lean:not(.chart-active):not(.chart-pinned) #chartHoverMeta {
+  display:none;
+}
+
+.chart-card-lean .chart-hover-scrubber {
+  display:none !important;
+}
+.chart-card-lean .chart-hover-meta span:nth-of-type(n+6) {
+  display:none;
+}
+
+
+/* 1.20.1 interaction lightweight compositor guard */
+body.is-resizing,
+body.is-zooming,
+body.view-switching {
+  --native-shadow:0 1px 0 rgba(255,255,255,.72) inset,0 5px 14px rgba(27,39,61,.022);
+  --native-shadow-soft:0 1px 0 rgba(255,255,255,.70) inset,0 4px 10px rgba(27,39,61,.018);
+  --native-popover-shadow:0 1px 0 rgba(255,255,255,.72) inset,0 8px 18px rgba(27,39,61,.032);
+}
+/* Keep body interaction selectors narrow; heavy descendant rules live on #app.content. */
+.content.view-switching :where(.shell,.menu-card,.content,.topbar,.page-head,.footer,.summary-card,.chart-card,.table-card,.source-card,.usage-total-board,.agent-rhythm-card,.analytics-advanced-shell,.session-simple-shell,.session-overview-card,.session-manager,.session-inspector,.filters,.tabs,.select,.source-switch,.range,.chart-tip,.date-range-popover,button,input,select,textarea,tr,td,th,canvas),
+.content.is-resizing :where(.summary-card,.chart-card,.table-card,.source-card,.usage-total-board,.agent-rhythm-card,.analytics-advanced-shell,.session-simple-shell,.session-overview-card,.session-manager,.session-inspector,.filters,.tabs,.select,.source-switch,.range,.chart-tip,.date-range-popover,button,input,select,textarea,tr,td,th,canvas),
+.content.is-zooming :where(.summary-card,.chart-card,.table-card,.source-card,.usage-total-board,.agent-rhythm-card,.analytics-advanced-shell,.session-simple-shell,.session-overview-card,.session-manager,.session-inspector,.filters,.tabs,.select,.source-switch,.range,.chart-tip,.date-range-popover,button,input,select,textarea,tr,td,th,canvas) {
+  transition:none !important;
+  animation:none !important;
+  -webkit-backdrop-filter:none !important;
+  backdrop-filter:none !important;
+  filter:none !important;
+}
+.content.view-switching :where(.chart-card,.usage-total-board,.table-card,.session-manager,.session-overview-card,.source-card,.agent-rhythm-card,.analytics-advanced-shell),
+.content.is-resizing :where(.chart-card,.usage-total-board,.table-card,.session-manager,.session-overview-card,.source-card,.agent-rhythm-card,.analytics-advanced-shell),
+.content.is-zooming :where(.chart-card,.usage-total-board,.table-card,.session-manager,.session-overview-card,.source-card,.agent-rhythm-card,.analytics-advanced-shell) {
+  contain:layout paint style;
+  transform:none !important;
+}
+
+/* 1.20.2 commercial performance restraint: native surfaces should feel solid, not constantly blurred. */
+:where(.summary-card,.chart-card,.table-card,.usage-total-board,.agent-rhythm-card,.analytics-advanced-shell,.session-simple-shell,.session-advanced-shell,.session-overview-card,.session-manager,.session-inspector,.source-card) {
+  -webkit-backdrop-filter:none !important;
+  backdrop-filter:none !important;
+}
+.request-manager-flat {
+  grid-template-columns:minmax(0,1fr) !important;
+}
+.request-main-full {
+  min-width:0;
+}
+.session-bulk.simple.empty {
+  visibility:hidden;
+  opacity:0;
+  pointer-events:none;
+}
+.session-row-loading {
+  display:grid;
+  place-items:center;
+  min-height:148px;
+  color:#8a93a3;
+  font-size:12px;
+  font-weight:820;
+}
+.chart-card-lean .chart-wrap,
+#usageChart {
+  contain:layout paint style;
 }

@@ -1,4 +1,4 @@
-
+﻿
 "use strict";
 
 const assert = require("node:assert/strict");
@@ -58,7 +58,7 @@ async function main(){
   const listeners = {};
   const document = { body:{ style:{ setProperty(){} }, classList:{ add(){}, remove(){}, toggle(){} } }, currentScript:null, getElementById(id){ if(!elements.has(id)) elements.set(id, makeElement(id)); return elements.get(id); }, addEventListener(type, fn){ listeners[type]=fn; }, querySelector(){ return null; }, querySelectorAll(){ return []; } };
   const ipcRenderer = { async invoke(channel){ if(channel === "dashboard:getSnapshot" || channel === "dashboard:refresh") return snapshot; return { ok:true }; }, on(){} };
-  const context = { console, require(name){ if(name === "electron") return { ipcRenderer }; if(name === "node:fs") return require("node:fs"); if(name === "node:path") return require("node:path"); throw new Error(`Unexpected require: ${name}`); }, window:{ matchMedia:()=>({ matches:false }), devicePixelRatio:1, innerWidth:1280, innerHeight:860, addEventListener(){} }, document, localStorage:makeStorage({ workspaceMode:"analytics", statsRange:"7d", chartSeries:"total,input,output,cacheHitRate" }), navigator:{ clipboard:{ writeText: async()=>{} } }, setInterval(){ return 1; }, clearInterval(){}, setTimeout(fn){ if(typeof fn === "function") fn(); return 1; }, clearTimeout(){}, requestAnimationFrame(fn){ if(typeof fn === "function") fn(Date.now()); return 1; }, cancelAnimationFrame(){}, performance, Date, Intl, Math, Number, String, Boolean, JSON, Map, Set, Array, Object, RegExp, Error, Promise };
+  const context = { console, require(name){ if(name === "electron") return { ipcRenderer }; if(name === "node:fs") return require("node:fs"); if(name === "node:path") return require("node:path"); throw new Error(`Unexpected require: ${name}`); }, window:{ matchMedia:()=>({ matches:false }), devicePixelRatio:1, innerWidth:1280, innerHeight:860, addEventListener(){} }, document, localStorage:makeStorage({ workspaceMode:"analytics", statsRange:"7d", chartSeries:"total,input,output,cacheRead" }), navigator:{ clipboard:{ writeText: async()=>{} } }, setInterval(){ return 1; }, clearInterval(){}, setTimeout(fn){ if(typeof fn === "function") fn(); return 1; }, clearTimeout(){}, requestAnimationFrame(fn){ if(typeof fn === "function") fn(Date.now()); return 1; }, cancelAnimationFrame(){}, performance, Date, Intl, Math, Number, String, Boolean, JSON, Map, Set, Array, Object, RegExp, Error, Promise };
   context.globalThis = context;
   vm.createContext(context);
   const code = fs.readFileSync(path.join(__dirname, "..", "src", "dashboard-renderer.js"), "utf8");

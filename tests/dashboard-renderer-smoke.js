@@ -138,7 +138,8 @@ async function main() {
   assert.match(html, /workspace-tabs/);
   assert.match(html, /session-overview/);
   assert.match(html, /session-simple-shell/);
-  assert.match(html, /session-intent-row/);
+  assert.doesNotMatch(html, /session-intent-row/);
+  assert.match(html, /session-primary-filters/);
   assert.match(html, /session-primary-filters/);
   assert.match(html, /session-saved-inline/);
   assert.doesNotMatch(html, /session-library-status/);
@@ -349,12 +350,14 @@ async function main() {
   assert.doesNotMatch(analyticsHtml, /data-global-cache-action/);
   assert.match(analyticsHtml, /cache-warm/);
   assert.match(analyticsHtml, /--cache-hit:/);
-  assert.match(analyticsHtml, /100 \/ 1,100/);
-  assert.match(analyticsHtml, /9\.1%/);
-  // Regression: cache hit rate must be cacheRead / (input + cacheRead + cacheWrite),
+  assert.match(analyticsHtml, /1,100 \/ 2,300/);
+  assert.match(analyticsHtml, /48%/);
+  // Regression: cache hit rate must be cacheRead / (input + cacheRead),
   // not cacheRead / (cacheRead + cacheWrite). When cacheWrite is 0 this must not show 100%.
   assert.equal(context.cacheHitText({ input: 842000, output: 26000, cacheRead: 509000, cacheWrite: 0 }), "38%");
   assert.equal(context.cacheHitBasis({ input: 842000, output: 26000, cacheRead: 509000, cacheWrite: 0 }), "50.9\u4e07 / 135.1\u4e07");
+  assert.equal(context.cacheHitText({ input: 100, output: 10, cacheRead: 100, cacheWrite: 100 }), "50%");
+  assert.equal(context.cacheHitBasis({ input: 100, output: 10, cacheRead: 100, cacheWrite: 100 }), "100 / 200");
   assert.match(analyticsHtml, /agent-rhythm-card/);
   assert.match(analyticsHtml, /agent-rhythm-rail/);
   assert.match(analyticsHtml, /agent-rhythm-lists/);
@@ -364,16 +367,25 @@ async function main() {
   assert.doesNotMatch(analyticsHtml, /cache-insights/);
   assert.doesNotMatch(analyticsHtml, /cache-insight-panel/);
   assert.doesNotMatch(analyticsHtml, /chart-snapshot/);
-  assert.match(analyticsHtml, /chart-underbar/);
-  assert.match(analyticsHtml, /chart-hover-scrubber/);
-  assert.match(analyticsHtml, /chart-legend/);
-  assert.match(analyticsHtml, /legend-item active/);
-  assert.match(analyticsHtml, /legend-item idle/);
-  assert.match(analyticsHtml, /legend-item cache/);
-  assert.match(analyticsHtml, /legend-item pinned/);
-  assert.match(analyticsHtml, /chart-hover-meta/);
+  assert.doesNotMatch(analyticsHtml, /chart-underbar/);
+  assert.doesNotMatch(analyticsHtml, /chart-hover-scrubber/);
+  assert.doesNotMatch(analyticsHtml, /chart-underbar-minimal/);
+  assert.doesNotMatch(analyticsHtml, /chart-legend/);
+  assert.doesNotMatch(analyticsHtml, /legend-item active/);
+  assert.doesNotMatch(analyticsHtml, /legend-item idle/);
+  assert.doesNotMatch(analyticsHtml, /legend-item cache/);
+  assert.doesNotMatch(analyticsHtml, /legend-item pinned/);
+  assert.doesNotMatch(analyticsHtml, /chart-hover-meta/);
   assert.match(analyticsHtml, /id="usageChart"/);
   assert.match(analyticsHtml, /series-panel/);
+  const seriesPanelHtml = analyticsHtml.match(/<div class="series-panel[^>]*>([\s\S]*?)<\/div>/)?.[1] || "";
+  assert.match(seriesPanelHtml, /data-series="total"/);
+  assert.match(seriesPanelHtml, /data-series="input"/);
+  assert.match(seriesPanelHtml, /data-series="output"/);
+  assert.match(seriesPanelHtml, /data-series="cacheRead"/);
+  assert.doesNotMatch(seriesPanelHtml, /data-series="cacheHitRate"/);
+  assert.doesNotMatch(analyticsHtml, /scrubber-cache/);
+  assert.doesNotMatch(analyticsHtml, /data-table="sessions"/);
   assert.match(analyticsHtml, /date-range-control/);
   assert.match(analyticsHtml, /data-date-range-toggle/);
   assert.match(analyticsHtml, /\u65e5\u671f\u8303\u56f4/);

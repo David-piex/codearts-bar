@@ -50,17 +50,21 @@ async function renderAppHtml(workspaceMode = "sessions", options = {}){
   const elements = new Map();
   for(const id of ["app", "refresh", "settings", "layoutMode", "zoomIn", "zoomOut", "copy", "refreshState", "chartTip"]) elements.set(id, makeElement(id));
   const listeners = {};
-  const document = { body:{ style:{} }, getElementById(id){ if(!elements.has(id)) elements.set(id, makeElement(id)); return elements.get(id); }, addEventListener(type, fn){ listeners[type] = fn; }, querySelector(){ return null; }, querySelectorAll(){ return []; } };
+  const document = { body:{ style:{} }, getElementById(id){ if(!elements.has(id)) elements.set(id, makeElement(id)); return elements.get(id); }, addEventListener(type, fn){ (listeners[type] ||= []).push(fn); }, querySelector(){ return null; }, querySelectorAll(){ return []; } };
   const ipcRenderer = { async invoke(){ return snapshot; }, on(){} };
-  const storage = makeStorage({ workspaceMode, statsTableTab: workspaceMode === "sessions" ? "sessions" : "requests", sessionQuickFilter:"all", sessionProjectFilter:"all", sessionStatusFilter:"active", sessionSort:"updated", statsSource:"all", statsRange:"1d", layoutMode:"dashboard", uiZoom:"0.92", chartSeries:"total,input,output,cacheHitRate" });
+  const storage = makeStorage({ workspaceMode, statsTableTab: workspaceMode === "sessions" ? "sessions" : "requests", sessionQuickFilter:"all", sessionProjectFilter:"all", sessionStatusFilter:"active", sessionSort:"updated", statsSource:"all", statsRange:"1d", layoutMode:"dashboard", uiZoom:"0.92", chartSeries:"total,input,output,cacheRead" });
   let rafNow = 0;
   const context = { console, require(name){ if(name === "electron") return { ipcRenderer }; if(name === "node:fs") return require("node:fs"); if(name === "node:path") return require("node:path"); throw new Error(`Unexpected require: ${name}`); }, window:{ matchMedia:() => ({ matches:false }), devicePixelRatio:1, innerWidth:1280, innerHeight:860, addEventListener(){} }, document, localStorage: storage, navigator:{ clipboard:{ writeText: async () => {} } }, setInterval(){ return 1; }, clearInterval(){}, setTimeout(fn){ if(typeof fn === "function") fn(); return 1; }, clearTimeout(){}, requestAnimationFrame(fn){ rafNow += 120; if(typeof fn === "function") fn(rafNow); return rafNow; }, cancelAnimationFrame(){}, performance:{ now:() => rafNow }, Date, Intl, Math, Number, String, Boolean, JSON, Map, Set, Array, Object, RegExp, Error, Promise };
   context.globalThis = context;
   vm.createContext(context);
   vm.runInContext(fs.readFileSync(path.join(root, "src", "dashboard-renderer.js"), "utf8"), context, { filename:"dashboard-renderer.js" });
   for(let i = 0; i < 8; i += 1) await new Promise((resolve) => setImmediate(resolve));
-  if(options.openDateRange && listeners.click){
-    await listeners.click({ target:{ closest(selector){ if(selector === ".date-range-control") return { className:"date-range-control" }; if(selector === "[data-date-range-toggle]") return { dataset:{ dateRangeToggle:"1" } }; return null; } } });
+  if(options.openDateRange && listeners.click?.length){
+    const event = { target:{ closest(selector){ if(selector === ".date-range-control") return { className:"date-range-control" }; if(selector === "[data-date-range-toggle]") return { dataset:{ dateRangeToggle:"1" } }; return null; } } };
+    for(const handler of listeners.click){
+      await handler(event);
+      if(event.__dashboardHandled) break;
+    }
     for(let i = 0; i < 3; i += 1) await new Promise((resolve) => setImmediate(resolve));
   }
   return elements.get("app").innerHTML;
@@ -75,6 +79,7 @@ function inlineAnalyticsChartScript(options = {}) {
   const fmt = new Intl.NumberFormat('zh-CN');
   const H = 3600000;
   function n(v){ return fmt.format(Math.round(Number(v) || 0)); }
+  function compact(v){ v = Number(v) || 0; return Math.abs(v) >= 10000 ? (v / 10000).toFixed(1) + '万' : n(v); }
   function pct(read, write, input = 0){ const total = read + write + input; return total > 0 ? (read / total) * 100 : 0; }
   function colorFor(hit){ return hit >= 60 ? '#08a045' : hit >= 25 ? '#f59e0b' : '#ef3b55'; }
   function drawHoverAperture(ctx, focusX, focusY, pad, w, h, tone){
@@ -104,62 +109,6 @@ function inlineAnalyticsChartScript(options = {}) {
     ctx.beginPath(); ctx.arc(focusX, focusY, 15, 0, Math.PI * 2); ctx.stroke();
     ctx.restore();
   }
-  function drawCacheLens(ctx, focus, pad, w, h, focusX){
-    const hit = pct(focus.cacheRead, focus.cacheWrite, focus.input);
-    const tone = colorFor(hit);
-    const boxW = 164;
-    const boxH = 46;
-    const x = Math.max(pad.l + 8, Math.min(pad.l + w - boxW - 8, focusX - boxW / 2));
-    const y = Math.max(pad.t + 12, pad.t + h - 66);
-    const ringX = x + 22;
-    const ringY = y + 23;
-    ctx.save();
-    ctx.shadowColor = 'rgba(15,23,42,.12)';
-    ctx.shadowBlur = 18;
-    ctx.shadowOffsetY = 8;
-    const glass = ctx.createLinearGradient(0, y, 0, y + boxH);
-    glass.addColorStop(0, 'rgba(255,255,255,.94)');
-    glass.addColorStop(1, 'rgba(247,251,255,.74)');
-    ctx.fillStyle = glass;
-    ctx.strokeStyle = 'rgba(10,132,255,.34)';
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.roundRect(x, y, boxW, boxH, 15);
-    ctx.fill();
-    ctx.shadowColor = 'transparent';
-    ctx.stroke();
-    ctx.strokeStyle = 'rgba(226,232,240,.92)';
-    ctx.lineWidth = 4;
-    ctx.beginPath();
-    ctx.arc(ringX, ringY, 11, -Math.PI / 2, Math.PI * 1.5);
-    ctx.stroke();
-    ctx.strokeStyle = tone;
-    ctx.lineCap = 'round';
-    ctx.beginPath();
-    ctx.arc(ringX, ringY, 11, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * (hit / 100));
-    ctx.stroke();
-    ctx.lineCap = 'butt';
-    ctx.fillStyle = '#172033';
-    ctx.font = '800 12px Segoe UI, Microsoft YaHei UI, sans-serif';
-    ctx.textAlign = 'left';
-    ctx.fillText(Math.round(hit) + '%', x + 43, y + 18);
-    ctx.fillStyle = 'rgba(100,116,139,.88)';
-    ctx.font = '10px Segoe UI, Microsoft YaHei UI, sans-serif';
-    ctx.fillText('\u547d\u4e2d / \u521b\u5efa', x + 43, y + 32);
-    ctx.fillStyle = 'rgba(226,232,240,.92)';
-    ctx.beginPath();
-    ctx.roundRect(x + 43, y + 36, 86, 4, 2);
-    ctx.fill();
-    ctx.fillStyle = tone;
-    ctx.beginPath();
-    ctx.roundRect(x + 43, y + 36, Math.max(4, 86 * hit / 100), 4, 2);
-    ctx.fill();
-    ctx.fillStyle = tone;
-    ctx.font = '900 10px Segoe UI, Microsoft YaHei UI, sans-serif';
-    ctx.textAlign = 'right';
-    ctx.fillText(hit >= 60 ? '\u9ad8\u590d\u7528' : hit >= 25 ? '\u6709\u590d\u7528' : '\u5f85\u63d0\u5347', x + boxW - 12, y + 18);
-    ctx.restore();
-  }
   function draw(){
     const canvas = document.getElementById('usageChart');
     if(!canvas) return;
@@ -186,6 +135,7 @@ function inlineAnalyticsChartScript(options = {}) {
       b.cacheWrite += r.cacheWrite || 0;
       b.requests += 1;
     }
+    const max = Math.max(1, ...buckets.map((b) => b.total));
     ctx.clearRect(0, 0, rect.width, rect.height);
     const bg = ctx.createLinearGradient(0, pad.t, 0, pad.t + h);
     bg.addColorStop(0, 'rgba(22,135,245,.045)');
@@ -198,23 +148,8 @@ function inlineAnalyticsChartScript(options = {}) {
     for(let i = 0; i <= 4; i++){
       const y = pad.t + h * i / 4;
       ctx.beginPath(); ctx.moveTo(pad.l, y); ctx.lineTo(pad.l + w, y); ctx.stroke();
-      ctx.fillText(String(Math.round((1 - i / 4) * 100)) + '%', 8, y + 4);
+      ctx.fillText(compact(max * (1 - i / 4)), 8, y + 4);
     }
-    const max = Math.max(1, ...buckets.map((b) => b.total));
-    const bw = Math.max(5, Math.min(18, (w / buckets.length) * .56));
-    const bar = ctx.createLinearGradient(0, pad.t, 0, pad.t + h);
-    bar.addColorStop(0, 'rgba(10,132,255,.20)');
-    bar.addColorStop(1, 'rgba(10,132,255,.04)');
-    buckets.forEach((b, i) => {
-      const x = pad.l + (i * w / Math.max(1, buckets.length - 1));
-      const bh = (b.total / max) * h;
-      if(bh > 0){
-        ctx.fillStyle = bar;
-        ctx.beginPath();
-        ctx.roundRect(x - bw / 2, pad.t + h - bh, bw, bh, 5);
-        ctx.fill();
-      }
-    });
     function line(key, color){
       ctx.save();
       ctx.strokeStyle = color;
@@ -237,22 +172,7 @@ function inlineAnalyticsChartScript(options = {}) {
     line('total', '#f43f5e');
     line('input', '#2f7df6');
     line('output', '#16b862');
-    const cacheY = pad.t + h - 7;
-    buckets.forEach((b, i) => {
-      const cacheTotal = b.cacheRead + b.cacheWrite;
-      if(!cacheTotal) return;
-      const x = pad.l + (i * w / Math.max(1, buckets.length - 1));
-      const hit = pct(b.cacheRead, b.cacheWrite, b.input);
-      ctx.globalAlpha = .38 + hit / 100 * .38;
-      ctx.fillStyle = colorFor(hit);
-      ctx.beginPath();
-      ctx.roundRect(x - 9, cacheY - 2.5, 18, 5, 3);
-      ctx.fill();
-      ctx.globalAlpha = 1;
-    });
-    ctx.fillStyle = 'rgba(100,116,139,.72)';
-    ctx.textAlign = 'right';
-    ctx.fillText('缓存热度', pad.l + w, pad.t + h - 13);
+    line('cacheRead', '#9b57ff');
     const hot = buckets.filter((b) => b.cacheRead + b.cacheWrite > 0).reduce((acc, b) => ({ cacheRead: acc.cacheRead + b.cacheRead, cacheWrite: acc.cacheWrite + b.cacheWrite, input: acc.input + b.input, total: acc.total + b.total, requests: acc.requests + b.requests }), { cacheRead: 0, cacheWrite: 0, input: 0, total: 0, requests: 0 });
     const focusIndex = buckets.reduce((best, b, i) => b.total > buckets[best].total ? i : best, 0);
     const focus = buckets[focusIndex];
@@ -262,7 +182,6 @@ function inlineAnalyticsChartScript(options = {}) {
       const card = document.querySelector('.chart-card');
       card?.classList.add('chart-active', 'chart-pinned', 'chart-hover-preview');
       drawHoverAperture(ctx, focusX, focusY, pad, w, h, 'rgba(10,132,255,.30)');
-      drawCacheLens(ctx, focus, pad, w, h, focusX);
       ctx.fillStyle = '#0a84ff';
       ctx.beginPath(); ctx.arc(focusX, focusY, 5, 0, Math.PI * 2); ctx.fill();
       ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke();
@@ -272,15 +191,15 @@ function inlineAnalyticsChartScript(options = {}) {
       ctx.fillText('\u5df2\u56fa\u5b9a', Math.max(pad.l + 32, Math.min(pad.l + w - 28, focusX)), pad.t + 21);
       const tip = document.getElementById('chartTip');
       if(tip){
-        tip.innerHTML = '<b>07/08 09:50</b><div class="tip-row tip-state"><span>\u6d3b\u8dc3\u65f6\u6bb5</span><strong>' + n(focus.requests) + ' \u8bf7\u6c42</strong></div><div class="tip-pin">\u5df2\u56fa\u5b9a\u70b9\u4f4d \u00b7 \u53cc\u51fb\u53d6\u6d88\u56fa\u5b9a</div><div class="tip-row hot"><span style="--c:#f43f5e">\u603b token</span><strong>' + n(focus.total) + '</strong></div><div class="tip-row"><span style="--c:#2f7df6">\u8f93\u5165</span><strong>' + n(focus.input) + '</strong></div><div class="tip-row"><span style="--c:#16b862">\u8f93\u51fa</span><strong>' + n(focus.output) + '</strong></div><div class="tip-divider"></div><div class="tip-row tip-state"><span>\u7f13\u5b58\u547d\u4e2d\u7387</span><strong>' + Math.round(pct(focus.cacheRead, focus.cacheWrite, focus.input)) + '%</strong></div><div class="tip-cache-bar" style="--hit:' + Math.round(pct(focus.cacheRead, focus.cacheWrite, focus.input)) + '%"><i></i></div><div class="tip-row tip-metric cache-health hot"><span>\u7f13\u5b58\u4f53\u611f</span><strong>\u9ad8\u590d\u7528</strong></div>';
+        tip.innerHTML = '<b>07/08 09:50</b><div class="tip-row tip-state"><span>\u6d3b\u8dc3\u65f6\u6bb5</span><strong>' + n(focus.requests) + ' \u8bf7\u6c42</strong></div><div class="tip-pin">\u5df2\u56fa\u5b9a\u70b9\u4f4d \u00b7 \u53cc\u51fb\u53d6\u6d88\u56fa\u5b9a</div><div class="tip-row hot"><span style="--c:#f43f5e">\u603b token</span><strong>' + n(focus.total) + '</strong></div><div class="tip-row"><span style="--c:#2f7df6">\u8f93\u5165</span><strong>' + n(focus.input) + '</strong></div><div class="tip-row"><span style="--c:#16b862">\u8f93\u51fa</span><strong>' + n(focus.output) + '</strong></div><div class="tip-row"><span style="--c:#9b57ff">\u7f13\u5b58\u547d\u4e2d</span><strong>' + n(focus.cacheRead) + '</strong></div>';
         tip.classList.add('show', 'preview-pinned');
         tip.style.transform = 'translate3d(868px, 315px, 0) scale(1)';
       }
     }
     const meta = document.getElementById('chartHoverMeta');
     if(meta) meta.innerHTML = previewOptions.pinnedHover
-      ? '<b>07/08 09:50</b><span>\u5df2\u56fa\u5b9a\u70b9\u4f4d</span><span>\u8bf7\u6c42 ' + n(focus.requests) + '</span><span>\u603b token ' + n(focus.total) + '</span><span class="cache-meta">\u7f13\u5b58\u547d\u4e2d\u7387 ' + Math.round(pct(focus.cacheRead, focus.cacheWrite, focus.input)) + '%</span><span class="cache-health-meta hot">\u7f13\u5b58\u4f53\u611f \u9ad8\u590d\u7528</span><span>hover aperture \u5df2\u7ed8\u5236</span><span>cache lens \u5df2\u7ed8\u5236</span><span>hover tooltip \u5df2\u7ed8\u5236</span><span>hover focus rail \u5df2\u7ed8\u5236</span>'
-      : '<b>\u56fe\u8868\u9884\u89c8</b><span>\u8bf7\u6c42 ' + n(hot.requests) + '</span><span>\u603b token ' + n(hot.total) + '</span><span>\u7f13\u5b58\u547d\u4e2d\u7387 ' + Math.round(pct(hot.cacheRead, hot.cacheWrite, hot.input)) + '%</span><span>\u7f13\u5b58\u70ed\u5ea6\u5df2\u7ed8\u5236</span>';
+      ? '<b>07/08 09:50</b><span>\u5df2\u56fa\u5b9a\u70b9\u4f4d</span><span>\u8bf7\u6c42 ' + n(focus.requests) + '</span><span>\u603b token ' + n(focus.total) + '</span><span>\u8f93\u5165 ' + n(focus.input) + '</span><span>\u8f93\u51fa ' + n(focus.output) + '</span><span>\u7f13\u5b58\u547d\u4e2d ' + n(focus.cacheRead) + '</span>'
+      : '<b>\u56fe\u8868\u9884\u89c8</b><span>\u8bf7\u6c42 ' + n(hot.requests) + '</span><span>\u603b token ' + n(hot.total) + '</span><span>\u7f13\u5b58\u547d\u4e2d ' + n(hot.cacheRead) + '</span>';
     const scrubber = document.getElementById('chartHoverScrubber');
     if(scrubber){
       const activeBucket = previewOptions.pinnedHover ? focus : hot;
@@ -288,8 +207,8 @@ function inlineAnalyticsChartScript(options = {}) {
       scrubber.classList.toggle('active', Boolean(previewOptions.pinnedHover));
       scrubber.classList.toggle('pinned', Boolean(previewOptions.pinnedHover));
       scrubber.innerHTML = previewOptions.pinnedHover
-        ? '<b>07/08 09:50</b><span class="scrubber-pin">\u5df2\u56fa\u5b9a\u70b9\u4f4d</span><span>\u8bf7\u6c42 ' + n(activeBucket.requests) + '</span><span>\u603b token ' + n(activeBucket.total) + '</span><span class="scrubber-focus">\u603b token ' + n(activeBucket.total) + '</span><span class="scrubber-cache hot">\u7f13\u5b58\u547d\u4e2d\u7387 ' + activeHit + '% \u00b7 \u9ad8\u590d\u7528</span><i class="hot" style="--hit:' + activeHit + '%"><em></em></i>'
-        : '<b>\u56fe\u8868\u56fe\u4f8b</b><span>\u79fb\u5230\u56fe\u8868\u4e0a\u67e5\u770b\u6570\u503c\uff0c\u70b9\u51fb\u53ef\u56fa\u5b9a</span><span>\u7f13\u5b58\u70ed\u5ea6</span><i style="--hit:0%"><em></em></i>';
+        ? '<b>07/08 09:50</b><span class="scrubber-pin">\u5df2\u56fa\u5b9a\u70b9\u4f4d</span><span>\u8bf7\u6c42 ' + n(activeBucket.requests) + '</span><span>\u603b token ' + n(activeBucket.total) + '</span><span>\u8f93\u5165 ' + n(activeBucket.input) + '</span><span>\u8f93\u51fa ' + n(activeBucket.output) + '</span><span>\u7f13\u5b58\u547d\u4e2d ' + n(activeBucket.cacheRead) + '</span>'
+        : '<b>\u4f7f\u7528\u8d8b\u52bf</b><span>\u603b token \u00b7 \u8f93\u5165 \u00b7 \u8f93\u51fa \u00b7 \u7f13\u5b58\u547d\u4e2d</span>';
     }
   }
   window.addEventListener('load', draw);
@@ -340,8 +259,7 @@ function buildPreviewHtml(baseHtml, appHtml, options = {}) {
 function assertPreviewHtml(label, html){
   const cp = (...codes) => String.fromCharCode(...codes);
   const pinnedPoint = cp(0x5df2, 0x56fa, 0x5b9a, 0x70b9, 0x4f4d);
-  const cacheHitRateText = cp(0x7f13, 0x5b58, 0x547d, 0x4e2d, 0x7387);
-  const hoverDrawn = `hover tooltip ${cp(0x5df2, 0x7ed8, 0x5236)}`;
+  const cacheReadText = cp(0x7f13, 0x5b58, 0x547d, 0x4e2d);
   const badMarkers = ["???", "\uFFFD", "\u7523\u8d0b"];
   for(const marker of badMarkers){
     if(html.includes(marker)) throw new Error(`${label} preview contains mojibake marker: ${marker}`);
@@ -351,13 +269,9 @@ function assertPreviewHtml(label, html){
       ["chart-hover-preview"],
       ["preview-pinned"],
       ["chartHoverScrubber"],
-      ["scrubber-cache"],
       ["scrubber-pin"],
-      ["scrubber-focus"],
-      ["hover aperture", "hover aperture \\u5df2\\u7ed8\\u5236"],
       [pinnedPoint, "\\u5df2\\u56fa\\u5b9a\\u70b9\\u4f4d"],
-      [cacheHitRateText, "\\u7f13\\u5b58\\u547d\\u4e2d\\u7387"],
-      [hoverDrawn, "hover tooltip \\u5df2\\u7ed8\\u5236"],
+      [cacheReadText, "\\u7f13\\u5b58\\u547d\\u4e2d"],
     ];
     for(const options of groups){
       if(!options.some((token) => html.includes(token))) throw new Error(`analytics hover preview missing ${options.join(" or ")}`);

@@ -2,11 +2,31 @@ function perfNow(){ try { return performance.now(); } catch { return Date.now();
 function perfBucket(label){ currentRenderPerf = { label, startedAt: perfNow(), filterMs: 0, chartDrawMs: 0, domCommitMs: 0, tableRenderMs: 0, lowerRenderMs: 0, rows: 0 }; return currentRenderPerf; }
 function markPerfStage(key, ms){ if(!currentRenderPerf || !Number.isFinite(ms)) return; currentRenderPerf[key] = Math.round((currentRenderPerf[key] || 0) + ms); }
 function finishPerfBucket(rows = 0){ if(!currentRenderPerf) return null; currentRenderPerf.totalMs = Math.round(perfNow() - currentRenderPerf.startedAt); currentRenderPerf.rows = rows; lastRenderPerf = currentRenderPerf; currentRenderPerf = null; try { window.__dashboardPerf = (window.__dashboardPerf || []).concat(lastRenderPerf).slice(-40); document.body?.dataset && (document.body.dataset.renderMs = String(lastRenderPerf.totalMs)); } catch {} return lastRenderPerf; }
-function resetIncrementalRenderLimits(scope = 'all'){ if(scope === 'all' || scope === 'requests') requestTableRenderLimit = 100; if(scope === 'all' || scope === 'sessions') sessionTableRenderLimit = 80; }
+function recordPatchPerf(label, startedAt, rows = 0, fields = {}){
+  const totalMs = Math.round(perfNow() - startedAt);
+  lastRenderPerf = {
+    label,
+    startedAt,
+    filterMs: 0,
+    chartDrawMs: 0,
+    domCommitMs: 0,
+    tableRenderMs: 0,
+    lowerRenderMs: 0,
+    rows,
+    ...fields,
+    totalMs,
+  };
+  try { window.__dashboardPerf = (window.__dashboardPerf || []).concat(lastRenderPerf).slice(-40); document.body?.dataset && (document.body.dataset.renderMs = String(totalMs)); } catch {}
+  updatePerfPanel();
+  return lastRenderPerf;
+}
+function resetIncrementalRenderLimits(scope = 'all'){ if(scope === 'all' || scope === 'requests') requestTableRenderLimit = 100; if(scope === 'all' || scope === 'sessions') sessionTableRenderLimit = SESSION_PAGE_SIZE; }
 function commitAppHtml(app, html){
-  if(lastCommittedHtml === html && app.innerHTML === html) return false;
-  lastCommittedHtml = html;
-  app.innerHTML = html;
+  const next = String(html ?? '');
+  if(lastCommittedHtml === next) return false;
+  lastCommittedHtml = next;
+  try { slotHtmlCache?.clear?.(); } catch {}
+  app.innerHTML = next;
   return true;
 }
 function markRenderCost(start, label, rows = 0){

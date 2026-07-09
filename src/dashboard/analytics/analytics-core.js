@@ -13,18 +13,66 @@ function sourceDisplayLabel(k, fallback){ if(k === 'desktop') return TXT.desktop
 function memoForSnapshot(s){
   if(!s || typeof s !== 'object') return { filters: new Map(), sums: new WeakMap(), groups: new Map(), hourly: new Map() };
   let memo = analyticsMemo.get(s);
-  if(!memo){ memo = { filters: new Map(), sums: new WeakMap(), groups: new Map(), hourly: new Map(), sourceOptions: null, modelOptions: null }; analyticsMemo.set(s, memo); }
+  if(!memo){ memo = { filters: new Map(), sums: new WeakMap(), groups: new Map(), hourly: new Map(), chartBuckets: new Map(), sourceOptions: null, modelOptions: null }; analyticsMemo.set(s, memo); }
   return memo;
 }
 
-function filterCacheKey(range, source, model, since, until){ return `${range || 'all'}|${source || 'all'}|${model || 'all'}|${since || 0}|${until || 0}|${customDateStart || 0}|${customDateEnd || 0}`; }
+function rowsDataSignature(s){
+  const list = Array.isArray(s?.requestLog) ? s.requestLog : [];
+  const first = list[0] || {};
+  const last = list[list.length - 1] || {};
+  return `${list.length}:${Number(first.time || 0)}:${Number(last.time || 0)}:${first.id || ''}:${last.id || ''}:${Number(s?.timestamp || 0)}`;
+}
+function requestCountForSnapshot(s){ return Number(s?.requestTotal || (Array.isArray(s?.requestLog) ? s.requestLog.length : 0) || 0); }
+function isLargeRequestSnapshot(s, limit = 5000){ return requestCountForSnapshot(s) > limit || (Array.isArray(s?.requestLog) && s.requestLog.length > limit); }
+function normalizeUsageMetric(st = {}){
+  return {
+    total: Number(st.total || 0),
+    input: Number(st.input || 0),
+    output: Number(st.output || 0),
+    reasoning: Number(st.reasoning || 0),
+    cacheRead: Number(st.cacheRead || 0),
+    cacheWrite: Number(st.cacheWrite || 0),
+    requests: Number(st.requests ?? st.messages ?? 0),
+    messages: Number(st.messages ?? st.requests ?? 0),
+    errors: Number(st.errors || 0),
+    latencies: Array.isArray(st.latencies) ? st.latencies : [],
+    ttfts: Array.isArray(st.ttfts) ? st.ttfts : [],
+    firstContents: Array.isArray(st.firstContents) ? st.firstContents : [],
+    speeds: Array.isArray(st.speeds) ? st.speeds : [],
+  };
+}
+function filterCacheKey(s, range, source, model, since, until){ return `${rowsDataSignature(s)}|${range || 'all'}|${source || 'all'}|${model || 'all'}|${since || 0}|${until || 0}|${customDateStart || 0}|${customDateEnd || 0}`; }
+function filteredRowsViewKey(s){
+  const range = normalizeRangeFilter(rangeFilter);
+  const since = sinceForRange(s, range);
+  const until = untilForRange(s, range);
+  const view = typeof viewModeKey === 'function' ? viewModeKey() : `${layoutMode || 'dashboard'}:${workspaceMode || 'analytics'}`;
+  return `${view}|${filterCacheKey(s, range, sourceFilter, modelFilter, since, until)}|query:${analyticsQuery || ''}`;
+}
+function getFilteredRowsForView(s){
+  const key = filteredRowsViewKey(s);
+  if(lastFilteredSnapshot === s && lastFilteredModeKey === key && Array.isArray(lastFilteredRows)) return lastFilteredRows;
+  const rows = filterRows(s);
+  lastFilteredRows = rows;
+  lastFilteredSnapshot = s;
+  lastFilteredModeKey = key;
+  return rows;
+}
+function invalidateFilteredRowsCache(){
+  lastFilteredRows = [];
+  lastFilteredSnapshot = null;
+  lastFilteredModeKey = '';
+}
 
 function sourceOptions(s){
   const memo = memoForSnapshot(s);
   if(memo.sourceOptions) return memo.sourceOptions;
   const set = new Map();
   for(const src of s.sources || []){ const k = sourceKey(src); if(k && k !== 'unknown') set.set(k, sourceDisplayLabel(k, src.label)); }
-  for(const r of s.requestLog || []){ const k = sourceKey(r); if(k && k !== 'unknown') set.set(k, sourceDisplayLabel(k, r.sourceLabel || r.source)); }
+  if(!set.size){
+    for(const r of s.requestLog || []){ const k = sourceKey(r); if(k && k !== 'unknown') set.set(k, sourceDisplayLabel(k, r.sourceLabel || r.source)); }
+  }
   if(!set.has('desktop')) set.set('desktop', TXT.desktop);
   if(!set.has('cli')) set.set('cli', TXT.cli);
   const order = { desktop: 0, cli: 1 };
@@ -37,7 +85,16 @@ function sourceLabelFor(s, key){ if(key === 'all') return TXT.allSource; return 
 function modelOptions(s){
   const memo = memoForSnapshot(s);
   if(memo.modelOptions) return memo.modelOptions;
-  memo.modelOptions = [...new Set((s.requestLog || []).map((r) => r.model).filter(Boolean))].sort();
+  const set = new Set();
+  for(const item of s.models || []){
+    const model = item.model || item.key || item.name;
+    if(model) set.add(model);
+  }
+  const list = Array.isArray(s?.requestLog) ? s.requestLog : [];
+  if(!set.size || !isLargeRequestSnapshot(s)){
+    for(const r of list) if(r.model) set.add(r.model);
+  }
+  memo.modelOptions = [...set].sort();
   return memo.modelOptions;
 }
 
@@ -48,7 +105,7 @@ function filterRows(s, opts = {}){
   const since = sinceForRange(s, range);
   const until = untilForRange(s, range);
   const memo = memoForSnapshot(s);
-  const key = filterCacheKey(range, source, model, since, until);
+  const key = filterCacheKey(s, range, source, model, since, until);
   if(memo.filters.has(key)) return memo.filters.get(key);
   const rows = (s.requestLog || []).filter((r) => {
     const time = Number(r.time || 0);
@@ -85,6 +142,38 @@ function sumReq(rows){
   }, { total: 0, input: 0, output: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0, requests: 0, errors: 0, latencies: [], ttfts: [], firstContents: [], speeds: [] });
   if(rows && typeof rows === 'object') globalMemo.sums.set(rows, result);
   return result;
+}
+
+function currentAggregateUsage(s){
+  try {
+    const scope = currentTrendScopeKey(s, isDayRange());
+    if(!s?.aggregateScope || s.aggregateScope !== scope) return null;
+    const items = Array.isArray(s.sourceStats) ? s.sourceStats : [];
+    if(!items.length) return null;
+    return items.reduce((a, r) => {
+      a.total += Number(r.total || 0);
+      a.input += Number(r.input || 0);
+      a.output += Number(r.output || 0);
+      a.reasoning += Number(r.reasoning || 0);
+      a.cacheRead += Number(r.cacheRead || 0);
+      a.cacheWrite += Number(r.cacheWrite || 0);
+      a.requests += Number(r.requests || r.messages || 0);
+      a.errors += Number(r.errors || 0);
+      return a;
+    }, { total: 0, input: 0, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0, requests: 0, errors: 0, latencies: [], ttfts: [], firstContents: [], speeds: [] });
+  } catch { return null; }
+}
+
+function summaryUsageForView(rows, s){
+  const aggregate = currentAggregateUsage(s);
+  if(aggregate) return aggregate;
+  if(sourceFilter === 'all' && modelFilter === 'all'){
+    if(rangeFilter === 'today') return normalizeUsageMetric(exactUsageFromSnapshot(s, 'today'));
+    if(rangeFilter === '1d') return normalizeUsageMetric(exactUsageFromSnapshot(s, 'window'));
+    if(rangeFilter === '7d') return normalizeUsageMetric(exactUsageFromSnapshot(s, 'week'));
+    if(rangeFilter === 'all') return normalizeUsageMetric(exactUsageFromSnapshot(s, 'all'));
+  }
+  return sumReq(rows);
 }
 
 function avg(arr){ return arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : null; }
