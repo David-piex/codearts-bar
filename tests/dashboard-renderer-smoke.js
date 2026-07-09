@@ -164,7 +164,7 @@ async function main() {
   assert.doesNotMatch(html, /session-filter-context/);
   assert.doesNotMatch(html, /data-session-reset-filters/);
   assert.doesNotMatch(html, /session-advanced-shell collapsed/);
-  assert.match(html, /data-session-advanced-toggle/);
+  assert.doesNotMatch(html, /data-session-advanced-toggle/);
   assert.doesNotMatch(html, /session-smart-views/);
   assert.doesNotMatch(html, /cache-governance-kpis/);
   assert.doesNotMatch(html, /session-cache-opportunities/);
@@ -235,35 +235,26 @@ async function main() {
   });
   assert.doesNotMatch(elements.get("app").innerHTML, /rename-sheet/);
 
-  await listeners.click({
-    target: {
-      dataset: {},
-      closest(selector){
-        return selector === "[data-session-advanced-toggle]" ? { dataset: { sessionAdvancedToggle: "1" } } : null;
-      },
-    },
-  });
-  assert.equal(storage.getItem("sessionAdvancedOpen"), "1");
-  const advancedHtml = elements.get("app").innerHTML;
-  assert.match(advancedHtml, /session-advanced-shell/);
-  assert.match(advancedHtml, /session-saved-views/);
-  assert.match(advancedHtml, /session-project-select/);
-  assert.match(advancedHtml, /session-tag-select/);
-  assert.match(advancedHtml, /session-bulk/);
-  assert.doesNotMatch(advancedHtml, /session-smart-views/);
-  assert.doesNotMatch(advancedHtml, /data-session-smart-view="cacheWaste"/);
-  assert.doesNotMatch(advancedHtml, /session-project-rail/);
-  assert.doesNotMatch(advancedHtml, /session-cache-opportunities/);
-  assert.doesNotMatch(advancedHtml, /cache-governance/);
-  assert.doesNotMatch(advancedHtml, /data-session-cache-governance="focus"/);
-  assert.doesNotMatch(advancedHtml, /value="opportunity"/);
-  assert.match(advancedHtml, /session-essential-inspector/);
-  assert.doesNotMatch(advancedHtml, /session-advanced-inspector/);
-  assert.doesNotMatch(advancedHtml, /session-efficiency/);
-  assert.doesNotMatch(advancedHtml, /cache-eff-panel/);
-  assert.doesNotMatch(advancedHtml, /model-breakdown/);
-  assert.doesNotMatch(advancedHtml, /request-list/);
-  assert.doesNotMatch(advancedHtml, /data-session-action="copy-markdown"/);
+  const simpleHtml = elements.get("app").innerHTML;
+  assert.doesNotMatch(simpleHtml, /session-advanced-shell/);
+  assert.doesNotMatch(simpleHtml, /session-saved-views/);
+  assert.doesNotMatch(simpleHtml, /session-project-select/);
+  assert.doesNotMatch(simpleHtml, /session-tag-select/);
+  assert.match(simpleHtml, /session-bulk simple/);
+  assert.doesNotMatch(simpleHtml, /session-smart-views/);
+  assert.doesNotMatch(simpleHtml, /data-session-smart-view="cacheWaste"/);
+  assert.doesNotMatch(simpleHtml, /session-project-rail/);
+  assert.doesNotMatch(simpleHtml, /session-cache-opportunities/);
+  assert.doesNotMatch(simpleHtml, /cache-governance/);
+  assert.doesNotMatch(simpleHtml, /data-session-cache-governance="focus"/);
+  assert.doesNotMatch(simpleHtml, /value="opportunity"/);
+  assert.match(simpleHtml, /session-essential-inspector/);
+  assert.doesNotMatch(simpleHtml, /session-advanced-inspector/);
+  assert.doesNotMatch(simpleHtml, /session-efficiency/);
+  assert.doesNotMatch(simpleHtml, /cache-eff-panel/);
+  assert.doesNotMatch(simpleHtml, /model-breakdown/);
+  assert.doesNotMatch(simpleHtml, /request-list/);
+  assert.doesNotMatch(simpleHtml, /data-session-action="copy-markdown"/);
 
   await listeners.click({
     target: {

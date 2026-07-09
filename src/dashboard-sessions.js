@@ -9,11 +9,10 @@ eval([
   'dashboard/sessions/session-workspace.js',
 ].map(readRendererPart).join('\n'));
 function sessionSimpleToolbarHtml(s){
-  return `<section class="session-simple-shell session-library-shell"><div class="session-simple-head"><div><b>${TXT.sessionEssentials}</b><span>${TXT.sessionEssentialsHint}</span></div><button data-session-advanced-toggle="1" class="${sessionAdvancedOpen ? 'active' : ''}">${sessionAdvancedOpen ? TXT.hideAdvanced : TXT.showAdvanced}</button></div>${sessionQuickFilterHtml(s)}${sessionSavedViewsInlineHtml(s)}</section>`;
+  return `<section class="session-simple-shell session-library-shell"><div class="session-simple-head"><div><b>${TXT.sessionEssentials}</b><span>${TXT.sessionEssentialsHint}</span></div></div>${sessionQuickFilterHtml(s)}${sessionSavedViewsInlineHtml(s)}</section>`;
 }
 function sessionAdvancedHtml(s){
-  if(!sessionAdvancedOpen) return '';
-  return `<section class="session-advanced-shell session-library-advanced"><div class="session-advanced-head"><div><b>${TXT.advancedManagement}</b><span>${TXT.advancedManagementHint}</span></div><button data-session-advanced-toggle="1">${TXT.hideAdvanced}</button></div><div class="session-advanced-controls">${sessionStatusHtml()}${sessionProjectFilterHtml(s)}${sessionTagFilterHtml()}${sessionSortHtml()}${sessionBulkHtml(true)}</div>${sessionSavedViewsHtml(s)}</section>`;
+  return '';
 }
 function sessionFiltersActive(){ return sessionQuickFilter !== 'all' || sessionProjectFilter !== 'all' || sessionStatusFilter !== 'active' || sessionTagFilter !== 'all' || sessionQuery.trim(); }
 function sessionFilterContextHtml(s){

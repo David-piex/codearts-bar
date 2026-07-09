@@ -105,8 +105,8 @@ document.addEventListener('click', async (e) => {
   }
   const advancedToggle = e.target.closest('[data-session-advanced-toggle]');
   if(advancedToggle){
-    sessionAdvancedOpen = !sessionAdvancedOpen;
-    localStorage.setItem('sessionAdvancedOpen', sessionAdvancedOpen ? '1' : '0');
+    sessionAdvancedOpen = false;
+    try { localStorage.removeItem('sessionAdvancedOpen'); } catch {}
     patchSessionsOrRender({ table: false, toolbar: true, inspector: false, overview: false });
     return;
   }

@@ -35,7 +35,8 @@ let bulkMetaTagsDraft = '';
 let bulkMetaNoteDraft = '';
 let savedSessionViews = [];
 let savedSessionViewNameDraft = '';
-let sessionAdvancedOpen = localStorage.getItem('sessionAdvancedOpen') === '1';
+let sessionAdvancedOpen = false;
+try { localStorage.removeItem('sessionAdvancedOpen'); } catch {}
 let selectedRequestKey = localStorage.getItem('selectedRequestKey') || '';
 let refreshEvery = localStorage.getItem('statsRefreshEvery') || '30';
 let layoutMode = localStorage.getItem('layoutMode') || 'dashboard';
