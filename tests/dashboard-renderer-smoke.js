@@ -380,6 +380,8 @@ async function main() {
   assert.match(analyticsHtml, /date-range-control/);
   assert.match(analyticsHtml, /data-date-range-toggle/);
   assert.match(analyticsHtml, /\u65e5\u671f\u8303\u56f4/);
+  assert.doesNotMatch(analyticsHtml, /\u73b0\u5728/);
+  assert.doesNotMatch(analyticsHtml, /data-date-range-follow/);
   assert.doesNotMatch(analyticsHtml, /data-select="rangeCustom"/);
 
   await listeners.click({

@@ -27,6 +27,9 @@ document.addEventListener('click', (e) => {
   if(dateFocus && dateFocus.dataset.dateRangeFocus){
     dateRangeFocus = dateFocus.dataset.dateRangeFocus;
     dateRangeMonth = monthStart(dateRangeFocus === 'end' ? dateRangeDraftEnd : dateRangeDraftStart);
+    if(e.target.closest('[data-date-range-date], [data-date-range-time]')){
+      e.__dashboardHandled = true; return;
+    }
     patchDateRangeChrome();
     e.__dashboardHandled = true; return;
   }

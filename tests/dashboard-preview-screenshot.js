@@ -282,6 +282,10 @@ function assertPreviewHtml(label, html){
       if(!html.includes(token)) throw new Error(`analytics total preview missing ${token}`);
     }
   }
+  if(label === "analytics date"){
+    if(html.includes("现在")) throw new Error("analytics date preview should use fixed end date/time, not 现在");
+    if(html.includes("data-date-range-follow")) throw new Error("analytics date preview should not expose follow-now checkbox");
+  }
 }
 function screenshot(chrome, htmlPath, pngPath){
   const result = spawnSync(chrome, ["--headless=new", "--disable-gpu", "--hide-scrollbars", "--allow-file-access-from-files", "--virtual-time-budget=800", "--window-size=1280,860", `--screenshot=${pngPath}`, fileUrl(htmlPath)], { encoding:"utf8" });

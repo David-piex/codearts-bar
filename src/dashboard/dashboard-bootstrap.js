@@ -154,14 +154,14 @@ async function refreshDashboardAggregates(s, token){
 function setRefreshState(text){ const el = document.getElementById('refreshState'); if(el) el.textContent = text || ''; }
 function applyCustomDateInputs(){
   if(dateRangeDraftStart) customDateStart = dateRangeDraftStart;
-  if(dateRangeFollowNow) customDateEnd = Number(snapshot?.timestamp || Date.now());
-  else if(dateRangeDraftEnd) customDateEnd = dateRangeDraftEnd;
+  if(dateRangeDraftEnd) customDateEnd = dateRangeDraftEnd;
+  dateRangeFollowNow = false;
   normalizeCustomDateRange(snapshot || {});
   rangeFilter = 'customTime';
   localStorage.setItem('statsRange', rangeFilter);
   localStorage.setItem('customDateStart', String(customDateStart));
   localStorage.setItem('customDateEnd', String(customDateEnd));
-  localStorage.setItem('dateRangeFollowNow', dateRangeFollowNow ? '1' : '0');
+  localStorage.setItem('dateRangeFollowNow', '0');
 }
 function setupAutoRefresh(){ if(autoRefreshTimer) clearInterval(autoRefreshTimer); const sec = Math.max(5, Number(refreshEvery) || 30); autoRefreshTimer = setInterval(refreshNow, sec * 1000); }
 async function load(){ setRefreshState(TXT.refresh); const first = await ipcRenderer.invoke('dashboard:getSnapshot', dashboardPayloadForCurrentView()); render(first, { immediate: true, instantChart: true }); if(!first?.ok) await refreshNow(); setupAutoRefresh(); }

@@ -13,7 +13,8 @@ let dateRangeOpen = false;
 let dateRangeDraftStart = 0;
 let dateRangeDraftEnd = 0;
 let dateRangeFocus = 'start';
-let dateRangeFollowNow = localStorage.getItem('dateRangeFollowNow') !== '0';
+let dateRangeFollowNow = false;
+try { localStorage.setItem('dateRangeFollowNow', '0'); } catch {}
 let dateRangeMonth = Number(localStorage.getItem('dateRangeMonth') || 0) || 0;
 let tableTab = localStorage.getItem('statsTableTab') || 'requests';
 let workspaceMode = localStorage.getItem('workspaceMode') || 'analytics';

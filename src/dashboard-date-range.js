@@ -32,7 +32,7 @@ function composeDateTime(dateValue, timeValue, fallback){
 function normalizeCustomDateRange(s = snapshot){
   const now = Number(s?.timestamp || Date.now());
   let start = Number(customDateStart || 0);
-  let end = dateRangeFollowNow ? now : Number(customDateEnd || 0);
+  let end = Number(customDateEnd || 0);
   if(!Number.isFinite(end) || end <= 0) end = now;
   if(!Number.isFinite(start) || start <= 0) start = end - 86400000;
   if(start > end) [start, end] = [end, start];
@@ -66,14 +66,25 @@ function openDateRangePopover(){
 function setDateRangeQuick(key){
   const now = Number(snapshot?.timestamp || Date.now());
   let start = dayStart(now);
-  let end = dateRangeFollowNow ? now : now;
+  let end = now;
   if(key !== 'today'){
     const days = Math.max(1, Number(String(key).replace('d', '')) || 1);
     start = now - days * 86400000;
   }
+  dateRangeFollowNow = false;
   dateRangeDraftStart = start;
   dateRangeDraftEnd = end;
   dateRangeMonth = monthStart(start);
+}
+function dateRangeSameMinute(a, b){ return Math.abs(Number(a || 0) - Number(b || 0)) < 60000; }
+function dateRangeQuickActive(key){
+  ensureDateRangeDraft();
+  const now = Number(snapshot?.timestamp || Date.now());
+  const start = Number(dateRangeDraftStart || 0);
+  const end = Number(dateRangeDraftEnd || 0);
+  if(key === 'today') return dayStart(start) === dayStart(now) && dateRangeSameMinute(end, now);
+  const days = Math.max(1, Number(String(key).replace('d', '')) || 1);
+  return dateRangeSameMinute(start, now - days * 86400000) && dateRangeSameMinute(end, now);
 }
 function updateDateRangeDraft(which, part, value){
   ensureDateRangeDraft();
@@ -82,8 +93,8 @@ function updateDateRangeDraft(which, part, value){
   const dateValue = part === 'date' ? value : dateInputValue(base);
   const timeValue = part === 'time' ? value : timeInputValue(base);
   const next = composeDateTime(dateValue, timeValue, base);
+  if(!isStart) dateRangeFollowNow = false;
   if(isStart) dateRangeDraftStart = next; else dateRangeDraftEnd = next;
-  if(dateRangeDraftStart > dateRangeDraftEnd) [dateRangeDraftStart, dateRangeDraftEnd] = [dateRangeDraftEnd, dateRangeDraftStart];
   dateRangeMonth = monthStart(isStart ? dateRangeDraftStart : dateRangeDraftEnd);
 }
 function chooseCalendarDay(dayMs){
@@ -96,6 +107,7 @@ function chooseCalendarDay(dayMs){
     dateRangeDraftStart = b.getTime();
     dateRangeFocus = 'end';
   } else {
+    dateRangeFollowNow = false;
     dateRangeDraftEnd = b.getTime();
     dateRangeFocus = 'start';
   }
@@ -128,7 +140,7 @@ function dateRangeFieldHtml(which, label, value){
 function dateRangePopoverHtml(){
   ensureDateRangeDraft();
   const quick = [['today', TXT.today], ['1d', '1d'], ['7d', '7d'], ['14d', '14d'], ['30d', '30d']];
-  return `<div class="date-range-popover" role="dialog" aria-label="${TXT.dateRange}"><div class="date-range-quick">${quick.map(([k, label]) => `<button type="button" data-date-range-quick="${k}" class="${k === 'today' ? 'active' : ''}">${label}</button>`).join('')}</div><div class="date-range-body"><div class="date-range-editor"><span class="date-range-support">${TXT.supportDateTime}</span>${dateRangeFieldHtml('start', TXT.startTime, dateRangeDraftStart)}${dateRangeFieldHtml('end', TXT.endTime, dateRangeDraftEnd)}<label class="date-range-follow"><input type="checkbox" data-date-range-follow="1" ${dateRangeFollowNow ? 'checked' : ''} /><span>${TXT.followNow}</span></label><div class="date-range-actions"><button type="button" class="ghost" data-date-range-cancel="1">${TXT.cancel}</button><button type="button" class="primary" data-date-range-confirm="1">${TXT.confirm}</button></div></div>${dateRangeCalendarHtml()}</div></div>`;
+  return `<div class="date-range-popover" role="dialog" aria-label="${TXT.dateRange}"><div class="date-range-quick">${quick.map(([k, label]) => `<button type="button" data-date-range-quick="${k}" class="${dateRangeQuickActive(k) ? 'active' : ''}">${label}</button>`).join('')}</div><div class="date-range-body"><div class="date-range-editor"><span class="date-range-support">${TXT.supportDateTime}</span>${dateRangeFieldHtml('start', TXT.startTime, dateRangeDraftStart)}${dateRangeFieldHtml('end', TXT.endTime, dateRangeDraftEnd)}<div class="date-range-actions"><button type="button" class="ghost" data-date-range-cancel="1">${TXT.cancel}</button><button type="button" class="primary" data-date-range-confirm="1">${TXT.confirm}</button></div></div>${dateRangeCalendarHtml()}</div></div>`;
 }
 function rangeHtml(){
   rangeFilter = normalizeRangeFilter(rangeFilter);
@@ -137,14 +149,14 @@ function rangeHtml(){
     const since = sinceForRange(snapshot || { timestamp: now }, rangeFilter);
     customDateStart = since || now - 86400000;
     customDateEnd = rangeFilter === 'today' ? now : now;
-    dateRangeFollowNow = true;
+    dateRangeFollowNow = false;
     rangeFilter = 'customTime';
     localStorage.setItem('statsRange', rangeFilter);
     localStorage.setItem('customDateStart', String(customDateStart));
     localStorage.setItem('customDateEnd', String(customDateEnd));
-    localStorage.setItem('dateRangeFollowNow', '1');
+    localStorage.setItem('dateRangeFollowNow', '0');
   }
   const r = normalizeCustomDateRange(snapshot || {});
-  const summary = `${dateFullLabel(r.start)} - ${dateRangeFollowNow ? '现在' : dateFullLabel(r.end)}`;
+  const summary = `${dateFullLabel(r.start)} - ${dateFullLabel(r.end)}`;
   return `<div class="date-range-control ${dateRangeOpen ? 'open' : ''}" title="${TXT.dateRange}" aria-label="${TXT.dateRange}"><button type="button" class="date-range-trigger" data-date-range-toggle="1" aria-expanded="${dateRangeOpen ? 'true' : 'false'}"><span>${TXT.dateRange}</span><b>${esc(summary)}</b><i></i></button>${dateRangeOpen ? dateRangePopoverHtml() : ''}</div>`;
 }
