@@ -1,19 +1,21 @@
 ﻿'use strict';
 
-const { loadSettings } = require('./settings');
 const { buildQuota } = require('./quota');
 const { buildHealth } = require('./health');
 const localProvider = require('./providers/codeartsLocal');
 const { fmtTime } = require('./core/format');
 
 function extensionConfig(options = {}) {
-  const settings = loadSettings();
   return {
-    ...settings,
     ...options,
-    dailyLimit: Number(options.dailyLimit || settings.dailyLimit || 200000),
-    windowHours: Number(options.windowHours || settings.windowHours || 24),
+    dailyLimit: Number(options.dailyLimit || process.env.CODEARTS_BAR_DAILY_LIMIT || 200000),
+    windowHours: Number(options.windowHours || process.env.CODEARTS_BAR_WINDOW_HOURS || 24),
+    useSavedSettings: false,
   };
+}
+
+function extensionCapabilities() {
+  return { performance: false, queue: false };
 }
 
 function emptyPerformance() {
@@ -50,6 +52,7 @@ async function getExtensionSummary(options = {}) {
     trends: { hourly24h: [], daily14d: [] },
     models: [],
     sessions: [],
+    capabilities: extensionCapabilities(),
     performance: emptyPerformance(),
     queue: { window: {} },
     tools: { window: { byName: [] } },
@@ -98,6 +101,7 @@ async function getExtensionDetails(options = {}) {
     trends: { hourly24h: hourly?.buckets || [], daily14d: daily?.buckets || [] },
     models: (primary.modelStats || []).slice(0, 12),
     sessions: (sessionsPage?.items || []).map((item) => sessionView(item, timestamp)),
+    capabilities: extensionCapabilities(),
     performance: emptyPerformance(),
     queue: { window: {} },
     tools: { window: { byName: [] } },

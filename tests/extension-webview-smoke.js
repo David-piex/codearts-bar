@@ -157,6 +157,9 @@ assert.match(
 assert.match(componentCss, /backdrop-filter/);
 assert.match(responsiveCss, /prefers-reduced-motion/);
 assert.match(responsiveCss, /body\[data-mode="sidebar"\]/);
+assert.match(htmlSource, /data-performance-only/);
+assert.match(viewsSource, /capabilities\?\.performance !== false/);
+assert.match(componentCss, /performance-unavailable/);
 
 const fakeVscode = {
   Uri: { joinPath: (...parts) => parts.map((part) => String(part)).join("/") },
@@ -184,6 +187,7 @@ const view = viewModel({
   timestamp: 1,
   updatedAt: "now",
   adapter: "node:sqlite",
+  capabilities: { performance: false, queue: false },
   status: { label: "12%" },
   config: { windowHours: 24 },
   usage: {
@@ -203,6 +207,7 @@ const view = viewModel({
   tools: { window: { byName: [] } },
 });
 assert.equal(view.ok, true);
+assert.equal(view.capabilities.performance, false);
 assert.equal(view.usage.today.total, 1234);
 assert.equal(view.models[0].name, "GLM");
 assert.equal(view.sources[0].label, "桌面端");
@@ -213,4 +218,8 @@ assert.equal(
   "webview payload must not expose local DB paths",
 );
 
+assert.match(extensionSource, /async function deactivate/);
+assert.match(extensionSource, /closeSqlJsWorker/);
+assert.match(extensionSource, /closeSettingsStore/);
+assert.equal((extensionSource.match(/context\.subscriptions\.push\(\{ dispose:/g) || []).length, 1, "refresh rescheduling should not accumulate disposables");
 console.log("ok - extension webview smoke");

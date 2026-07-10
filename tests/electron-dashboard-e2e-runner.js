@@ -9,6 +9,7 @@ const now = Date.UTC(2026, 6, 9, 12, 0, 0);
 const H = 3600000;
 const ipcCalls = [];
 const resizeLogs = [];
+const screenshotDir = process.env.CODEARTS_BAR_E2E_SCREENSHOT_DIR ? path.resolve(process.env.CODEARTS_BAR_E2E_SCREENSHOT_DIR) : "";
 
 app.disableHardwareAcceleration();
 app.commandLine.appendSwitch("disable-gpu");
@@ -235,6 +236,36 @@ function registerIpc() {
 
 function delay(ms) { return new Promise((resolve) => setTimeout(resolve, ms)); }
 
+async function captureScenario(win, name) {
+  if (!screenshotDir) return;
+  const fs = require("node:fs");
+  fs.mkdirSync(screenshotDir, { recursive: true });
+  await evalIn(win, () => {
+    document.documentElement.classList.add("visual-regression");
+    let style = document.getElementById("visual-regression-style");
+    if (!style) {
+      style = document.createElement("style");
+      style.id = "visual-regression-style";
+      style.textContent = "*,*::before,*::after{animation:none!important;transition:none!important;caret-color:transparent!important} html{scroll-behavior:auto!important}.chart-tip,.perf-panel{display:none!important}";
+      document.head.appendChild(style);
+    }
+    const content = document.querySelector(".content");
+    if (content) content.scrollTop = 0;
+    document.activeElement?.blur?.();
+    return true;
+  });
+  await delay(180);
+  const image = await win.webContents.capturePage();
+  fs.writeFileSync(path.join(screenshotDir, `${name}.png`), image.toPNG());
+}
+
+async function setWindowSize(win, width, height) {
+  if (win.isMaximized()) win.unmaximize();
+  win.setSize(width, height, false);
+  win.center();
+  await delay(500);
+}
+
 async function evalIn(win, fn, ...args) {
   const js = `(${fn.toString()})(...${JSON.stringify(args)})`;
   return win.webContents.executeJavaScript(js, true);
@@ -351,6 +382,7 @@ async function main() {
   assert.equal(initial.yAxisTicks.at(-1), initial.yAxisMax, "trend chart top tick should match its scale maximum");
   assert.ok(["token", "ms", "percent"].includes(initial.yAxisUnit), "trend chart should expose its Y-axis unit");
   assert.ok(initial.xAxisLabels.length >= 2, "trend chart should keep responsive X-axis labels visible");
+  await captureScenario(win, "desktop-standard");
   const refreshCallsBefore = ipcCalls.filter((x) => x.channel === "dashboard:refreshLight").length;
   await evalIn(win, async () => {
     await window.codeartsApi.invoke("dashboard:e2eSetRefreshDelay", 320);
@@ -476,11 +508,12 @@ async function main() {
   assert.equal(normalWindowDatePopover.overflow, 'visible', `normal-window date popover must escape the filter row: ${JSON.stringify(normalWindowDatePopover)}`);
   assert.equal(normalWindowDatePopover.hit, true, `normal-window date popover should be visible and interactive: ${JSON.stringify(normalWindowDatePopover)}`);
   assert.ok(normalWindowDatePopover.rect.width > 500 && normalWindowDatePopover.rect.height > 300, `normal-window date popover should render at usable size: ${JSON.stringify(normalWindowDatePopover)}`);
+  await captureScenario(win, "desktop-date-picker");
   await click(win, '[data-date-range-toggle]');
   await waitFor(win, () => !document.querySelector('.date-range-popover'));
 
-  win.setSize(1040, 720, false);
-  await delay(120);
+  await setWindowSize(win, 1040, 720);
+  await captureScenario(win, "desktop-narrow");
   win.maximize();
   await delay(700);
   const resizeState = await evalIn(win, () => ({
@@ -548,6 +581,8 @@ async function main() {
   const stages = lastResize.marks.map((m) => m.stage);
   assert.ok(stages.includes("resizeStart"), "resize perf should include resizeStart");
   assert.ok(stages.includes("domPatch"), "resize perf should include domPatch");
+  await setWindowSize(win, 1600, 900);
+  await captureScenario(win, "desktop-wide-layout");
   assert.ok(stages.includes("chartRedraw") || stages.includes("sameSizeSkip"), "resize perf should include chart redraw or an explicit same-size skip");
   assert.ok(stages.includes("resizeEnd"), "resize perf should include resizeEnd");
   const sameSizeResize = await evalIn(win, () => {
@@ -690,6 +725,7 @@ async function main() {
   const sessionPagerOptions = await evalIn(win, () => [...document.querySelectorAll("[data-session-page-size] option")].map((x) => Number(x.value)));
   assert.deepEqual(sessionPagerOptions, [20, 50, 100], "session page size options should be 20/50/100");
   await waitFor(win, () => document.querySelectorAll(".session-scroll tbody tr.session-row").length >= 2);
+  await captureScenario(win, "desktop-sessions");
   const sessionLocalInitial = await evalIn(win, () => {
     const rows = [...document.querySelectorAll(".session-scroll tbody tr.session-row")];
     window.__e2eSessionTableSlot = document.querySelector("#sessionTableSlot");

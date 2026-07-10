@@ -5,6 +5,8 @@ const path = require("node:path");
 const { snapshotToText, errorSnapshot, fmtInt, fmtMs } = require("./codeartsData");
 const { getExtensionSummary, getExtensionDetails } = require("./extension-data");
 const { DashboardHost, OverviewViewProvider } = require("./dashboard");
+const localProvider = require("./providers/codeartsLocal");
+const { closeSettingsStore } = require("./settings");
 
 let statusItem;
 let timer;
@@ -204,10 +206,10 @@ async function refresh(options = {}) {
   return refreshPromise;
 }
 
-function schedule(context) {
+function schedule() {
   if (timer) clearInterval(timer);
   timer = setInterval(refresh, config().refreshMs);
-  context.subscriptions.push({ dispose: () => clearInterval(timer) });
+  timer.unref?.();
 }
 
 async function showDetails() {
@@ -274,18 +276,26 @@ function activate(context) {
   context.subscriptions.push(
     vscode.workspace.onDidChangeConfiguration((event) => {
       if (event.affectsConfiguration("codeartsBar")) {
-        schedule(context);
+        schedule();
         refresh();
       }
     }),
   );
 
-  schedule(context);
+  context.subscriptions.push({ dispose: () => { if (timer) clearInterval(timer); timer = null; } });
+  schedule();
   refresh();
 }
 
-function deactivate() {
+async function deactivate() {
   if (timer) clearInterval(timer);
+  timer = null;
+  refreshPromise = null;
+  detailsPromise = null;
+  await localProvider.closeSqlJsWorker?.();
+  closeSettingsStore?.();
+  dashboardHost = null;
+  lastSnapshot = null;
 }
 
 module.exports = { activate, deactivate };

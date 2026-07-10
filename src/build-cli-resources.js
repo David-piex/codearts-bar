@@ -6,7 +6,7 @@ const path = require('node:path');
 const root = path.resolve(__dirname, '..');
 const srcDir = path.join(root, 'src');
 const outDir = path.join(root, '.cache', 'cli-runtime');
-const entry = path.join(srcDir, 'cli.js');
+const entry = path.join(srcDir, 'bin.js');
 const required = new Set();
 
 function readUtf8(file) {
@@ -69,7 +69,7 @@ function copySqlRuntime() {
 function writeManifest(files) {
   const manifest = {
     generatedAt: new Date().toISOString(),
-    entry: 'src/cli.js',
+    entry: 'src/bin.js',
     files: files.map((file) => path.relative(root, file).replace(/\\/g, '/')).sort(),
   };
   fs.writeFileSync(path.join(outDir, 'CLI_RUNTIME_MANIFEST.json'), JSON.stringify(manifest, null, 2), 'utf8');

@@ -102,11 +102,13 @@ function restoreDashboardWindow() {
   if (dashboardWindow.isMinimized()) dashboardWindow.restore();
   dashboardWindow.show();
   dashboardWindow.focus();
+  dbWatchService.reschedulePoll();
 }
 function hideDashboardToTray() {
   if (!dashboardWindow || dashboardWindow.isDestroyed()) return;
   try { dashboardWindow.setSkipTaskbar(true); } catch {}
   dashboardWindow.hide();
+  dbWatchService.reschedulePoll();
   refreshTrayMenu();
   if (!trayHintShown && Notification.isSupported()) {
     trayHintShown = true;

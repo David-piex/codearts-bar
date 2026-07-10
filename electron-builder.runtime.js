@@ -2,7 +2,7 @@
 module.exports = {
   appId: 'local.codearts.bar',
   productName: 'CodeArts Bar',
-  electronVersion: '35.7.5',
+  electronVersion: '43.1.0',
   asar: true,
   npmRebuild: false,
   directories: { output: '../../dist' },

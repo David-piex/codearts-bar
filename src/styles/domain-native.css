@@ -20,8 +20,8 @@
   border-radius:var(--control-radius);
 }
 :where(.summary-card,.chart-card,.table-card,.source-card,.session-simple-shell,.session-advanced-shell,.session-essential-inspector,.session-inspector,.cache-governance,.usage-total-board,.agent-rhythm-card) {
-  border-color:var(--hairline) !important;
-  box-shadow:var(--shadow-card) !important;
+  border-color:var(--hairline);
+  box-shadow:var(--shadow-card);
 }
 :where(.summary-card,.source-card,.chart-snapshot-card,.session-row-actions button,.icon-chip,.series-chip,.range button):hover {
   transform:translateY(-.5px);
@@ -109,7 +109,7 @@ body.is-resizing :where(.menu-card,.summary-card,.chart-card,.table-card,.source
 body.is-zooming :where(.menu-card,.summary-card,.chart-card,.table-card,.source-card,.usage-total-board,.agent-rhythm-card,.analytics-advanced-shell,.session-overview-card,.session-manager,.session-inspector,.filters,.date-range-popover) {
   -webkit-backdrop-filter:none !important;
   backdrop-filter:none !important;
-  box-shadow:var(--shadow-card) !important;
+  box-shadow:var(--shadow-card);
 }
 /* 1.19.0 denser commercial table, hover and state polish */
 .table-scroll table tr,
@@ -433,16 +433,16 @@ tr:hover td,
 }
 .request-row.selected td,
 .session-row.selected td {
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.68) !important;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.68);
 }
 .table-loading-cell {
   color:#8a94a6;
   font-weight:720;
-  background:linear-gradient(90deg, rgba(248,250,253,.72), rgba(255,255,255,.92), rgba(248,250,253,.72)) !important;
+  background:linear-gradient(90deg, rgba(248,250,253,.72), rgba(255,255,255,.92), rgba(248,250,253,.72));
 }
 .request-row.selected td:first-child,
 .session-row.selected td:first-child {
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.68), inset 3px 0 0 rgba(10,132,255,.72) !important;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.68), inset 3px 0 0 rgba(10,132,255,.72);
 }
 @media (max-width: 860px) {
   .table-page-note {
@@ -553,7 +553,7 @@ tr:hover td,
   border-left-color: rgba(218,225,235,.74);
 }
 .session-row.selected td {
-  background: rgba(10,132,255,.055) !important;
+  background: rgba(10,132,255,.055);
 }
 .session-row-actions button,
 .inspector-actions button:not(.primary-action) {
@@ -581,18 +581,18 @@ body.is-zooming::before,
 body.is-zooming::after,
 body.view-switching::before,
 body.view-switching::after {
-  filter:none !important;
-  opacity:.08 !important;
+  filter:none;
+  opacity:.08;
 }
 .content.is-resizing,
 .content.is-zooming,
 .content.view-switching {
-  scroll-behavior:auto !important;
+  scroll-behavior:auto;
 }
 .content.is-resizing .chart-hover-scrubber,
 .content.is-zooming .chart-hover-scrubber,
 .content.view-switching .chart-hover-scrubber {
-  opacity:0 !important;
+  opacity:0;
 }
 
 .chart-card-lean .card-head {
@@ -701,7 +701,7 @@ body.view-switching::after {
 }
 
 .chart-card-lean .chart-hover-scrubber {
-  display:none !important;
+  display:none;
 }
 .chart-card-lean .chart-hover-meta span:nth-of-type(n+6) {
   display:none;
@@ -730,7 +730,7 @@ body.view-switching {
 .content.is-resizing :where(.chart-card,.usage-total-board,.table-card,.session-manager,.session-overview-card,.source-card,.agent-rhythm-card,.analytics-advanced-shell),
 .content.is-zooming :where(.chart-card,.usage-total-board,.table-card,.session-manager,.session-overview-card,.source-card,.agent-rhythm-card,.analytics-advanced-shell) {
   contain:layout paint style;
-  transform:none !important;
+  transform:none;
 }
 
 /* 1.20.2 commercial performance restraint: native surfaces should feel solid, not constantly blurred. */
@@ -739,7 +739,7 @@ body.view-switching {
   backdrop-filter:none !important;
 }
 .request-manager-flat {
-  grid-template-columns:minmax(0,1fr) !important;
+  grid-template-columns:minmax(0,1fr);
 }
 .request-main-full {
   min-width:0;

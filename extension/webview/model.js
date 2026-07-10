@@ -45,6 +45,10 @@ function viewModel(snapshot) {
     timestamp: finite(snapshot.timestamp) || Date.now(),
     updatedAt: snapshot.updatedAt || "",
     adapter: snapshot.adapter || "",
+    capabilities: {
+      performance: snapshot.capabilities?.performance !== false,
+      queue: snapshot.capabilities?.queue !== false,
+    },
     status: snapshot.status || { level: "normal", label: "0%" },
     usage: {
       today: usage(snapshot.usage?.today),

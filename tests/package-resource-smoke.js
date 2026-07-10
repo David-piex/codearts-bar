@@ -34,13 +34,15 @@ if (fs.existsSync(generatedCliDir)) {
   const manifestFile = path.join(generatedCliDir, "CLI_RUNTIME_MANIFEST.json");
   assert.equal(fs.existsSync(manifestFile), true, "generated CLI runtime should include a manifest");
   const manifest = JSON.parse(fs.readFileSync(manifestFile, "utf8"));
-  assert.equal(manifest.entry, "src/cli.js", "generated CLI runtime manifest should point at cli.js");
+  assert.equal(manifest.entry, "src/bin.js", "generated CLI runtime manifest should point at the real bin entry");
+  assert.ok((manifest.files || []).includes("src/bin.js"), "generated CLI runtime manifest should include bin.js");
   assert.ok((manifest.files || []).includes("src/cli.js"), "generated CLI runtime manifest should include cli.js");
   assert.equal((manifest.files || []).includes("src/main.js"), false, "generated CLI runtime manifest must not include Electron main process");
   assert.equal((manifest.files || []).includes("src/dashboard-renderer.js"), false, "generated CLI runtime manifest must not include dashboard renderer");
   for (const rel of manifest.files || []) {
     assert.equal(fs.existsSync(path.join(generatedCliDir, rel)), true, `manifest file should exist: ${rel}`);
   }
+  assert.equal(fs.existsSync(path.join(generatedCliDir, "src", "bin.js")), true, "generated CLI runtime should contain bin.js");
   assert.equal(fs.existsSync(path.join(generatedCliDir, "src", "cli.js")), true, "generated CLI runtime should contain cli.js");
   assert.equal(fs.existsSync(path.join(generatedCliDir, "src", "dashboard-renderer.js")), false, "generated CLI runtime must not contain dashboard renderer");
   assert.equal(fs.existsSync(path.join(generatedCliDir, "src", "dashboard.html")), false, "generated CLI runtime must not contain dashboard html");

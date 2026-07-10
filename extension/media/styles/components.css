@@ -485,3 +485,6 @@
   transform: translate(-50%, -50%);
   box-shadow: var(--shadow-sm);
 }
+
+.performance-surface.performance-unavailable .performance-grid { grid-template-columns: minmax(0, 1fr); }
+.performance-surface.performance-unavailable .performance-grid > div { min-height: 72px; }

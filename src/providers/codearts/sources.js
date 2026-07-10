@@ -12,11 +12,12 @@ const SOURCE_DEFS = [
   { id: 'cli', label: 'CLI', dbPath: CLI_DB_PATH, logRoot: path.join(os.homedir(), '.codeartsdoer', 'cli-data', 'log') },
 ];
 
-function resolveDbPath(options = {}) { return options.dbPath || loadSettings().dbPath || process.env.CODEARTS_BAR_DB || DEFAULT_DB_PATH; }
+function savedDbPath(options = {}) { return options.useSavedSettings === false ? '' : loadSettings().dbPath; }
+function resolveDbPath(options = {}) { return options.dbPath || process.env.CODEARTS_BAR_DB || savedDbPath(options) || DEFAULT_DB_PATH; }
 function sourceForDb(dbPath) { return SOURCE_DEFS.find((s) => path.resolve(s.dbPath).toLowerCase() === path.resolve(dbPath).toLowerCase()) || { id: 'custom', label: '自定义', dbPath, logRoot: path.join(path.dirname(dbPath), 'log') }; }
 function listDataSources(options = {}) {
-  const savedDbPath = loadSettings().dbPath;
-  const candidates = [options.dbPath, process.env.CODEARTS_BAR_DB, savedDbPath].filter(Boolean);
+  const configuredDbPath = savedDbPath(options);
+  const candidates = [options.dbPath, process.env.CODEARTS_BAR_DB, configuredDbPath].filter(Boolean);
   const explicitDbPath = candidates.find((candidate) => path.resolve(candidate).toLowerCase() !== path.resolve(DEFAULT_DB_PATH).toLowerCase());
   if (explicitDbPath) {
     const dbPath = explicitDbPath;

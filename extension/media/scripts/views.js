@@ -65,6 +65,14 @@
       : '<p class="empty-copy">\u6682\u65e0\u6700\u8fd1\u4f1a\u8bdd</p>';
   }
   function performance(snapshot) {
+    const available = snapshot.capabilities?.performance !== false;
+    const surface = element(".performance-surface");
+    surface.classList.toggle("performance-unavailable", !available);
+    document.querySelectorAll("[data-performance-only]").forEach((item) => { item.hidden = !available; });
+    element("#performanceKicker").textContent = available ? "RESPONSE HEALTH" : "LOCAL STORAGE";
+    element("#performanceTitle").textContent = available ? "\u54cd\u5e94\u6027\u80fd" : "\u672c\u5730\u6570\u636e";
+    element("#dbSize").textContent = f.bytes(snapshot.dbSize);
+    if (!available) return;
     const p = snapshot.performance || {};
     element("#perfLatency").textContent = f.milliseconds(p.latencyAvg);
     element("#perfP95").textContent = f.milliseconds(p.latencyP95);
@@ -73,7 +81,6 @@
       ? `${Number(p.outputSpeed).toFixed(1)} t/s`
       : "\u2014";
     element("#perfQueue").textContent = f.milliseconds(p.queueAvg);
-    element("#dbSize").textContent = f.bytes(snapshot.dbSize);
   }
   window.CodeArtsViews = Object.freeze({
     metrics,
