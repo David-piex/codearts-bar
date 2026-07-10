@@ -58,6 +58,7 @@ const requestLog = Array.from({ length: 72 }, (_, i) => {
 });
 let requestPageTotalOverride = null;
 let sessionPageTotalOverride = null;
+let refreshDelayMs = 0;
 
 function usageForRows(rows) {
   const out = rows.reduce((acc, row) => {
@@ -185,8 +186,8 @@ function registerIpc() {
   ipcMain.handle("dashboard:getRuntimeInfo", () => ({ preferred: "node:sqlite", native: { available: true, adapter: "node:sqlite" } }));
   ipcMain.handle("dashboard:getInitialSummary", (_event, payload) => { ipcCalls.push({ channel: "dashboard:getInitialSummary", payload }); return snapshotFor(payload); });
   ipcMain.handle("dashboard:getSnapshot", (_event, payload) => { ipcCalls.push({ channel: "dashboard:getSnapshot", payload }); return snapshotFor(payload); });
-  ipcMain.handle("dashboard:refreshLight", (_event, payload) => { ipcCalls.push({ channel: "dashboard:refreshLight", payload }); return snapshotFor(payload); });
-  ipcMain.handle("dashboard:refreshFull", (_event, payload) => { ipcCalls.push({ channel: "dashboard:refreshFull", payload }); return snapshotFor(payload); });
+  ipcMain.handle("dashboard:refreshLight", async (_event, payload) => { ipcCalls.push({ channel: "dashboard:refreshLight", payload }); if (refreshDelayMs) await delay(refreshDelayMs); return snapshotFor(payload); });
+  ipcMain.handle("dashboard:refreshFull", async (_event, payload) => { ipcCalls.push({ channel: "dashboard:refreshFull", payload }); if (refreshDelayMs) await delay(refreshDelayMs); return snapshotFor(payload); });
   ipcMain.handle("dashboard:getAggregates", (_event, payload) => { ipcCalls.push({ channel: "dashboard:getAggregates", payload }); return aggregatesFor(payload); });
   ipcMain.handle("dashboard:getRequestsPage", (_event, payload) => {
     ipcCalls.push({ channel: "dashboard:getRequestsPage", payload });
@@ -220,6 +221,10 @@ function registerIpc() {
     sessionPageTotalOverride = Number.isFinite(Number(payload.sessions)) ? Number(payload.sessions) : null;
     ipcCalls.push({ channel: "dashboard:e2eSetPageTotalOverride", payload });
     return { ok: true, requestPageTotalOverride, sessionPageTotalOverride };
+  });
+  ipcMain.handle("dashboard:e2eSetRefreshDelay", (_event, value) => {
+    refreshDelayMs = Math.max(0, Number(value) || 0);
+    return { ok: true, refreshDelayMs };
   });
   ipcMain.handle("dashboard:log", (_event, payload) => { ipcCalls.push({ channel: "dashboard:log", payload }); if (payload?.scope === "renderer-resize-perf") resizeLogs.push(payload); return { ok: true }; });
   ipcMain.handle("dashboard:rendererError", (_event, payload) => { ipcCalls.push({ channel: "dashboard:rendererError", payload }); return { ok: true }; });
@@ -334,6 +339,74 @@ async function main() {
   assert.equal(initial.hasBackControl, false, "dashboard should not show a non-functional back control");
   assert.equal(initial.nodeRequireType, "undefined", "dashboard renderer should not expose Node require");
   assert.equal(initial.preloadApi, true, "dashboard should use the isolated preload API");
+  const refreshCallsBefore = ipcCalls.filter((x) => x.channel === "dashboard:refreshLight").length;
+  await evalIn(win, async () => {
+    await window.codeartsApi.invoke("dashboard:e2eSetRefreshDelay", 320);
+    const content = document.querySelector(".content");
+    if (content) content.scrollTop = Math.min(36, Math.max(0, content.scrollHeight - content.clientHeight));
+    document.querySelector("[data-date-range-toggle]")?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, view: window }));
+    window.__refreshStable = {
+      app: document.querySelector("#app"),
+      filters: document.querySelector("#analyticsFiltersSlot"),
+      summary: document.querySelector("#analyticsSummarySlot"),
+      chart: document.querySelector("#usageChart"),
+      table: document.querySelector("#analyticsTableSlot"),
+      popover: document.querySelector(".date-range-popover"),
+      scrollTop: Number(content?.scrollTop || 0),
+    };
+    document.querySelector("#refresh")?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, view: window }));
+    document.querySelector("#refresh")?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, view: window }));
+    return Boolean(window.__refreshStable.popover);
+  });
+  await delay(100);
+  const refreshingState = await evalIn(win, () => ({
+    active: document.body.classList.contains("is-refreshing"),
+    appStable: document.querySelector("#app") === window.__refreshStable.app,
+    filtersStable: document.querySelector("#analyticsFiltersSlot") === window.__refreshStable.filters,
+    summaryStable: document.querySelector("#analyticsSummarySlot") === window.__refreshStable.summary,
+    chartStable: document.querySelector("#usageChart") === window.__refreshStable.chart,
+    tableStable: document.querySelector("#analyticsTableSlot") === window.__refreshStable.table,
+    popoverStable: document.querySelector(".date-range-popover") === window.__refreshStable.popover,
+    hasSkeleton: Boolean(document.querySelector(".summary-skeleton, .analytics-deferred")),
+    summaryVisible: Boolean(document.querySelector("#analyticsSummarySlot .summary-card")),
+  }));
+  assert.deepEqual(refreshingState, {
+    active: true,
+    appStable: true,
+    filtersStable: true,
+    summaryStable: true,
+    chartStable: true,
+    tableStable: true,
+    popoverStable: true,
+    hasSkeleton: false,
+    summaryVisible: true,
+  }, `refresh should keep the current analytics DOM visible while IPC is pending: ${JSON.stringify(refreshingState)}`);
+  await waitFor(win, () => !document.body.classList.contains("is-refreshing"));
+  const refreshedState = await evalIn(win, async () => {
+    const content = document.querySelector(".content");
+    const state = {
+      appStable: document.querySelector("#app") === window.__refreshStable.app,
+      filtersStable: document.querySelector("#analyticsFiltersSlot") === window.__refreshStable.filters,
+      summaryStable: document.querySelector("#analyticsSummarySlot") === window.__refreshStable.summary,
+      chartStable: document.querySelector("#usageChart") === window.__refreshStable.chart,
+      tableStable: document.querySelector("#analyticsTableSlot") === window.__refreshStable.table,
+      popoverStable: document.querySelector(".date-range-popover") === window.__refreshStable.popover,
+      scrollStable: Number(content?.scrollTop || 0) === window.__refreshStable.scrollTop,
+    };
+    document.querySelector("[data-date-range-toggle]")?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, view: window }));
+    await window.codeartsApi.invoke("dashboard:e2eSetRefreshDelay", 0);
+    return state;
+  });
+  assert.deepEqual(refreshedState, {
+    appStable: true,
+    filtersStable: true,
+    summaryStable: true,
+    chartStable: true,
+    tableStable: true,
+    popoverStable: true,
+    scrollStable: true,
+  }, `refresh should patch in place without replacing stable shells: ${JSON.stringify(refreshedState)}`);
+  assert.equal(ipcCalls.filter((x) => x.channel === "dashboard:refreshLight").length - refreshCallsBefore, 1, "overlapping refresh clicks should share one IPC request");
   const requestPaginationGeometry = await evalIn(win, (kind) => {
     const prefix = kind === 'sessions' ? 'session' : 'request';
     const note = document.querySelector(`[data-table-limit="${kind}"]`);

@@ -134,7 +134,8 @@ async function applyDateRangeAndPatchView(opts = {}){
 }
 document.addEventListener('click', async (e) => {
   const dateControl = e.target.closest('.date-range-control');
-  if(dateRangeOpen && !dateControl){
+  const preserveDatePopover = e.target.closest('#refresh');
+  if(dateRangeOpen && !dateControl && !preserveDatePopover){
     dateRangeOpen = false;
     patchDateRangeChrome();
     e.__dashboardHandled = true; return;

@@ -44,6 +44,7 @@ installRendererErrorReporting();
 let snapshot = null;
 let copyResetTimer = null;
 let autoRefreshTimer = null;
+let refreshInFlight = null;
 let sourceFilter = localStorage.getItem('statsSource') || 'all';
 let modelFilter = localStorage.getItem('statsModel') || 'all';
 let rangeFilter = localStorage.getItem('statsRange') || 'today';
@@ -255,6 +256,8 @@ function mergeRenderOptions(prev = {}, next = {}){
   if(prev.deferHeavy || next.deferHeavy) merged.deferHeavy = true;
   if(prev.partial || next.partial) merged.partial = true;
   if(prev.skipAggregates || next.skipAggregates) merged.skipAggregates = true;
+  if(prev.preserveFilters || next.preserveFilters) merged.preserveFilters = true;
+  if(prev.preserveRefreshState || next.preserveRefreshState) merged.preserveRefreshState = true;
   return merged;
 }
 function render(s, opts = {}){
@@ -295,7 +298,7 @@ function renderImmediate(s, opts = {}){
   rangeFilter = normalizeRangeFilter(rangeFilter);
   snapshot = s;
   sessionTableItems = [];
-  setRefreshState('');
+  if(opts.preserveRefreshState !== true) setRefreshState('');
   const app = document.getElementById('app');
   const modeKey = viewModeKey();
   const modeChanged = lastRenderMode && lastRenderMode !== modeKey;

@@ -22,7 +22,7 @@ const invokeChannels = new Set([
   'dashboard:getAggregates', 'dashboard:refreshLight', 'dashboard:refreshFull', 'dashboard:settings', 'dashboard:setLayoutMode', 'dashboard:setPinned',
   'dashboard:log', 'dashboard:rendererError', 'dashboard:getDiagnostics', 'dashboard:openSession',
   'dashboard:openCodeArtsSession', 'dashboard:copySession', 'dashboard:openLogs',
-  'dashboard:archiveSession', 'dashboard:renameSession', 'dashboard:e2eSetPageTotalOverride',
+  'dashboard:archiveSession', 'dashboard:renameSession', 'dashboard:e2eSetPageTotalOverride', 'dashboard:e2eSetRefreshDelay',
 ]);
 contextBridge.exposeInMainWorld('codeartsApi', Object.freeze({
   invoke(channel, ...args) {

@@ -286,11 +286,36 @@ async function load(){
   setupAutoRefresh();
 }
 async function refreshNow(opts = {}){
-  setRefreshState(TXT.refresh);
-  const payload = dashboardPayloadForCurrentView(snapshot?.ok ? snapshot : undefined);
-  const channel = opts.full === true ? 'dashboard:refreshFull' : 'dashboard:refreshLight';
-  const next = mergeLightSnapshotPayload(snapshot, await ipcRenderer.invoke(channel, payload));
-  render(next, opts && opts.type ? {} : opts);
-  setRefreshState(TXT.refreshed);
-  setTimeout(() => setRefreshState(''), 800);
+  const requested = opts && typeof opts === 'object' && !opts.type ? opts : {};
+  if(refreshInFlight) return refreshInFlight;
+  const renderOpts = {
+    windowLayout: false,
+    instantChart: true,
+    partial: true,
+    preserveFilters: true,
+    preserveRefreshState: true,
+    ...requested,
+  };
+  refreshInFlight = (async () => {
+    setRefreshState(TXT.refresh);
+    document.body?.classList?.add?.('is-refreshing');
+    try {
+      const payload = dashboardPayloadForCurrentView(snapshot?.ok ? snapshot : undefined);
+      const channel = renderOpts.full === true ? 'dashboard:refreshFull' : 'dashboard:refreshLight';
+      const next = mergeLightSnapshotPayload(snapshot, await ipcRenderer.invoke(channel, payload));
+      render(next, renderOpts);
+      await new Promise((resolve) => schedulePostCommit(resolve, 80));
+      setRefreshState(TXT.refreshed);
+      setTimeout(() => setRefreshState(''), 800);
+      return next;
+    } catch (error) {
+      setRefreshState(TXT.failed || '\u5237\u65b0\u5931\u8d25');
+      ipcRenderer.invoke('dashboard:log', { level: 'warn', scope: 'renderer:refresh', message: error?.message || String(error) }).catch(() => {});
+      return null;
+    } finally {
+      document.body?.classList?.remove?.('is-refreshing');
+      refreshInFlight = null;
+    }
+  })();
+  return refreshInFlight;
 }
