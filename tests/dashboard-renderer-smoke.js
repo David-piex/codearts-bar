@@ -63,7 +63,7 @@ const snapshot = {
     { id: "cli", source: "cli", label: "CLI" },
   ],
   usage: {
-    today: { total: 0, input: 0, output: 0, cacheRead: 0, cacheWrite: 0, requests: 0 },
+    today: { total: 4200, input: 1200, output: 900, cacheRead: 1100, cacheWrite: 500, requests: 3 },
     window: { total: 4200, input: 1200, output: 900, cacheRead: 1600, cacheWrite: 500, requests: 3 },
     week: { total: 4200, input: 1200, output: 900, cacheRead: 1600, cacheWrite: 500, requests: 3 },
     all: { total: 4200, input: 1200, output: 900, cacheRead: 1600, cacheWrite: 500, requests: 3 },

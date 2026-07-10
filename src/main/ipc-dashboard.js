@@ -1,6 +1,7 @@
 'use strict';
 
 const crypto = require('node:crypto');
+const { sqliteRuntimeStatus } = require('../providers/codearts/sqlite');
 const fs = require('node:fs');
 const pathModule = require('node:path');
 
@@ -323,6 +324,7 @@ function registerDashboardIpc({
   recordRendererError,
   getLastSnapshot,
   getLastDashboardSnapshot,
+  buildInitialSummarySnapshot,
   buildInitialLightSnapshot,
   buildDashboardPreviewSnapshot,
   buildDashboardLightSnapshot,
@@ -342,6 +344,34 @@ function registerDashboardIpc({
     pageBounds,
     matchesPageFilters,
     snapshotTimestamp: getLastSnapshot()?.timestamp || 0,
+  });
+
+  ipcMain.handle('dashboard:getRuntimeInfo', () => sqliteRuntimeStatus());
+  ipcMain.handle('dashboard:getInitialSummary', async (_event, payload = {}) => {
+    try {
+      const cached = getLastDashboardSnapshot() || getLastSnapshot();
+      const reusableRange = ['today', '1d', '7d', 'all'].includes(String(payload.rangeKey || ''));
+      if(cached?.ok && cached.usage && reusableRange && String(payload.source || 'all') === 'all' && String(payload.model || 'all') === 'all') {
+        return withRuntimeDiagnostics({
+          ...cached,
+          summaryOnly: true,
+          summaryFilter: {
+            source: 'all',
+            model: 'all',
+            rangeKey: payload.rangeKey || '',
+            start: Number(payload.start ?? payload.range?.start ?? 0),
+            end: Number(payload.end ?? payload.range?.end ?? 0),
+          },
+          freshness: { ...(cached.freshness || {}), source: 'summary-cache', ageMs: Math.max(0, Date.now() - Number(cached.timestamp || Date.now())) },
+        });
+      }
+      return withRuntimeDiagnostics(await buildInitialSummarySnapshot(payload));
+    }
+    catch (error) {
+      appendLog('warn', 'dashboard:getInitialSummary', error.message, { payload });
+      const fallback = getLastDashboardSnapshot() || getLastSnapshot();
+      return withRuntimeDiagnostics(fallback || { ok: false, error: error.message });
+    }
   });
 
   ipcMain.handle('dashboard:getSnapshot', async (_event, payload = {}) => {

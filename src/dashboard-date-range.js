@@ -64,8 +64,15 @@ function dateRangeDraftValidation(){
   if(end - start > 366 * 86400000) return TXT.dateRangeTooLong || 'Date range is too long';
   return '';
 }
+function dateRangeForCurrentFilter(s = snapshot || {}){
+  const range = normalizeRangeFilter(rangeFilter);
+  if(range === 'customTime') return normalizeCustomDateRange(s);
+  const now = Number(s?.timestamp || Date.now());
+  const start = sinceForRange(s, range);
+  return { start: start > 0 ? start : now - 30 * 86400000, end: now };
+}
 function openDateRangePopover(){
-  const r = normalizeCustomDateRange(snapshot || {});
+  const r = dateRangeForCurrentFilter(snapshot || {});
   dateRangeDraftStart = r.start;
   dateRangeDraftEnd = r.end;
   dateRangeError = '';
@@ -155,17 +162,7 @@ function dateRangePopoverHtml(){
 }
 function rangeHtml(){
   rangeFilter = normalizeRangeFilter(rangeFilter);
-  if(rangeFilter !== 'customTime'){
-    const now = Number(snapshot?.timestamp || Date.now());
-    const since = sinceForRange(snapshot || { timestamp: now }, rangeFilter);
-    customDateStart = since || now - 86400000;
-    customDateEnd = rangeFilter === 'today' ? now : now;
-    rangeFilter = 'customTime';
-    localStorage.setItem('statsRange', rangeFilter);
-    localStorage.setItem('customDateStart', String(customDateStart));
-    localStorage.setItem('customDateEnd', String(customDateEnd));
-  }
-  const r = normalizeCustomDateRange(snapshot || {});
-  const summary = `${dateFullLabel(r.start)} - ${dateFullLabel(r.end)}`;
+  const r = dateRangeForCurrentFilter(snapshot || {});
+  const summary = rangeFilter === 'all' ? (RANGE_LABELS.all || TXT.all || 'All') : `${dateFullLabel(r.start)} - ${dateFullLabel(r.end)}`;
   return `<div class="date-range-control ${dateRangeOpen ? 'open' : ''}" title="${TXT.dateRange}" aria-label="${TXT.dateRange}"><button type="button" class="date-range-trigger" data-date-range-toggle="1" aria-expanded="${dateRangeOpen ? 'true' : 'false'}"><span>${TXT.dateRange}</span><b>${esc(summary)}</b><i></i></button>${dateRangeOpen ? dateRangePopoverHtml() : ''}</div>`;
 }

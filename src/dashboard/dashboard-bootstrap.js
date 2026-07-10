@@ -76,6 +76,7 @@ function aggregatePayloadForView(s, extra = {}){
   return {
     source: sourceFilter,
     model: modelFilter,
+    rangeKey: normalizeRangeFilter(rangeFilter),
     range: { start, end },
     start,
     end,
@@ -206,7 +207,84 @@ function applyCustomDateInputs(){
   return true;
 }
 function setupAutoRefresh(){ if(autoRefreshTimer) clearInterval(autoRefreshTimer); const sec = Math.max(5, Number(refreshEvery) || 30); autoRefreshTimer = setInterval(refreshNow, sec * 1000); }
-async function load(){ setRefreshState(TXT.refresh); const first = await ipcRenderer.invoke('dashboard:getSnapshot', dashboardPayloadForCurrentView()); render(first, { immediate: true, instantChart: true }); if(!first?.ok) await refreshNow(); setupAutoRefresh(); }
+function initialSkeletonState(){
+  return {
+    ok: true,
+    timestamp: Date.now(),
+    config: { dailyLimit: 200000, windowHours: 24 },
+    sources: [],
+    usage: { today: {}, window: {}, week: {}, all: {} },
+    models: [],
+    sourceStats: [],
+    trends: {},
+    sessionSummary: { total: 0, active: 0, archived: 0, visible: 0 },
+    requestLog: [],
+    sessions: [],
+    requestTotal: 0,
+    sessionTotal: 0,
+    summaryPending: true,
+  };
+}
+function renderInitialSkeleton(){
+  const app = document.getElementById('app');
+  if(!app) return;
+  const s = initialSkeletonState();
+  snapshot = s;
+  const summary = `<section class="summary-card usage-summary summary-skeleton" aria-label="${esc(TXT.loading || '\u6b63\u5728\u52a0\u8f7d\u6458\u8981')}"><div class="summary-skeleton-hero"><i></i><div><span></span><b></b></div><em></em></div><div class="summary-skeleton-grid">${Array.from({ length: 5 }, () => '<span></span>').join('')}</div></section>`;
+  const details = `<div class="startup-deferred"><span>${esc(TXT.updatingDetails || '\u6b63\u5728\u540e\u53f0\u52a0\u8f7d\u8d8b\u52bf\u4e0e\u6a21\u578b\u7edf\u8ba1...')}</span></div>`;
+  commitAppHtml(app, `${headerHtml(false)}<div id="analyticsFiltersSlot">${filtersHtml(s)}</div><div id="analyticsSummarySlot">${summary}</div><div id="analyticsDiagnosticsSlot"></div><div id="analyticsEmptySlot"></div><div id="analyticsChartSlot">${details}</div><div id="analyticsAgentSlot"></div><div id="analyticsTableSlot"></div><div id="analyticsAdvancedSlot"></div>`);
+  syncFooter();
+  applyWindowLayout();
+}
+async function load(){
+  const payload = dashboardPayloadForCurrentView();
+  if(layoutMode !== 'dashboard' || workspaceMode !== 'analytics'){
+    setRefreshState(TXT.refresh);
+    const first = await ipcRenderer.invoke('dashboard:getSnapshot', payload);
+    render(first, { immediate: true, instantChart: true, deferHeavy: true });
+    if(!first?.ok) await refreshNow();
+    setupAutoRefresh();
+    return;
+  }
+  renderInitialSkeleton();
+  setRefreshState(TXT.refresh);
+  let slowCacheTimer = null;
+  let initialSummarySettled = false;
+  const runtimePromise = ipcRenderer.invoke('dashboard:getRuntimeInfo').catch(() => null);
+  runtimePromise.then((runtime) => {
+    if(initialSummarySettled || runtime?.preferred !== 'sql.js') return;
+    slowCacheTimer = setTimeout(() => {
+      if(initialSummarySettled) return;
+      document.body?.classList?.add?.('cache-building');
+      setRefreshState(TXT.buildingCache || '\u6b63\u5728\u5efa\u7acb\u7f13\u5b58...');
+    }, 300);
+  });
+  try {
+    let first = await ipcRenderer.invoke('dashboard:getInitialSummary', payload);
+    if(!first?.ok) first = await ipcRenderer.invoke('dashboard:getSnapshot', payload);
+    initialSummarySettled = true;
+    if(slowCacheTimer) clearTimeout(slowCacheTimer);
+    document.body?.classList?.remove?.('cache-building');
+    render(first, { immediate: true, instantChart: true, deferHeavy: true, skipAggregates: true });
+    if(!first?.ok){ await refreshNow(); setupAutoRefresh(); return; }
+    setRefreshState(TXT.loadingBackgroundStats || '\u6458\u8981\u5df2\u5c31\u7eea\uff0c\u6b63\u5728\u540e\u53f0\u52a0\u8f7d\u8d8b\u52bf\u4e0e\u6a21\u578b\u7edf\u8ba1...');
+    ipcRenderer.invoke('dashboard:getSnapshot', payload).then((full) => {
+      if(!full?.ok) return;
+      render(mergeLightSnapshotPayload(snapshot, full), { instantChart: true, partial: true, skipAggregates: true });
+      setRefreshState(TXT.refreshed);
+      setTimeout(() => setRefreshState(''), 800);
+    }).catch((error) => {
+      ipcRenderer.invoke('dashboard:log', { level: 'warn', scope: 'renderer:initial-background', message: error.message }).catch(() => {});
+      setRefreshState('');
+    });
+  } catch (error) {
+    initialSummarySettled = true;
+    if(slowCacheTimer) clearTimeout(slowCacheTimer);
+    document.body?.classList?.remove?.('cache-building');
+    await refreshNow();
+  }
+  setupAutoRefresh();
+}
 async function refreshNow(opts = {}){
   setRefreshState(TXT.refresh);
   const payload = dashboardPayloadForCurrentView(snapshot?.ok ? snapshot : undefined);

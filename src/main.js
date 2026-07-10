@@ -29,6 +29,7 @@ const {
   matchesPageFilters,
   buildDashboardPreviewSnapshot,
   lightUpdatedAt,
+  buildInitialSummarySnapshot,
   buildInitialLightSnapshot,
   buildDashboardLightPair,
 } = dashboardLight;
@@ -171,7 +172,9 @@ async function refreshLight(options = {}) {
     const previousLevel = lastSnapshot && lastSnapshot.ok ? lastSnapshot.status?.level : null;
     const previousHealth = lastSnapshot && lastSnapshot.ok ? lastSnapshot.health : null;
     try {
-      const next = await buildInitialLightSnapshot({ timestamp: Date.now(), ...options });
+      const next = options.summaryOnly === true
+        ? await buildInitialSummarySnapshot({ timestamp: Date.now(), ...options })
+        : await buildInitialLightSnapshot({ timestamp: Date.now(), ...options });
       lastSnapshot = next;
       lastDashboardSnapshot = next;
     } catch (error) {
@@ -342,6 +345,7 @@ registerDashboardIpc({
   recordRendererError: crashReporter.recordRendererError,
   getLastSnapshot: () => lastSnapshot,
   getLastDashboardSnapshot: () => lastDashboardSnapshot,
+  buildInitialSummarySnapshot,
   buildInitialLightSnapshot,
   buildDashboardPreviewSnapshot,
   buildDashboardLightSnapshot,
@@ -366,10 +370,10 @@ if (lifecycle.requestSingleInstance(app, { refreshLight, openDashboardWindow }))
     tray.on('double-click', () => restoreDashboardWindow());
     tray.on('right-click', () => showTrayMenu());
     refreshTrayMenu();
-    refreshLight();
+    refreshLight({ summaryOnly: true, reason: 'startup' });
     scheduleRefresh();
     scheduleDbWatch();
-    if (process.env.CODEARTS_BAR_PACKAGE_SMOKE === '1') {
+    if (process.env.CODEARTS_BAR_PACKAGE_SMOKE === '1' || process.argv.includes('--open-dashboard')) {
       openDashboardWindow();
     }
   });

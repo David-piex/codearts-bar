@@ -395,10 +395,10 @@ assert.doesNotMatch(rendererIncludeSources, /\breadRendererPart\b/);
 assert.doesNotMatch(rendererIncludeSources, /\brendererPartPath\b/);
 
 
-assert.match(renderer, /TABLE_PAGE_SIZE_OPTIONS = \[20, 50, 100\]/);
-assert.doesNotMatch(renderer, /TABLE_PAGE_SIZE_OPTIONS = \[10, 20, 50, 100\]/);
-assert.match(renderer, /REQUEST_PAGE_SIZE = normalizeTablePageSize/);
-assert.match(renderer, /requestTableRenderLimit = REQUEST_PAGE_SIZE/);
+assert.match(renderer, /TABLE_PAGE_SIZE_OPTIONS\s*=\s*\[20,\s*50,\s*100\]/);
+assert.doesNotMatch(renderer, /TABLE_PAGE_SIZE_OPTIONS\s*=\s*\[10,\s*20,\s*50,\s*100\]/);
+assert.match(renderer, /REQUEST_PAGE_SIZE\s*=\s*normalizeTablePageSize/);
+assert.match(renderer, /requestTableRenderLimit\s*=\s*REQUEST_PAGE_SIZE/);
 assert.match(renderer, /requestTablePage/);
 assert.match(renderer, /data-request-page-size/);
 assert.match(renderer, /data-session-page-size/);

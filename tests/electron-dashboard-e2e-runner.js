@@ -182,6 +182,8 @@ function page(items, payload, fallbackLimit) {
 }
 
 function registerIpc() {
+  ipcMain.handle("dashboard:getRuntimeInfo", () => ({ preferred: "node:sqlite", native: { available: true, adapter: "node:sqlite" } }));
+  ipcMain.handle("dashboard:getInitialSummary", (_event, payload) => { ipcCalls.push({ channel: "dashboard:getInitialSummary", payload }); return snapshotFor(payload); });
   ipcMain.handle("dashboard:getSnapshot", (_event, payload) => { ipcCalls.push({ channel: "dashboard:getSnapshot", payload }); return snapshotFor(payload); });
   ipcMain.handle("dashboard:refreshLight", (_event, payload) => { ipcCalls.push({ channel: "dashboard:refreshLight", payload }); return snapshotFor(payload); });
   ipcMain.handle("dashboard:refreshFull", (_event, payload) => { ipcCalls.push({ channel: "dashboard:refreshFull", payload }); return snapshotFor(payload); });
@@ -220,6 +222,7 @@ function registerIpc() {
     return { ok: true, requestPageTotalOverride, sessionPageTotalOverride };
   });
   ipcMain.handle("dashboard:log", (_event, payload) => { ipcCalls.push({ channel: "dashboard:log", payload }); if (payload?.scope === "renderer-resize-perf") resizeLogs.push(payload); return { ok: true }; });
+  ipcMain.handle("dashboard:rendererError", (_event, payload) => { ipcCalls.push({ channel: "dashboard:rendererError", payload }); return { ok: true }; });
   for (const channel of ["dashboard:settings", "dashboard:openLogs", "dashboard:copySession", "dashboard:openSession", "dashboard:openCodeArtsSession", "dashboard:archiveSession", "dashboard:renameSession", "dashboard:setPinned", "dashboard:setLayoutMode"]) {
     ipcMain.handle(channel, (_event, payload) => { ipcCalls.push({ channel, payload }); return { ok: true }; });
   }
@@ -293,7 +296,8 @@ async function main() {
   });
   win.setMenuBarVisibility(false);
   await win.loadFile(path.join(root, "src", "dashboard.html"));
-  await waitFor(win, () => Boolean(document.querySelector(".usage-total-board") && document.querySelector("#usageChart")));
+  await waitFor(win, () => Boolean(document.querySelector(".usage-total-board") && document.querySelector("#usageChart") && document.querySelector(".table-card")));
+
   const initial = await evalIn(win, () => {
     window.__e2eCanvas = document.querySelector("#usageChart");
     return {

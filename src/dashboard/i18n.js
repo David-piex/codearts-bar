@@ -88,6 +88,8 @@ var TXT = {
   refreshed: '\u5df2\u5237\u65b0',
   refresh: '\u5237\u65b0\u4e2d...',
   updatingDetails: '\u6b63\u5728\u66f4\u65b0\u660e\u7ec6...',
+  buildingCache: '\u6b63\u5728\u5efa\u7acb\u7f13\u5b58...',
+  loadingBackgroundStats: '\u6458\u8981\u5df2\u5c31\u7eea\uff0c\u6b63\u5728\u540e\u53f0\u52a0\u8f7d\u8d8b\u52bf\u4e0e\u6a21\u578b\u7edf\u8ba1...',
   updatingAgentIdle: '\u6b63\u5728\u66f4\u65b0 Agent idle...',
   realtime: '\u5b9e\u65f6\u66f4\u65b0',
   copy: '\u590d\u5236',

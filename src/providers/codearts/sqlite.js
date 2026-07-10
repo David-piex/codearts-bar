@@ -121,8 +121,8 @@ async function openSqlJsDbReadonly(dbPath) {
     cachedSqlJsDbs.delete(key);
   }
   const promise = (async () => {
-    const SQL = await getSqlJs();
-    const db = new SQL.Database(fs.readFileSync(dbPath));
+    const [SQL, bytes] = await Promise.all([getSqlJs(), fs.promises.readFile(dbPath)]);
+    const db = new SQL.Database(bytes);
     cachedSqlJsDbSet.add(db);
     cachedSqlJsDbs.set(key, { db, fingerprint, usedAt: Date.now() });
     pruneSqlJsDbCache();

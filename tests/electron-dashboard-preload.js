@@ -5,7 +5,7 @@ try {
   localStorage.setItem("workspaceMode", "analytics");
   localStorage.setItem("statsTableTab", "requests");
   localStorage.setItem("statsSource", "all");
-  localStorage.setItem("statsRange", "today");
+  localStorage.setItem("statsRange", "all");
   localStorage.setItem("statsModel", "all");
   localStorage.setItem("layoutMode", "dashboard");
   localStorage.setItem("uiZoom", "1");

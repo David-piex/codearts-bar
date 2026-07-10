@@ -164,9 +164,22 @@ function currentAggregateUsage(s){
   } catch { return null; }
 }
 
+function summaryOnlyUsageForView(s){
+  if(!s?.summaryOnly || !s?.summaryFilter) return null;
+  const filter = s.summaryFilter || {};
+  const start = rangeFilter === 'all' ? 0 : sinceForRange(s);
+  const end = untilForRange(s) || Number(s?.timestamp || Date.now());
+  if(String(filter.source || 'all') !== String(sourceFilter || 'all')) return null;
+  if(String(filter.model || 'all') !== String(modelFilter || 'all')) return null;
+  if(Number(filter.start || 0) !== Number(start || 0)) return null;
+  if(Number(filter.end || 0) !== Number(end || 0)) return null;
+  return normalizeUsageMetric(s?.usage?.all || {});
+}
 function summaryUsageForView(rows, s){
   const aggregate = currentAggregateUsage(s);
   if(aggregate) return aggregate;
+  const progressive = summaryOnlyUsageForView(s);
+  if(progressive) return progressive;
   if(sourceFilter === 'all' && modelFilter === 'all'){
     if(rangeFilter === 'today') return normalizeUsageMetric(exactUsageFromSnapshot(s, 'today'));
     if(rangeFilter === '1d') return normalizeUsageMetric(exactUsageFromSnapshot(s, 'window'));

@@ -198,6 +198,32 @@ function makeLightSnapshotFromAggregates(aggregates = {}, payload = {}) {
   return applyUsageDerivedFields(snap, settings, timestamp);
 }
 
+
+async function buildInitialSummarySnapshot(payload = {}) {
+  const timestamp = Number(payload.timestamp || Date.now());
+  const basePayload = dashboardAggregatePayload({ ...payload, timestamp });
+  const summary = await localProvider.getSummary(basePayload);
+  if (!summary?.ok || !summary.usage) throw new Error(summary?.error || '\u65e0\u6cd5\u8bfb\u53d6 CodeArts \u4f7f\u7528\u6458\u8981');
+  const snap = makeLightSnapshotFromAggregates({
+    usage: summary.usage,
+    sources: summary.sources || [],
+    sourceErrors: summary.sourceErrors || [],
+    nativeError: summary.nativeError || null,
+  }, basePayload);
+  snap.summaryOnly = true;
+  snap.summaryFilter = {
+    source: basePayload.source || 'all',
+    model: basePayload.model || 'all',
+    rangeKey: basePayload.rangeKey || '',
+    start: Number(basePayload.start ?? basePayload.range?.start ?? 0),
+    end: Number(basePayload.end ?? basePayload.range?.end ?? 0),
+  };
+  snap.aggregatePending = { trend: true, modelStats: true, sourceStats: true, sessionSummary: true };
+  snap.freshness = { stale: false, source: 'summary', ageMs: 0 };
+  snap.perf = summary.perf || {};
+  return snap;
+}
+
 async function buildInitialLightSnapshot(payload = {}) {
   const timestamp = Number(payload.timestamp || Date.now());
   const basePayload = dashboardAggregatePayload({ ...payload, timestamp });
@@ -286,6 +312,7 @@ module.exports = {
   buildDashboardPreviewSnapshot,
   lightUpdatedAt,
   makeLightSnapshotFromAggregates,
+  buildInitialSummarySnapshot,
   buildInitialLightSnapshot,
   buildDashboardLightPair,
 };
