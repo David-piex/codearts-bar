@@ -65,14 +65,12 @@ function dateRangeDraftValidation(){
   return '';
 }
 function dateRangeForCurrentFilter(s = snapshot || {}){
-  const range = normalizeRangeFilter(rangeFilter);
-  if(range === 'customTime') return normalizeCustomDateRange(s);
-  const now = Number(s?.timestamp || Date.now());
-  const start = sinceForRange(s, range);
-  return { start: start > 0 ? start : now - 30 * 86400000, end: now };
+  const range = dateRangeForFilter({ range: rangeFilter, timestamp: s?.timestamp, customStart: customDateStart, customEnd: customDateEnd, customDays: customRangeDays });
+  return { start: range.start, end: range.end || Number(s?.timestamp || Date.now()) };
 }
 function openDateRangePopover(){
   const r = dateRangeForCurrentFilter(snapshot || {});
+  if(!r.start) r.start = r.end - 30 * 86400000;
   dateRangeDraftStart = r.start;
   dateRangeDraftEnd = r.end;
   dateRangeError = '';

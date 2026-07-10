@@ -161,6 +161,7 @@ async function runRuntime(runtime, dbPath, payload, options = {}) {
   const dashboard = timed.find((x) => x.label === "dashboardBundle").value;
   const dashboardCached = await api.dashboard(payload);
   assert.ok(summary.ok, `${runtime} summary should be ok for ${dbPath}`);
+  if (runtime === 'sql.js') assert.equal(summary.perf?.aggregateWorker?.thread, 'worker', 'sql.js aggregation should execute in a Worker Thread');
   assert.ok((summary.usage?.all?.messages || 0) > 0, `${runtime} summary should count messages`);
   assert.ok((sessionSummary.total || 0) > 0, `${runtime} session summary should count sessions`);
   assert.ok((modelStats.items || []).length > 0, `${runtime} model stats should not be empty`);
@@ -216,9 +217,11 @@ async function runSize(messageCount) {
     assert.equal(built.value.usageRollup.rowCount, messageCount, "sidecar rollup should cover all assistant messages");
     aggregateCache.clearAggregateCache();
     usageRollup.resetUsageRollupStats();
+    await aggregation.clearSqlJsWorkerCaches();
     const nativeHot = await runRuntime("native", dbPath, payload, { expectRollup: true });
     aggregateCache.clearAggregateCache();
     usageRollup.resetUsageRollupStats();
+    await aggregation.clearSqlJsWorkerCaches();
     const sqljsHot = await runRuntime("sql.js", dbPath, payload, { expectRollup: true });
     const hotBudgetMs = messageCount >= 50000 ? 500 : 250;
     assert.ok(nativeHot.maxMs < hotBudgetMs, `native sidecar hot path should stay below ${hotBudgetMs}ms for ${messageCount}, got ${nativeHot.maxMs}ms`);

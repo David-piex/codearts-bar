@@ -211,6 +211,7 @@ if(workspaceMode === 'analytics' && tableTab === 'sessions'){
 /* @dashboard-include dashboard/i18n.js */
 /* @dashboard-include-list
 core/cacheMetrics.js
+dashboard/date-range-core.js
 dashboard-state.js
 dashboard-date-range.js
 dashboard/analytics/analytics-core.js

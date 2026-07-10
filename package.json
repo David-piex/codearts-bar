@@ -7,12 +7,12 @@
   "scripts": {
     "start": "electron .",
     "dev": "electron . --dev",
-    "build:renderer": "node src/build-dashboard-renderer.js",
+    "build:renderer": "node src/build-dashboard-renderer.js && node src/build-dashboard-css.js",
     "snapshot": "node src/cli.js snapshot",
     "stats": "node src/cli.js stats",
     "e2e:electron": "npm run build:renderer && node tests/electron-dashboard-e2e.js",
     "screenshot:dashboard": "npm run build:renderer && node tests/dashboard-preview-screenshot.js",
-    "test": "npm run build:renderer && node tests/run-tests.js && node tests/dashboard-renderer-smoke.js && node tests/dashboard-style-smoke.js && node tests/i18n-smoke.js && node tests/dashboard-preview-smoke.js && node tests/database-diagnostics-smoke.js && node tests/crash-reporter-smoke.js && node tests/release-manifest-smoke.js && node src/cli.js self-test",
+    "test": "npm run build:renderer && node tests/run-tests.js && node tests/dashboard-renderer-smoke.js && node tests/date-range-state-smoke.js && node tests/dashboard-style-smoke.js && node tests/i18n-smoke.js && node tests/dashboard-preview-smoke.js && node tests/database-diagnostics-smoke.js && node tests/crash-reporter-smoke.js && node tests/release-manifest-smoke.js && node src/cli.js self-test",
     "prepare:extension": "node src/prepare-extension.js",
     "build:extension": "node src/build-extension.js",
     "build:app": "npm run build:cli-resources && electron-builder --win nsis portable --x64",
@@ -21,7 +21,7 @@
     "stress:pagination": "node tests/pagination-stress.js",
     "stress:aggregation": "node tests/aggregation-stress.js",
     "stress:aggregation:full": "node tests/aggregation-stress.js --full",
-    "verify": "npm test && npm run stress:dashboard && npm run stress:pagination && npm run stress:aggregation",
+    "verify": "npm test && npm run e2e:electron && npm run stress:dashboard && npm run stress:pagination && npm run stress:aggregation",
     "smoke:release": "node tests/release-package-smoke.js",
     "smoke:package-resources": "node tests/package-resource-smoke.js",
     "build:cli-resources": "node src/build-cli-resources.js"

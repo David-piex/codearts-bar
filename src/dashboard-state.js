@@ -1,4 +1,4 @@
-function normalizeRangeFilter(value){ const raw = String(value || 'customTime'); if(raw === 'customTime') return raw; if(raw === 'custom') return `${Math.max(2, Math.min(365, Number(localStorage.getItem('customRangeDays') || '60') || 60))}d`; if(raw === 'all' || raw === 'today') return raw; const days = Number(raw.replace('d', '')); return Number.isFinite(days) && days > 0 ? `${Math.max(1, Math.min(365, Math.round(days)))}d` : 'customTime'; }
+function normalizeRangeFilter(value){ return normalizeRangeFilterValue(value, Number(localStorage.getItem('customRangeDays') || customRangeDays || 60)); }
 const SERIES = [
   { key: 'total', label: TXT.total, color: COLORS.total, dash: [6, 5], kind: 'token' },
   { key: 'input', label: TXT.input, color: COLORS.input, dash: [], kind: 'token' },

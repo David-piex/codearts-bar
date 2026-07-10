@@ -302,4 +302,5 @@ module.exports = {
   mergeSessionSummaries,
   slowAggregateStats,
   resetSlowAggregateStats,
+  maybeLogSlowAggregate,
 };
