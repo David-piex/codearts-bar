@@ -335,7 +335,7 @@
       backdrop-filter:blur(22px) saturate(1.28);
     }
     .footer .dev-only {
-      display:none !important;
+      display:none;
     }
     .footer button {
       min-height:34px;
@@ -346,7 +346,7 @@
       min-width:0;
     }
     .view-switching :where(.summary-card, .chart-card, .table-card, .source-card, .session-overview-card, .session-manager, .cache-insights, .agent-rhythm-card) {
-      animation:none !important;
+      animation:none;
     }
     .compact-stage.single {
       grid-template-columns:minmax(0,1fr);
@@ -548,8 +548,8 @@
       contain-intrinsic-size:720px;
     }
     :where(.logo, .tabs, .filters, .source-switch, .select, .range, .source-card, .summary-card, .chart-card, .table-card, .mini, .period-card, .footer, .rename-sheet, .agent-rhythm-card, .analytics-advanced-shell) {
-      -webkit-backdrop-filter:blur(14px) saturate(1.18) !important;
-      backdrop-filter:blur(14px) saturate(1.18) !important;
+      -webkit-backdrop-filter:blur(14px) saturate(1.18);
+      backdrop-filter:blur(14px) saturate(1.18);
     }
     .page-head .filters {
       background:linear-gradient(180deg,rgba(255,255,255,.82),rgba(246,249,253,.70));
@@ -564,7 +564,7 @@
       grid-template-columns:auto 1fr;
       align-items:center;
       gap:6px;
-      padding:3px 28px 3px 10px !important;
+      padding:3px 28px 3px 10px;
       border-radius:12px;
       color:#334155;
       background:linear-gradient(180deg,rgba(255,255,255,.86),rgba(243,247,252,.72));
@@ -637,17 +637,17 @@
       line-height:1.25;
     }
     .chart-scale-note {
-      display:none !important;
+      display:none;
     }
     .chart-snapshot {
-      display:none !important;
+      display:none;
     }
     .series-panel {
       gap:5px;
     }
     .series-chip {
-      box-shadow:none !important;
-      transition:background .12s ease, color .12s ease, border-color .12s ease !important;
+      box-shadow:none;
+      transition:background .12s ease, color .12s ease, border-color .12s ease;
     }
     .usage-total-board {
       border-color:rgba(213,222,234,.74);
@@ -684,8 +684,8 @@
     }
     .view-switching,
     .view-switching :where(.shell,.menu-card,.content,.topbar,.page-head,.footer,.summary-card,.chart-card,.table-card,.source-card,.usage-total-board,.agent-rhythm-card,.analytics-advanced-shell,.session-simple-shell,.session-overview-card,.session-manager,.session-inspector,.filters,.tabs,.select,.source-switch,.range,.chart-tip,.date-range-popover,button,input,select,textarea,tr,td,th,canvas) {
-      animation:none !important;
-      transition:none !important;
+      animation:none;
+      transition:none;
     }
     .content.is-typing .table-card,
     .content.is-typing .agent-rhythm-card,
@@ -695,7 +695,7 @@
     @media (prefers-reduced-motion: no-preference) {
       .chart-hover-scrubber::after,
       .chart-hover-scrubber.pinned::after {
-        animation:none !important;
+        animation:none;
       }
     }
 
@@ -1194,7 +1194,7 @@
     .content.is-zooming,
     .content.view-switching {
       cursor:default;
-      scroll-behavior:auto !important;
+      scroll-behavior:auto;
     }
     body.is-resizing :where(.dashboard-empty-state,.date-range-trigger,.date-range-popover,.chart-card,.table-card,.usage-total-board,.agent-rhythm-card,.session-simple-shell,.session-advanced-shell),
     body.is-zooming :where(.dashboard-empty-state,.date-range-trigger,.date-range-popover,.chart-card,.table-card,.usage-total-board,.agent-rhythm-card,.session-simple-shell,.session-advanced-shell),
@@ -1202,8 +1202,8 @@
       -webkit-backdrop-filter:none !important;
       backdrop-filter:none !important;
       box-shadow:var(--cb-shadow-card, 0 1px 0 rgba(255,255,255,.72) inset, 0 6px 14px rgba(27,39,61,.026)) !important;
-      animation:none !important;
-      transition:none !important;
+      animation:none;
+      transition:none;
     }
     body.is-resizing :where(.date-range-trigger,.source-switch-btn,.workspace-tabs .tab,.table-tabs button,.date-range-days button),
     body.is-zooming :where(.date-range-trigger,.source-switch-btn,.workspace-tabs .tab,.table-tabs button,.date-range-days button),

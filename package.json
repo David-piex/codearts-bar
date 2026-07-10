@@ -21,7 +21,7 @@
     "stress:pagination": "node tests/pagination-stress.js",
     "stress:aggregation": "node tests/aggregation-stress.js",
     "stress:aggregation:full": "node tests/aggregation-stress.js --full",
-    "verify": "npm test && npm run e2e:electron && npm run e2e:vscode && npm run stress:dashboard && npm run stress:pagination && npm run stress:aggregation",
+    "verify": "npm test && npm run e2e:electron:built && npm run e2e:vscode && npm run stress:dashboard && npm run stress:pagination && npm run stress:aggregation",
     "smoke:release": "node tests/release-package-smoke.js",
     "smoke:package-resources": "node tests/package-resource-smoke.js",
     "build:cli-resources": "node src/build-cli-resources.js",
@@ -33,7 +33,12 @@
     "pack:npm": "npm run build:npm-package && npm pack .cache/npm-package --pack-destination release",
     "test:visual": "npm run screenshot:vscode && npm run screenshot:electron && node tests/visual-regression.js",
     "update:visual-baselines": "npm run screenshot:vscode && npm run screenshot:electron && node tests/update-visual-baselines.js",
-    "screenshot:electron": "npm run build:renderer && node tests/electron-visual-capture.js"
+    "screenshot:electron": "npm run build:renderer && node tests/electron-visual-capture.js",
+    "verify:ci": "npm test && npm run e2e:vscode && npm run stress:dashboard && npm run stress:pagination && npm run stress:aggregation && npm run screenshot:vscode:prepared && npm run screenshot:electron:built && node tests/visual-regression.js",
+    "e2e:electron:built": "node tests/electron-dashboard-e2e.js",
+    "screenshot:electron:built": "node tests/electron-visual-capture.js",
+    "build:app:built": "npm run build:cli-resources && npm run build:app-resources && electron-builder --projectDir .cache/app-runtime --config ../../electron-builder.runtime.js --win nsis portable --x64",
+    "screenshot:vscode:prepared": "node tests/vscode-readme-screenshots.js"
   },
   "keywords": [
     "codearts",

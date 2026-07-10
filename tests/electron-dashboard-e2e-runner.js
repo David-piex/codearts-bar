@@ -251,6 +251,11 @@ async function captureScenario(win, name) {
     }
     const content = document.querySelector(".content");
     if (content) content.scrollTop = 0;
+    const dateConfirm = document.querySelector("[data-date-range-confirm]");
+    if (dateConfirm) dateConfirm.disabled = true;
+    for (const canvas of document.querySelectorAll("canvas")) {
+      canvas.dispatchEvent(new PointerEvent("pointerleave", { bubbles: false, pointerType: "mouse" }));
+    }
     document.activeElement?.blur?.();
     return true;
   });

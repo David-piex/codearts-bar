@@ -35,17 +35,14 @@ jobs:
       - name: Dependency audit
         run: npm audit
 
-      - name: Unit, smoke and E2E verification
-        run: npm run verify
-
-      - name: Visual regression
-        run: npm run test:visual
+      - name: Unit, smoke, E2E and visual verification
+        run: npm run verify:ci
 
       - name: Build VS Code extension
         run: npm run build:extension
 
       - name: Build Windows installer and portable app
-        run: npm run build:app
+        run: npm run build:app:built
 
       - name: Verify packaged application
         run: |
