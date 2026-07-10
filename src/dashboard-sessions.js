@@ -1,13 +1,13 @@
-eval([
-  'dashboard/sessions/session-meta.js',
-  'dashboard/sessions/session-filters.js',
-  'dashboard/sessions/session-saved-views.js',
-  'dashboard/sessions/session-bulk.js',
-  'dashboard/sessions/session-cache-governance.js',
-  'dashboard/sessions/session-inspector.js',
-  'dashboard/sessions/session-table.js',
-  'dashboard/sessions/session-workspace.js',
-].map(readRendererPart).join('\n'));
+/* @dashboard-include-list
+dashboard/sessions/session-meta.js
+dashboard/sessions/session-filters.js
+dashboard/sessions/session-saved-views.js
+dashboard/sessions/session-bulk.js
+dashboard/sessions/session-cache-governance.js
+dashboard/sessions/session-inspector.js
+dashboard/sessions/session-table.js
+dashboard/sessions/session-workspace.js
+*/
 function sessionSimpleToolbarHtml(s){
   return `<section class="session-simple-shell session-library-shell"><div class="session-simple-head"><div><b>${TXT.sessionEssentials}</b><span>${TXT.sessionEssentialsHint}</span></div></div>${sessionQuickFilterHtml(s)}${sessionSavedViewsInlineHtml(s)}</section>`;
 }

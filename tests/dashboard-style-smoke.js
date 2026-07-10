@@ -84,6 +84,9 @@ const renderer = rendererFiles
   .map((file) => fs.readFileSync(path.join(__dirname, "..", "src", file), "utf8"))
   .join("\n");
 const generatedRenderer = fs.readFileSync(path.join(__dirname, "..", "src", "dashboard-renderer.js"), "utf8");
+const rendererEntry = fs.readFileSync(path.join(__dirname, "..", "src", "dashboard", "renderer-entry.js"), "utf8");
+const rendererBundler = fs.readFileSync(path.join(__dirname, "..", "src", "build-dashboard-renderer.js"), "utf8");
+const rendererIncludeSources = `${rendererEntry}\n${fs.readFileSync(path.join(__dirname, "..", "src", "dashboard-sessions.js"), "utf8")}`;
 const mainFiles = [
   "main.js",
   "main/logger.js",
@@ -384,6 +387,12 @@ assert.match(generatedRenderer, /Renderer parts:/);
 assert.doesNotMatch(generatedRenderer, /\beval\s*\(/);
 assert.doesNotMatch(generatedRenderer, /\breadRendererPart\b/);
 assert.doesNotMatch(generatedRenderer, /\brendererPartPath\b/);
+assert.doesNotMatch(generatedRenderer, /\u5546\u7528\u7248|\u5546\u7528\u7ea7/);
+assert.match(rendererEntry, /@dashboard-include-list/);
+assert.match(rendererBundler, /expandRendererIncludes/);
+assert.doesNotMatch(rendererIncludeSources, /\beval\s*\(/);
+assert.doesNotMatch(rendererIncludeSources, /\breadRendererPart\b/);
+assert.doesNotMatch(rendererIncludeSources, /\brendererPartPath\b/);
 
 
 assert.match(renderer, /TABLE_PAGE_SIZE_OPTIONS = \[20, 50, 100\]/);

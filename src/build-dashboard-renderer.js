@@ -1,4 +1,4 @@
-'use strict';
+﻿'use strict';
 
 const fs = require('node:fs');
 const path = require('node:path');
@@ -14,55 +14,58 @@ function readUtf8(file) {
   return fs.readFileSync(file, 'utf8').replace(/^\uFEFF/, '');
 }
 
-function rendererPartPath(name) {
+function rendererPartFile(name) {
   return path.join(srcDir, name);
 }
 
-function stripRuntimeLoader(source) {
-  return source.replace(
-    /function rendererPartPath\(name\)\{[\s\S]*?\n\}\s*function readRendererPart\(name\)\{[^\n]*\}\s*/m,
-    ''
-  );
+function normalizePartName(item) {
+  return String(item || '')
+    .trim()
+    .replace(/,$/, '')
+    .replace(/^['"]/, '')
+    .replace(/['"];?$/, '')
+    .trim();
 }
 
-function partBlock(name, stack = []) {
-  const file = rendererPartPath(name);
-  if (!fs.existsSync(file)) throw new Error(`Missing renderer part: ${name}`);
-  if (stack.includes(name)) throw new Error(`Circular renderer part include: ${[...stack, name].join(' -> ')}`);
-  includedParts.add(name);
-  const expanded = expandRuntimeEval(readUtf8(file), [...stack, name]);
-  return `\n/* ---- renderer part: ${name} ---- */\n${expanded}\n/* ---- end renderer part: ${name} ---- */\n`;
-}
-
-function parseList(raw) {
-  const names = [];
-  const re = /'([^']+)'/g;
-  let match;
-  while ((match = re.exec(raw))) names.push(match[1]);
-  if (!names.length) throw new Error(`Could not parse renderer part list: ${raw}`);
+function parseIncludeList(raw) {
+  const names = String(raw || '')
+    .split(/\r?\n|,/)
+    .map(normalizePartName)
+    .filter((name) => name && !name.startsWith('//'));
+  if (!names.length) throw new Error(`Could not parse renderer include list: ${raw}`);
   return names;
 }
 
-function expandRuntimeEval(entrySource, stack = []) {
-  let source = stripRuntimeLoader(entrySource);
+function partBlock(name, stack = []) {
+  const cleanName = normalizePartName(name);
+  const file = rendererPartFile(cleanName);
+  if (!fs.existsSync(file)) throw new Error(`Missing renderer part: ${cleanName}`);
+  if (stack.includes(cleanName)) throw new Error(`Circular renderer part include: ${[...stack, cleanName].join(' -> ')}`);
+  includedParts.add(cleanName);
+  const expanded = expandRendererIncludes(readUtf8(file), [...stack, cleanName]);
+  return `\n/* ---- renderer part: ${cleanName} ---- */\n${expanded}\n/* ---- end renderer part: ${cleanName} ---- */\n`;
+}
+
+function expandRendererIncludes(entrySource, stack = []) {
+  let source = String(entrySource || '');
   source = source.replace(
-    /eval\(\s*readRendererPart\('([^']+)'\)\s*\);/g,
+    /\/\*\s*@dashboard-include\s+([^*\r\n]+?)\s*\*\//g,
     (_, name) => partBlock(name, stack)
   );
   source = source.replace(
-    /eval\(\s*\[([\s\S]*?)\]\.map\(readRendererPart\)\.join\('\\n'\)\s*\);/g,
-    (_, raw) => parseList(raw).map((name) => partBlock(name, stack)).join('\n')
+    /\/\*\s*@dashboard-include-list\s*([\s\S]*?)\*\//g,
+    (_, raw) => parseIncludeList(raw).map((name) => partBlock(name, stack)).join('\n')
   );
   if (/\beval\s*\(/.test(source)) throw new Error('Renderer bundle source still contains eval(...)');
   if (/\breadRendererPart\b/.test(source) || /\brendererPartPath\b/.test(source)) {
-    throw new Error('Renderer bundle source still contains runtime renderer part loader');
+    throw new Error('Renderer bundle source still contains the old runtime renderer part loader');
   }
   return source;
 }
 
 function build() {
   includedParts.clear();
-  const expanded = expandRuntimeEval(readUtf8(entryFile));
+  const expanded = expandRendererIncludes(readUtf8(entryFile));
   const result = esbuild.transformSync(expanded, {
     loader: 'js',
     target: 'chrome120',
@@ -78,4 +81,4 @@ function build() {
 
 if (require.main === module) build();
 
-module.exports = { expandRuntimeEval, build };
+module.exports = { expandRendererIncludes, build };

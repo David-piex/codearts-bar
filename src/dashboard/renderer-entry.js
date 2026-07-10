@@ -208,37 +208,41 @@ if(workspaceMode === 'analytics' && tableTab === 'sessions'){
   localStorage.setItem('statsTableTab', tableTab);
 }
 
-function rendererPartPath(name){
-  try {
-    const src = document.currentScript && document.currentScript.src ? document.currentScript.src : '';
-    if(src.startsWith('file://')){
-      const u = new URL(src);
-      let filePath = decodeURIComponent(u.pathname || '').replace(/^\/([A-Za-z]:)/, '$1');
-      return require('node:path').join(require('node:path').dirname(filePath), name);
-    }
-  } catch {}
-  try { return require('node:path').join(__dirname, name); } catch {}
-  try { return require('node:path').join('src', name); } catch {}
-  return name;
-}
-function readRendererPart(name){ return require('node:fs').readFileSync(rendererPartPath(name), 'utf8'); }
-
-eval(readRendererPart('dashboard/i18n.js'));
-eval(['core/cacheMetrics.js','dashboard-state.js','dashboard-date-range.js','dashboard/analytics/analytics-core.js','dashboard/analytics/analytics-agent-idle.js','dashboard-analytics.js','dashboard/chart/chart-series.js','dashboard/chart/chart-legend.js','dashboard/chart/chart-canvas.js','dashboard/chart/chart-tooltip.js','dashboard/chart/chart-hover.js','dashboard-chart.js','dashboard-sessions.js'].map(readRendererPart).join('\n'));
-eval(['dashboard/dashboard-shell.js','dashboard/dashboard-error-state.js','dashboard/dashboard-diagnostics.js','dashboard/dashboard-bootstrap.js'].map(readRendererPart).join('\n'));
+/* @dashboard-include dashboard/i18n.js */
+/* @dashboard-include-list
+core/cacheMetrics.js
+dashboard-state.js
+dashboard-date-range.js
+dashboard/analytics/analytics-core.js
+dashboard/analytics/analytics-agent-idle.js
+dashboard-analytics.js
+dashboard/chart/chart-series.js
+dashboard/chart/chart-legend.js
+dashboard/chart/chart-canvas.js
+dashboard/chart/chart-tooltip.js
+dashboard/chart/chart-hover.js
+dashboard-chart.js
+dashboard-sessions.js
+*/
+/* @dashboard-include-list
+dashboard/dashboard-shell.js
+dashboard/dashboard-error-state.js
+dashboard/dashboard-diagnostics.js
+dashboard/dashboard-bootstrap.js
+*/
 let lastCommittedHtml = '';
 let lastRenderCost = 0;
-eval(readRendererPart('dashboard/dashboard-perf.js'));
-eval([
-  'dashboard/dashboard-slots.js',
-  'dashboard/slots/slot-core.js',
-  'dashboard/slots/analytics-slots.js',
-  'dashboard/slots/data-page-core.js',
-  'dashboard/slots/request-page-slot.js',
-  'dashboard/slots/session-page-slot.js',
-  'dashboard/slots/session-slots.js',
-  'dashboard/slots/perf-panel-slot.js'
-].map(readRendererPart).join('\n'));
+/* @dashboard-include dashboard/dashboard-perf.js */
+/* @dashboard-include-list
+dashboard/dashboard-slots.js
+dashboard/slots/slot-core.js
+dashboard/slots/analytics-slots.js
+dashboard/slots/data-page-core.js
+dashboard/slots/request-page-slot.js
+dashboard/slots/session-page-slot.js
+dashboard/slots/session-slots.js
+dashboard/slots/perf-panel-slot.js
+*/
 function mergeRenderOptions(prev = {}, next = {}){
   prev = prev || {};
   next = next || {};
@@ -388,4 +392,12 @@ function bindIncrementalTables(){
     }
   });
 }
-eval(['dashboard/events/date-events.js','dashboard/events/chrome-events.js','dashboard/events/session-events.js','dashboard/events/analytics-events.js','dashboard/events/form-events.js','dashboard/dashboard-events.js','dashboard/events/window-events.js'].map(readRendererPart).join('\n'));
+/* @dashboard-include-list
+dashboard/events/date-events.js
+dashboard/events/chrome-events.js
+dashboard/events/session-events.js
+dashboard/events/analytics-events.js
+dashboard/events/form-events.js
+dashboard/dashboard-events.js
+dashboard/events/window-events.js
+*/

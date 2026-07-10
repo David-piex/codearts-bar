@@ -516,7 +516,7 @@ var TXT = {
   cacheActionHigh: "复用健康，适合作为长线任务或固定工作台",
   cacheActionNone: "暂无明显缓存优化空间",
   cacheGovernance: "缓存治理工作台",
-  cacheGovernanceHint: "将低命中会话转成可执行治理清单，便于商用版追踪成本与复用",
+  cacheGovernanceHint: "将低命中会话转成可执行治理清单，便于开发者追踪成本与复用",
   cacheGovernanceReport: "复制治理报告",
   cacheGovernanceFocus: "进入低命中视图",
   cacheGovernanceTop: "首要处理",
@@ -528,7 +528,7 @@ var TXT = {
   cacheGovernanceReason: "原因",
   cacheLow: "低命中",
   smartViews: "智能视图",
-  smartViewsHint: "一键切换商用级会话管理场景",
+  smartViewsHint: "一键切换开发者常用会话管理场景",
   smartViewCacheWaste: "低命中高消耗",
   smartViewPinned: "置顶工作台",
   smartViewRecent: "最近活跃",
@@ -6859,14 +6859,14 @@ function scheduleZoomSettledChartRedraw() {
 }
 function scheduleResizeSettledChartRedraw(reason = "resize", sessionId = null, delayOverride = null) {
   if (chartResizeSettleTimer) clearTimeout(chartResizeSettleTimer);
-  const delay = delayOverride == null ? reason === "window" ? 44 : reason === "observer" ? 52 : 48 : Math.max(0, Number(delayOverride || 0));
+  const delay = delayOverride == null ? reason === "window" ? 32 : reason === "observer" ? 38 : 36 : Math.max(0, Number(delayOverride || 0));
   chartResizeSettleTimer = setTimeout(() => {
     if (!resizePerfSessionMatches(sessionId)) return;
     chartResizeSettleTimer = null;
     const quietRemaining = Math.max(0, Number(chartResizeQuietUntil || 0) - Date.now());
     if (quietRemaining > 8) {
       markResizePerf("resizeQuietWait", `${Math.round(quietRemaining)}ms`, sessionId);
-      scheduleResizeSettledChartRedraw(reason, sessionId, Math.min(72, Math.max(12, quietRemaining)));
+      scheduleResizeSettledChartRedraw(reason, sessionId, Math.min(48, Math.max(10, quietRemaining)));
       return;
     }
     chartResizeQuietUntil = 0;
@@ -6930,7 +6930,7 @@ function scheduleChartResizeRedraw(reason = "resize") {
   const app = document.getElementById("app");
   const zoomActive = reason === "zoom" || Date.now() < Number(zoomInteractionUntil || 0) || Boolean(document.body?.classList?.contains?.("is-zooming")) || Boolean(app?.classList?.contains?.("is-zooming"));
   if (!(zoomActive && (reason === "zoom" || reason === "observer"))) {
-    setInteractionMode(zoomActive ? "is-zooming" : "is-resizing", zoomActive ? 150 : 170);
+    setInteractionMode(zoomActive ? "is-zooming" : "is-resizing", zoomActive ? 130 : 125);
     markResizePerf("domPatch", zoomActive ? "is-zooming" : "is-resizing", sessionId);
   }
   const chartActive = snapshot?.ok && workspaceMode === "analytics" && layoutMode !== "compact";
@@ -6947,7 +6947,7 @@ function scheduleChartResizeRedraw(reason = "resize") {
     scheduleZoomSettledChartRedraw();
     return;
   }
-  chartResizeQuietUntil = Math.max(Number(chartResizeQuietUntil || 0), Date.now() + (reason === "window" ? 72 : 68));
+  chartResizeQuietUntil = Math.max(Number(chartResizeQuietUntil || 0), Date.now() + (reason === "window" ? 54 : 50));
   if (!chartActive) {
     scheduleResizeSettledChartRedraw(reason, sessionId);
     return;
