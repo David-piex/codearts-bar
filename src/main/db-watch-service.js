@@ -1,4 +1,4 @@
-'use strict';
+﻿'use strict';
 
 function targetFingerprint(fs, targets) {
   return targets.map((target) => {
@@ -66,7 +66,7 @@ function createDbWatchService({
         watchFingerprint = next;
         triggerRefreshSoon('poll');
       }
-    }, 1000);
+    }, 4000);
   }
 
   return { cleanup, schedule, triggerRefreshSoon };

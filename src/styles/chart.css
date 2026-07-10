@@ -6,15 +6,15 @@
   box-shadow: var(--cb-shadow-card);
 }
 
-.chart-card canvas,
+.chart-card canvas {
+  display: block;
+  contain: layout paint style;
+}
+
 .chart-canvas,
 .chart-hover-meta,
 .chart-hover-scrubber {
   contain: layout paint style;
-}
-
-.chart-card canvas {
-  display: block;
 }
 
 :where(.series-chip, .chart-range-button, .chartPinnedScrub, .scrubber-focus) {

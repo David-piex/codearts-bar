@@ -9,6 +9,7 @@ const root = path.join(__dirname, "..");
 const pkg = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
 const mainSource = fs.readFileSync(path.join(root, "src", "main.js"), "utf8");
 const windowSource = fs.readFileSync(path.join(root, "src", "main", "window.js"), "utf8");
+const runtimeBuild = require(path.join(root, "electron-builder.runtime.js"));
 
 assert.equal(pkg.main, "src/main.js", "Electron package entry should be src/main.js");
 assert.match(mainSource, /CODEARTS_BAR_PACKAGE_SMOKE/, "main process should expose package smoke startup hook");
@@ -16,18 +17,17 @@ assert.match(mainSource, /CODEARTS_BAR_SMOKE_USER_DATA/, "package smoke should s
 assert.match(windowSource, /dashboard-ready/, "dashboard window should write package smoke ready event");
 assert.match(windowSource, /userDataIsolated/, "package smoke result should prove isolated userData was used");
 
-const extraResources = pkg.build?.extraResources || [];
-assert.ok(Array.isArray(extraResources), "build.extraResources should be an array");
-assert.equal(
-  extraResources.some((item) => String(item?.from || "").replace(/\\/g, "/") === "node_modules/sql.js/dist"),
-  false,
-  "package must not copy the full sql.js/dist directory into CLI resources"
-);
+const extraResources = runtimeBuild.extraResources || [];
+assert.ok(Array.isArray(extraResources), "runtime build extraResources should be an array");
 assert.deepEqual(
   extraResources.map((item) => ({ from: String(item?.from || "").replace(/\\/g, "/"), to: String(item?.to || "").replace(/\\/g, "/") })),
-  [{ from: ".cache/cli-runtime", to: "cli" }],
-  "package should copy the generated minimal CLI runtime, not full source folders"
+  [{ from: "../cli-runtime", to: "cli" }],
+  "runtime package should copy the generated minimal CLI runtime"
 );
+assert.deepEqual(runtimeBuild.files, ["**/*"], "runtime builder should package only the staging project");
+assert.equal(runtimeBuild.npmRebuild, false, "runtime builder must not rebuild dependencies from the repository root");
+assert.equal(runtimeBuild.win?.icon, "assets/codearts-logo.ico", "runtime builder should use the staged application icon");
+assert.equal((pkg.build?.extraResources || []).some((item) => String(item?.from || "").replace(/\\/g, "/") === "node_modules/sql.js/dist"), false, "legacy package config must not copy full sql.js/dist");
 
 const generatedCliDir = path.join(root, ".cache", "cli-runtime");
 if (fs.existsSync(generatedCliDir)) {

@@ -5,10 +5,11 @@ const { dashboardHtml } = require("./webview/html");
 const { viewModel } = require("./webview/model");
 
 class DashboardHost {
-  constructor(context, getSnapshot, refreshSnapshot, openDataFolder) {
+  constructor(context, getSnapshot, refreshSnapshot, loadDetails, openDataFolder) {
     this.context = context;
     this.getSnapshot = getSnapshot;
     this.refreshSnapshot = refreshSnapshot;
+    this.loadDetails = loadDetails;
     this.openDataFolder = openDataFolder;
     this.targets = new Set();
     this.panel = null;
@@ -31,8 +32,11 @@ class DashboardHost {
   }
 
   async handleMessage(message, target) {
-    if (message?.type === "ready") return this.postSnapshot(target);
-    if (message?.type === "refresh") return this.refreshSnapshot();
+    if (message?.type === "ready") {
+      this.postSnapshot(target);
+      return this.loadDetails?.({ reason: "webview-ready", target });
+    }
+    if (message?.type === "refresh") return this.refreshSnapshot({ details: true, reason: "webview-refresh" });
     if (message?.type === "openDashboard") return this.openPanel();
     if (message?.type === "openData") return this.openDataFolder();
     if (message?.type === "settings")
@@ -55,9 +59,13 @@ class DashboardHost {
   }
   broadcast(snapshot) {
     const payload = viewModel(snapshot);
-    for (const target of this.targets)
-      target.webview.postMessage({ type: "snapshot", payload });
+    for (const target of this.targets) target.webview.postMessage({ type: "snapshot", payload });
   }
+  broadcastDetails(snapshot) {
+    const payload = viewModel(snapshot);
+    for (const target of this.targets) target.webview.postMessage({ type: "details", payload });
+  }
+  hasTargets() { return this.targets.size > 0; }
   setRefreshing(value) {
     for (const target of this.targets)
       target.webview.postMessage({ type: "refreshing", value: Boolean(value) });
@@ -67,6 +75,7 @@ class DashboardHost {
     if (this.panel) {
       this.panel.reveal(vscode.ViewColumn.One);
       this.postSnapshot(this.panel.__target);
+      this.loadDetails?.({ reason: "panel-reveal", target: this.panel.__target });
       return this.panel;
     }
     const panel = vscode.window.createWebviewPanel(

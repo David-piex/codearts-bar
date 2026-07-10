@@ -136,6 +136,7 @@
     "quota.js",
     "providers/index.js",
     "health.js",
+    "extension-data.js",
     "providers/codeartsLocal.js",
     "providers/codeartsOfficial.js",
     "providers/codeartsDesktop.js",
@@ -170,6 +171,7 @@
     "media/styles/components.css",
     "media/styles/responsive.css",
     "media/scripts/format.js",
+    "media/scripts/chart-axis.js",
     "media/scripts/chart.js",
     "media/scripts/views.js",
     "media/scripts/dashboard.js"

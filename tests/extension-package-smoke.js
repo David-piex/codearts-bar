@@ -9,6 +9,8 @@ const root = path.join(__dirname, "..");
 const extensionDir = path.join(root, "extension");
 const extensionPkg = JSON.parse(fs.readFileSync(path.join(extensionDir, "package.json"), "utf8").replace(/^\uFEFF/, ""));
 const providerDir = path.join(root, "src", "providers", "codearts");
+assert.ok(extensionPkg.files.includes("extension-data.js"), "extension package should include staged data loader");
+assert.ok(fs.existsSync(path.join(extensionDir, "extension-data.js")), "prepared extension should contain extension-data.js");
 const requiredProviderFiles = fs.readdirSync(providerDir)
   .filter((name) => name.endsWith(".js"))
   .map((name) => `providers/codearts/${name}`)

@@ -6,17 +6,6 @@
   border-radius: var(--cb-radius-lg);
   background: var(--cb-surface-popover);
   box-shadow: var(--cb-shadow-popover);
-}
-
-.date-range-popover {
-  color: var(--cb-text);
-}
-
-.chart-tip {
-  color: var(--cb-text);
-}
-
-.perf-panel {
   color: var(--cb-text);
 }
 

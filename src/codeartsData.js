@@ -1,4 +1,4 @@
-﻿'use strict';
+'use strict';
 
 const { loadSettings, writeCache, readCache } = require('./settings');
 const { buildQuota } = require('./quota');
@@ -170,9 +170,7 @@ async function getSnapshotAsync(options = {}) {
 
 async function getSnapshotWithCache(options = {}) {
   try {
-    const snap = await getSnapshotAsync(options);
-    writeCache(snap);
-    return snap;
+    return await getSnapshotAsync(options);
   } catch (error) {
     try {
       const cached = readCache();

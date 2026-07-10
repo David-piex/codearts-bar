@@ -2,19 +2,15 @@
 
 const vscode = require("vscode");
 const path = require("node:path");
-const {
-  getSnapshotWithCache,
-  snapshotToText,
-  errorSnapshot,
-  fmtInt,
-  fmtMs,
-} = require("./codeartsData");
+const { snapshotToText, errorSnapshot, fmtInt, fmtMs } = require("./codeartsData");
+const { getExtensionSummary, getExtensionDetails } = require("./extension-data");
 const { DashboardHost, OverviewViewProvider } = require("./dashboard");
 
 let statusItem;
 let timer;
 let lastSnapshot;
 let refreshPromise;
+let detailsPromise;
 let dashboardHost;
 
 const T = {
@@ -168,18 +164,38 @@ function updateStatus(snapshot) {
   }
 }
 
-async function refresh() {
+async function loadDashboardDetails(options = {}) {
+  if (detailsPromise) return detailsPromise;
+  if (!dashboardHost?.hasTargets()) return lastSnapshot;
+  const c = config();
+  detailsPromise = (async () => {
+    try {
+      const details = await getExtensionDetails(c);
+      lastSnapshot = details;
+      updateStatus(lastSnapshot);
+      dashboardHost?.broadcastDetails(lastSnapshot);
+      return lastSnapshot;
+    } catch (error) {
+      if (!lastSnapshot?.ok) lastSnapshot = errorSnapshot(error, c.dbPath);
+      return lastSnapshot;
+    }
+  })().finally(() => { detailsPromise = null; });
+  return detailsPromise;
+}
+
+async function refresh(options = {}) {
   if (refreshPromise) return refreshPromise;
   const c = config();
   dashboardHost?.setRefreshing(true);
   refreshPromise = (async () => {
     try {
-      lastSnapshot = await getSnapshotWithCache(c);
+      lastSnapshot = await getExtensionSummary(c);
     } catch (error) {
       lastSnapshot = errorSnapshot(error, c.dbPath);
     }
     updateStatus(lastSnapshot);
     dashboardHost?.broadcast(lastSnapshot);
+    if (options.details === true || dashboardHost?.hasTargets()) await loadDashboardDetails(options);
     return lastSnapshot;
   })().finally(() => {
     refreshPromise = null;
@@ -215,6 +231,7 @@ function activate(context) {
     context,
     () => lastSnapshot,
     refresh,
+    loadDashboardDetails,
     openDataFolder,
   );
   const overviewProvider = new OverviewViewProvider(dashboardHost);

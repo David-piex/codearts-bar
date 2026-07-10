@@ -1,0 +1,21 @@
+﻿'use strict';
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const { build } = require('../src/build-app-resources');
+const root = path.resolve(__dirname, '..');
+const runtime = path.join(root, '.cache', 'app-runtime');
+build();
+function exists(rel) { return fs.existsSync(path.join(runtime, ...rel.split('/'))); }
+for (const rel of ['src/main.js','src/dashboard-renderer.js','src/dashboard-bundle.css','src/vendor/sql.js/sql-wasm.js','src/vendor/sql.js/sql-wasm.wasm','APP_RUNTIME_MANIFEST.json']) assert.equal(exists(rel), true, `app runtime should include ${rel}`);
+for (const rel of ['src/build-dashboard-renderer.js','src/build-extension.js','src/prepare-extension.js','src/release.js','src/dashboard/renderer-entry.js','src/dashboard.css','node_modules/sql.js/dist/sql-asm-debug.js']) assert.equal(exists(rel), false, `app runtime should exclude ${rel}`);
+const runtimeFiles = [];
+(function walk(dir) { for (const entry of fs.readdirSync(dir, { withFileTypes: true })) { const file=path.join(dir,entry.name); if(entry.isDirectory()) walk(file); else runtimeFiles.push(path.relative(runtime,file).replace(/\\/g,'/')); } })(runtime);
+assert.ok(runtimeFiles.length < 80, `app runtime should stay narrow, got ${runtimeFiles.length} files`);
+assert.equal(runtimeFiles.filter((file) => /sql-wasm\.(?:js|wasm)$/.test(file)).length, 2, 'app runtime should contain exactly two sql.js runtime files');
+const bytes = runtimeFiles.reduce((sum, rel) => sum + fs.statSync(path.join(runtime, ...rel.split('/'))).size, 0);
+assert.ok(bytes < 3 * 1024 * 1024, `app runtime should stay below 3 MiB, got ${bytes}`);
+const stagedSqlite = require(path.join(runtime, 'src', 'providers', 'codearts', 'sqlite.js'));
+assert.equal(stagedSqlite.locateSqlJsFile('sql-wasm.js'), path.join(runtime, 'src', 'vendor', 'sql.js', 'sql-wasm.js'));
+assert.equal(stagedSqlite.locateSqlJsFile('sql-wasm.wasm'), path.join(runtime, 'src', 'vendor', 'sql.js', 'sql-wasm.wasm'));
+console.log(`ok - app runtime smoke files=${runtimeFiles.length} bytes=${bytes}`);

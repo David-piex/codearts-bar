@@ -244,9 +244,10 @@ function drawChart(rows, s, hover = -1, progress = 1){
   const w = Math.max(1, rect.width - pad.l - pad.r);
   const h = Math.max(1, rect.height - pad.t - pad.b);
   const mixedScale = new Set(active.map((cfg) => cfg.kind)).size > 1;
-  const globalMax = Math.max(1, ...data.flatMap((b) => active.map((cfg) => b[cfg.key] || 0)));
-  const seriesMax = new Map(active.map((cfg) => [cfg.key, Math.max(1, ...data.map((b) => Number(b[cfg.key] || 0)))]));
-  const scaleFor = (cfg) => mixedScale ? (seriesMax.get(cfg.key) || 1) : globalMax;
+  const rawGlobalMax = Math.max(1, ...data.flatMap((b) => active.map((cfg) => b[cfg.key] || 0)));
+  const globalScale = niceChartScale(rawGlobalMax);
+  const seriesScale = new Map(active.map((cfg) => [cfg.key, niceChartScale(Math.max(1, ...data.map((b) => Number(b[cfg.key] || 0))))]));
+  const scaleFor = (cfg) => mixedScale ? (seriesScale.get(cfg.key)?.max || 1) : globalScale.max;
   const plotBg = light ? null : ctx.createLinearGradient(0, pad.t, 0, pad.t + h);
   if(plotBg){
     plotBg.addColorStop(0, 'rgba(22,135,245,.035)');
@@ -274,17 +275,17 @@ function drawChart(rows, s, hover = -1, progress = 1){
   ctx.font = '12px Segoe UI, Microsoft YaHei UI, sans-serif';
   ctx.textAlign = 'left';
   ctx.lineWidth = 1;
-  const gridSteps = light ? 3 : 4;
+  const axisTicks = mixedScale ? [0, 25, 50, 75, 100] : globalScale.ticks;
+  const gridSteps = Math.max(1, axisTicks.length - 1);
   for(let i = 0; i <= gridSteps; i++){
     const y = pad.t + h * i / gridSteps;
     ctx.beginPath();
     ctx.moveTo(pad.l, y);
     ctx.lineTo(pad.l + w, y);
     ctx.stroke();
-    if(!light){
-      const val = mixedScale ? `${Math.round((1 - i / gridSteps) * 100)}%` : axisLabel(active, globalMax * (1 - i / gridSteps));
-      ctx.fillText(val, 8, y + 4);
-    }
+    const tickIndex = gridSteps - i;
+    const val = mixedScale ? `${axisTicks[tickIndex]}%` : axisLabel(active, axisTicks[tickIndex]);
+    ctx.fillText(val, 8, y + 4);
   }
   function xy(i, cfg){
     const x = pad.l + (data.length <= 1 ? 0 : i * w / (data.length - 1));
@@ -334,13 +335,19 @@ function drawChart(rows, s, hover = -1, progress = 1){
   if(chartPinnedIndex >= chartPoints.length) chartPinnedIndex = -1;
   ctx.fillStyle = '#8a909c';
   ctx.textAlign = 'center';
-  const step = Math.max(1, Math.ceil(data.length / 8));
-  if(!light) data.forEach((b, i) => {
-    if(i % step === 0 || i === data.length - 1){
-      const label = bucketAxisLabel(b, s);
-      ctx.fillText(label, chartPoints[i].x, pad.t + h + 25);
-    }
+  const xAxisIndices = chartAxisIndices(data.length, w, rect.width < 760 ? 108 : 88);
+  xAxisIndices.forEach((i, position) => {
+    const label = bucketAxisLabel(data[i], s);
+    ctx.textAlign = position === 0 ? 'left' : position === xAxisIndices.length - 1 ? 'right' : 'center';
+    ctx.fillText(label, chartPoints[i].x, pad.t + h + 25);
   });
+  ctx.textAlign = 'center';
+  try {
+    canvas.dataset.yAxisTicks = JSON.stringify(axisTicks);
+    canvas.dataset.yAxisMax = String(mixedScale ? 100 : globalScale.max);
+    canvas.dataset.yAxisUnit = mixedScale ? 'percent' : (active.every((cfg) => cfg.kind === 'ms') ? 'ms' : active.every((cfg) => cfg.kind === 'pct') ? 'percent' : 'token');
+    canvas.dataset.xAxisLabels = JSON.stringify(xAxisIndices.map((i) => bucketAxisLabel(data[i], s)));
+  } catch {}
   const hasData = data.some((b) => active.some((cfg) => (b[cfg.key] || 0) > 0));
   if(!hasData){
     ctx.fillStyle = '#9aa0aa';

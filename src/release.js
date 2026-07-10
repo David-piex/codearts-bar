@@ -34,10 +34,11 @@ function nodeSupportsNativeSqlite() {
 runNode(path.join(root, 'src', 'build-dashboard-renderer.js'), []);
 runNode(path.join(root, 'src', 'build-dashboard-css.js'), []);
 runNode(path.join(root, 'src', 'build-cli-resources.js'), []);
+runNode(path.join(root, 'src', 'build-app-resources.js'), []);
 runNode(path.join(root, 'src', 'prepare-extension.js'), []);
 runNode(path.join(root, 'src', 'cli.js'), ['self-test']);
 runNode(path.join(root, 'node_modules', '@vscode', 'vsce', 'vsce'), ['package', '--out', path.join(releaseDir, 'codearts-bar-status.vsix')], { cwd: path.join(root, 'extension') });
-runNode(path.join(root, 'node_modules', 'electron-builder', 'cli.js'), ['--win', 'nsis', 'portable', '--x64', '--publish', 'never']);
+runNode(path.join(root, 'node_modules', 'electron-builder', 'cli.js'), ['--projectDir', path.join(root, '.cache', 'app-runtime'), '--config', path.join(root, 'electron-builder.runtime.js'), '--win', 'nsis', 'portable', '--x64', '--publish', 'never']);
 runNode(path.join(root, 'tests', 'package-resource-smoke.js'), []);
 runNode(path.join(root, 'tests', 'release-package-smoke.js'), []);
 

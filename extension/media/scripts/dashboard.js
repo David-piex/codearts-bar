@@ -56,7 +56,7 @@
   });
   window.addEventListener("message", (event) => {
     const message = event.data || {};
-    if (message.type === "snapshot") receive(message.payload);
+    if (message.type === "snapshot" || message.type === "details") receive(message.payload);
     if (message.type === "refreshing")
       document.body.classList.toggle("refreshing", Boolean(message.value));
   });

@@ -1,0 +1,15 @@
+﻿'use strict';
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const asar = require('@electron/asar');
+const root = path.resolve(__dirname, '..');
+const file = path.join(root, 'dist', 'win-unpacked', 'resources', 'app.asar');
+assert.equal(fs.existsSync(file), true, `missing ${file}; build the unpacked app before this smoke test`);
+const bytes = fs.statSync(file).size;
+assert.ok(bytes < 3 * 1024 * 1024, `app.asar should stay below 3 MiB, got ${bytes}`);
+const entries = new Set(asar.listPackage(file).map((entry) => entry.replace(/^\\/, '').replace(/\\/g, '/')));
+for (const rel of ['src/main.js','src/dashboard-renderer.js','src/dashboard-bundle.css','src/vendor/sql.js/sql-wasm.js','src/vendor/sql.js/sql-wasm.wasm']) assert.equal(entries.has(rel), true, `app.asar should include ${rel}`);
+for (const rel of ['src/build-dashboard-renderer.js','src/build-extension.js','src/prepare-extension.js','src/release.js','src/dashboard/renderer-entry.js','src/dashboard.css','node_modules/sql.js/dist/sql-asm-debug.js']) assert.equal(entries.has(rel), false, `app.asar should exclude ${rel}`);
+assert.equal([...entries].filter((entry) => /sql-wasm\.(?:js|wasm)$/.test(entry)).length, 2, 'app.asar should contain exactly two sql.js runtime files');
+console.log(`ok - app asar smoke entries=${entries.size} bytes=${bytes}`);

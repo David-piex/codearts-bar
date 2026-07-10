@@ -12,6 +12,7 @@ function asciiJson(obj) {
   );
 }
 const root = path.resolve(__dirname, "..");
+require(path.join(root, "src", "build-chart-axis.js")).buildChartAxisBrowser();
 const srcPkg = readJsonNoBom(path.join(root, "package.json"));
 const extDir = path.join(root, "extension");
 const extPkgPath = path.join(extDir, "package.json");
@@ -51,6 +52,7 @@ const runtimeFiles = [
   "core/format.js",
   "health.js",
   "quota.js",
+  "extension-data.js",
   "providers/index.js",
   "providers/codeartsLocal.js",
   "providers/codeartsOfficial.js",
@@ -73,6 +75,7 @@ const uiFiles = [
   "media/styles/components.css",
   "media/styles/responsive.css",
   "media/scripts/format.js",
+  "media/scripts/chart-axis.js",
   "media/scripts/chart.js",
   "media/scripts/views.js",
   "media/scripts/dashboard.js",
@@ -89,6 +92,7 @@ for (const file of [
   "settings.js",
   "quota.js",
   "health.js",
+  "extension-data.js",
 ])
   fs.copyFileSync(path.join(root, "src", file), path.join(extDir, file));
 fs.cpSync(path.join(root, "src", "providers"), path.join(extDir, "providers"), {
@@ -97,6 +101,7 @@ fs.cpSync(path.join(root, "src", "providers"), path.join(extDir, "providers"), {
 fs.cpSync(path.join(root, "src", "core"), path.join(extDir, "core"), {
   recursive: true,
 });
+fs.rmSync(path.join(extDir, "core", "chart-axis.js"), { force: true });
 const wasmDir = path.join(extDir, "node_modules", "sql.js", "dist");
 fs.mkdirSync(wasmDir, { recursive: true });
 for (const file of ["sql-wasm.js", "sql-wasm.wasm"])

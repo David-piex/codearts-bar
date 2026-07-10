@@ -32,6 +32,10 @@ const clientSource = fs.readFileSync(
   path.join(extensionDir, "media", "scripts", "dashboard.js"),
   "utf8",
 );
+const chartAxisSource = fs.readFileSync(
+  path.join(extensionDir, "media", "scripts", "chart-axis.js"),
+  "utf8",
+);
 const chartSource = fs.readFileSync(
   path.join(extensionDir, "media", "scripts", "chart.js"),
   "utf8",
@@ -71,6 +75,7 @@ const uiFiles = [
   "media/styles/components.css",
   "media/styles/responsive.css",
   "media/scripts/format.js",
+  "media/scripts/chart-axis.js",
   "media/scripts/chart.js",
   "media/scripts/views.js",
   "media/scripts/dashboard.js",
@@ -115,13 +120,27 @@ assert.match(
   extensionSource,
   /statusItem\.command = "codeartsBar\.openOverview"/,
 );
-assert.match(extensionSource, /getSnapshotWithCache/);
+assert.doesNotMatch(extensionSource, /getSnapshotWithCache/);
+assert.match(extensionSource, /getExtensionSummary/);
+assert.match(extensionSource, /getExtensionDetails/);
+assert.match(extensionSource, /hasTargets/);
 assert.match(htmlSource, /Content-Security-Policy/);
 assert.match(dashboardSource, /retainContextWhenHidden/);
+assert.match(dashboardSource, /broadcastDetails/);
+assert.match(dashboardSource, /webview-ready/);
 assert.match(dashboardSource, /require\("\.\/webview\/model"\)/);
 assert.match(clientSource, /vscode\.getState\(\)/);
 assert.match(clientSource, /vscode\.setState/);
+assert.match(clientSource, /message\.type === "snapshot" \|\| message\.type === "details"/);
 assert.match(chartSource, /requestAnimationFrame/);
+assert.match(chartAxisSource, /niceChartScale|niceChartScale:/);
+assert.match(chartSource, /CodeArtsChartAxis/);
+assert.match(chartSource, /yAxisTicks/);
+assert.match(chartSource, /pointermove/);
+assert.match(chartSource, /data-chart-tooltip|chart-tooltip/);
+assert.match(chartSource, /zeroState/);
+assert.match(chartSource, /compactAxisValue/);
+assert.match(chartSource, /Token/);
 assert.match(viewsSource, /CodeArtsViews/);
 assert.doesNotMatch(
   clientSource,

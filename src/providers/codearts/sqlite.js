@@ -13,6 +13,8 @@ const SQLJS_DB_CACHE_LIMIT = 3;
 
 function locateSqlJsFile(file) {
   const candidates = [
+    // Packaged desktop runtime: src/providers/codearts -> src/vendor/sql.js.
+    path.join(__dirname, '..', '..', 'vendor', 'sql.js', file),
     path.join(__dirname, '..', '..', '..', 'node_modules', 'sql.js', 'dist', file),
     path.join(__dirname, '..', '..', 'node_modules', 'sql.js', 'dist', file),
     path.join(process.cwd(), 'node_modules', 'sql.js', 'dist', file),

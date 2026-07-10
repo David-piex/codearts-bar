@@ -142,19 +142,19 @@ function quitApp() {
 async function refreshNow() {
   if (fullRefreshInFlight) return fullRefreshInFlight;
   fullRefreshInFlight = (async () => {
+    const settings = loadSettings();
     const previousLevel = lastSnapshot && lastSnapshot.ok ? lastSnapshot.status.level : null;
     const previousHealth = lastSnapshot && lastSnapshot.ok ? lastSnapshot.health : null;
     try {
-      lastSnapshot = await getSnapshotWithCache(loadSettings());
-      applyUsageDerivedFields(lastSnapshot, loadSettings(), Number(lastSnapshot.timestamp || Date.now()));
+      lastSnapshot = await getSnapshotWithCache(settings);
+      applyUsageDerivedFields(lastSnapshot, settings, Number(lastSnapshot.timestamp || Date.now()));
       lastDashboardSnapshot = buildDashboardPreviewSnapshot(lastSnapshot);
     }
     catch (error) { appendLog('error', 'refresh', error.message, { stack: error.stack }); lastSnapshot = errorSnapshot(error); lastDashboardSnapshot = lastSnapshot; }
     updateTray(lastSnapshot);
-    if (lastSnapshot.ok && loadSettings().notifyDanger && previousLevel !== 'danger' && lastSnapshot.status.level === 'danger' && Notification.isSupported()) {
+    if (lastSnapshot.ok && settings.notifyDanger && previousLevel !== 'danger' && lastSnapshot.status.level === 'danger' && Notification.isSupported()) {
       new Notification({ title: '\u7801\u9053 Bar', body: '\u4eca\u65e5 token \u4f7f\u7528\u504f\u9ad8\uff1a' + lastSnapshot.status.label }).show();
     }
-    const settings = loadSettings();
     if (lastSnapshot.ok && settings.notifyHealth && Notification.isSupported()) {
       for (const issue of notificationEvents(previousHealth, lastSnapshot.health).slice(0, 2)) {
         new Notification({ title: '\u7801\u9053 Bar - ' + issue.level, body: issue.message }).show();
@@ -170,6 +170,7 @@ async function refreshNow() {
 async function refreshLight(options = {}) {
   if (lightRefreshInFlight) return lightRefreshInFlight;
   lightRefreshInFlight = (async () => {
+    const settings = loadSettings();
     const previousLevel = lastSnapshot && lastSnapshot.ok ? lastSnapshot.status?.level : null;
     const previousHealth = lastSnapshot && lastSnapshot.ok ? lastSnapshot.health : null;
     try {
@@ -181,8 +182,8 @@ async function refreshLight(options = {}) {
     } catch (error) {
       appendLog('warn', 'refresh:light-initial', error.message, { stack: error.stack });
       try {
-        lastSnapshot = await getSnapshotWithCache(loadSettings());
-        applyUsageDerivedFields(lastSnapshot, loadSettings(), Number(lastSnapshot.timestamp || Date.now()));
+        lastSnapshot = await getSnapshotWithCache(settings);
+        applyUsageDerivedFields(lastSnapshot, settings, Number(lastSnapshot.timestamp || Date.now()));
         lastDashboardSnapshot = buildDashboardPreviewSnapshot(lastSnapshot);
       } catch (fullError) {
         appendLog('error', 'refresh', fullError.message, { stack: fullError.stack });
@@ -191,7 +192,6 @@ async function refreshLight(options = {}) {
       }
     }
     updateTray(lastSnapshot);
-    const settings = loadSettings();
     if (lastSnapshot?.ok && settings.notifyDanger && previousLevel !== 'danger' && lastSnapshot.status?.level === 'danger' && Notification.isSupported()) {
       new Notification({ title: '\u7801\u9053 Bar', body: '\u4eca\u65e5 token \u4f7f\u7528\u504f\u9ad8\uff1a' + lastSnapshot.status.label }).show();
     }

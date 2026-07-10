@@ -322,6 +322,9 @@ async function main() {
   win.setMenuBarVisibility(false);
   await win.loadFile(path.join(root, "src", "dashboard.html"));
   await waitFor(win, () => Boolean(document.querySelector(".usage-total-board") && document.querySelector("#usageChart") && document.querySelector(".table-card")));
+  await waitFor(win, () => {
+    try { return JSON.parse(document.querySelector("#usageChart")?.dataset?.yAxisTicks || "[]").length >= 4; } catch { return false; }
+  });
 
   const initial = await evalIn(win, () => {
     window.__e2eCanvas = document.querySelector("#usageChart");
@@ -332,6 +335,10 @@ async function main() {
       nodeRequireType: typeof window.require,
       preloadApi: Boolean(window.codeartsApi && typeof window.codeartsApi.invoke === "function"),
       canvasSize: document.querySelector("#usageChart")?.dataset?.sizeKey || "",
+      yAxisTicks: JSON.parse(document.querySelector("#usageChart")?.dataset?.yAxisTicks || "[]"),
+      yAxisMax: Number(document.querySelector("#usageChart")?.dataset?.yAxisMax || 0),
+      yAxisUnit: document.querySelector("#usageChart")?.dataset?.yAxisUnit || "",
+      xAxisLabels: JSON.parse(document.querySelector("#usageChart")?.dataset?.xAxisLabels || "[]"),
     };
   });
   assert.match(initial.title, /Bar/);
@@ -339,6 +346,11 @@ async function main() {
   assert.equal(initial.hasBackControl, false, "dashboard should not show a non-functional back control");
   assert.equal(initial.nodeRequireType, "undefined", "dashboard renderer should not expose Node require");
   assert.equal(initial.preloadApi, true, "dashboard should use the isolated preload API");
+  assert.ok(initial.yAxisTicks.length >= 4 && initial.yAxisTicks.length <= 6, "trend chart should expose readable Y-axis ticks");
+  assert.equal(initial.yAxisTicks[0], 0, "trend chart Y-axis should start at zero");
+  assert.equal(initial.yAxisTicks.at(-1), initial.yAxisMax, "trend chart top tick should match its scale maximum");
+  assert.ok(["token", "ms", "percent"].includes(initial.yAxisUnit), "trend chart should expose its Y-axis unit");
+  assert.ok(initial.xAxisLabels.length >= 2, "trend chart should keep responsive X-axis labels visible");
   const refreshCallsBefore = ipcCalls.filter((x) => x.channel === "dashboard:refreshLight").length;
   await evalIn(win, async () => {
     await window.codeartsApi.invoke("dashboard:e2eSetRefreshDelay", 320);
@@ -686,14 +698,19 @@ async function main() {
     window.__e2eSessionFirstRow = rows[0] || null;
     window.__e2eSessionSecondRow = rows[1] || null;
     window.__e2eSessionSecondKey = rows[1]?.dataset?.sessionSelect || "";
-    window.__e2eSessionPerfStart = (window.__dashboardPerf || []).length;
+    window.__e2eSessionPerfStartedAt = performance.now();
     return { rows: rows.length, secondKey: window.__e2eSessionSecondKey };
   });
   assert.ok(sessionLocalInitial.rows >= 2, "session local render test needs at least two rows");
   assert.ok(sessionLocalInitial.secondKey, "second session row should expose a stable key");
-  await click(win, ".session-scroll tbody tr.session-row:nth-child(2) td:nth-child(5)");
-  await waitFor(win, () => document.querySelector(".session-scroll tbody tr.session-row:nth-child(2)")?.classList.contains("selected")
-    && (window.__dashboardPerf || []).slice(window.__e2eSessionPerfStart || 0).some((entry) => entry?.label === "sessions:inspector-patch"));
+  await evalIn(win, (key) => {
+    const row = [...document.querySelectorAll(".session-scroll tbody tr.session-row")].find((item) => item.dataset.sessionSelect === key);
+    const target = row?.querySelector("td:nth-child(5)") || row;
+    if (!target) throw new Error(`missing session row ${key}`);
+    target.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, view: window }));
+  }, sessionLocalInitial.secondKey);
+  await waitFor(win, () => document.querySelector(".session-scroll tbody tr.session-row.selected")?.dataset?.sessionSelect === window.__e2eSessionSecondKey
+    && (window.__dashboardPerf || []).some((entry) => entry?.label === "sessions:inspector-patch" && Number(entry.startedAt) >= Number(window.__e2eSessionPerfStartedAt || 0)));
   const sessionSelectPatch = await evalIn(win, () => ({
     tableSlotStable: window.__e2eSessionTableSlot === document.querySelector("#sessionTableSlot"),
     tbodyStable: window.__e2eSessionTbody === document.querySelector(".session-scroll tbody"),
@@ -701,7 +718,7 @@ async function main() {
     firstRowStable: window.__e2eSessionFirstRow === document.querySelector(".session-scroll tbody tr.session-row:nth-child(1)"),
     secondRowStable: window.__e2eSessionSecondRow === document.querySelector(".session-scroll tbody tr.session-row:nth-child(2)"),
     selectedKey: localStorage.getItem("selectedSessionId"),
-    perfLabels: (window.__dashboardPerf || []).slice(window.__e2eSessionPerfStart || 0).map((entry) => entry?.label),
+    perfLabels: (window.__dashboardPerf || []).filter((entry) => Number(entry?.startedAt) >= Number(window.__e2eSessionPerfStartedAt || 0)).map((entry) => entry?.label),
   }));
   assert.equal(sessionSelectPatch.tableSlotStable, true, "session selection should not rebuild table slot");
   assert.equal(sessionSelectPatch.tbodyStable, true, "session selection should not rebuild tbody");
@@ -712,12 +729,17 @@ async function main() {
   assert.ok(sessionSelectPatch.perfLabels.includes("sessions:inspector-patch"), "session selection should record inspector local patch perf");
   await evalIn(win, () => {
     window.__e2eSessionPinnedRow = document.querySelector(".session-scroll tbody tr.session-row.selected");
-    window.__e2eSessionPinPerfStart = (window.__dashboardPerf || []).length;
+    window.__e2eSessionPinPerfStartedAt = performance.now();
     return true;
   });
-  await click(win, ".session-scroll tbody tr.session-row.selected [data-session-pin]");
+  await evalIn(win, (key) => {
+    const row = [...document.querySelectorAll(".session-scroll tbody tr.session-row")].find((item) => item.dataset.sessionSelect === key);
+    const target = row?.querySelector("[data-session-pin]");
+    if (!target) throw new Error(`missing pin action ${key}`);
+    target.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, view: window }));
+  }, sessionLocalInitial.secondKey);
   await waitFor(win, () => document.querySelector(".session-scroll tbody tr.session-row.selected")?.classList.contains("pinned")
-    && (window.__dashboardPerf || []).slice(window.__e2eSessionPinPerfStart || 0).some((entry) => entry?.label === "sessions:local-mutation-patch"));
+    && (window.__dashboardPerf || []).some((entry) => entry?.label === "sessions:local-mutation-patch" && Number(entry.startedAt) >= Number(window.__e2eSessionPinPerfStartedAt || 0)));
   const sessionPinPatch = await evalIn(win, () => ({
     tableSlotStable: window.__e2eSessionTableSlot === document.querySelector("#sessionTableSlot"),
     tbodyStable: window.__e2eSessionTbody === document.querySelector(".session-scroll tbody"),
@@ -725,7 +747,7 @@ async function main() {
     rowStable: window.__e2eSessionPinnedRow === document.querySelector(".session-scroll tbody tr.session-row.selected"),
     rowPinned: document.querySelector(".session-scroll tbody tr.session-row.selected")?.classList.contains("pinned") || false,
     inspectorPinned: Boolean(document.querySelector("#sessionInspectorSlot .pinned-state")),
-    perfLabels: (window.__dashboardPerf || []).slice(window.__e2eSessionPinPerfStart || 0).map((entry) => entry?.label),
+    perfLabels: (window.__dashboardPerf || []).filter((entry) => Number(entry?.startedAt) >= Number(window.__e2eSessionPinPerfStartedAt || 0)).map((entry) => entry?.label),
   }));
   assert.equal(sessionPinPatch.tableSlotStable, true, "session pin should not rebuild table slot");
   assert.equal(sessionPinPatch.tbodyStable, true, "session pin should not rebuild tbody");

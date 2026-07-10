@@ -220,6 +220,7 @@ dashboard-date-range.js
 dashboard/analytics/analytics-core.js
 dashboard/analytics/analytics-agent-idle.js
 dashboard-analytics.js
+core/chart-axis.js
 dashboard/chart/chart-series.js
 dashboard/chart/chart-legend.js
 dashboard/chart/chart-canvas.js
