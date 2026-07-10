@@ -32,14 +32,10 @@ const runtimeFiles = [
   'providers/codeartsLocal.js',
   'providers/codeartsOfficial.js',
   'providers/codeartsDesktop.js',
-  'providers/codearts/aggregation-sql.js',
-  'providers/codearts/aggregation.js',
-  'providers/codearts/collect.js',
-  'providers/codearts/logs.js',
-  'providers/codearts/pagination.js',
-  'providers/codearts/session-actions.js',
-  'providers/codearts/sources.js',
-  'providers/codearts/sqlite.js',
+  ...fs.readdirSync(path.join(root, 'src', 'providers', 'codearts'), { withFileTypes: true })
+    .filter((entry) => entry.isFile() && entry.name.endsWith('.js'))
+    .map((entry) => `providers/codearts/${entry.name}`)
+    .sort(),
 ];
 for (const file of runtimeFiles) if (!extPkg.files.includes(file)) extPkg.files.push(file);
 fs.writeFileSync(extPkgPath, asciiJson(extPkg), 'utf8');

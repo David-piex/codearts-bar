@@ -365,12 +365,7 @@
     .compact-layout .topbar {
       margin-bottom:12px;
     }
-    .compact-layout .topbar .back {
-      width:34px;
-      height:34px;
-      border-radius:12px;
-    }
-    .compact-layout .topbar .logo {
+.compact-layout .topbar .logo {
       width:28px;
       height:28px;
     }
@@ -550,7 +545,7 @@
       content-visibility:auto;
       contain-intrinsic-size:720px;
     }
-    :where(.back, .logo, .tabs, .filters, .source-switch, .select, .range, .source-card, .summary-card, .chart-card, .table-card, .mini, .period-card, .footer, .rename-sheet, .agent-rhythm-card, .analytics-advanced-shell) {
+    :where(.logo, .tabs, .filters, .source-switch, .select, .range, .source-card, .summary-card, .chart-card, .table-card, .mini, .period-card, .footer, .rename-sheet, .agent-rhythm-card, .analytics-advanced-shell) {
       -webkit-backdrop-filter:blur(14px) saturate(1.18) !important;
       backdrop-filter:blur(14px) saturate(1.18) !important;
     }

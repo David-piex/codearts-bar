@@ -80,12 +80,12 @@
       letter-spacing:-.028em;
     }
     @supports not ((-webkit-backdrop-filter:blur(1px)) or (backdrop-filter:blur(1px))) {
-      :where(.back, .logo, .tabs, .filters, .source-switch, .select, .range, .source-card, .summary-card, .chart-card, .table-card, .mini, .period-card, .footer, .rename-sheet, .session-filter-context, .session-smart-views .session-rail-head, .smart-view-list button, .session-project-rail .session-rail-head, .session-project-list button, .session-cache-opportunities .session-rail-head, .cache-opportunity-list button) {
+      :where(.logo, .tabs, .filters, .source-switch, .select, .range, .source-card, .summary-card, .chart-card, .table-card, .mini, .period-card, .footer, .rename-sheet, .session-filter-context, .session-smart-views .session-rail-head, .smart-view-list button, .session-project-rail .session-rail-head, .session-project-list button, .session-cache-opportunities .session-rail-head, .cache-opportunity-list button) {
         background:#fff;
       }
     }
     @media (prefers-reduced-transparency: reduce) {
-      :where(.back, .logo, .tabs, .filters, .source-switch, .select, .range, .source-card, .summary-card, .chart-card, .table-card, .mini, .period-card, .footer, .rename-sheet, .session-filter-context, .session-smart-views .session-rail-head, .smart-view-list button, .session-project-rail .session-rail-head, .session-project-list button, .session-cache-opportunities .session-rail-head, .cache-opportunity-list button) {
+      :where(.logo, .tabs, .filters, .source-switch, .select, .range, .source-card, .summary-card, .chart-card, .table-card, .mini, .period-card, .footer, .rename-sheet, .session-filter-context, .session-smart-views .session-rail-head, .smart-view-list button, .session-project-rail .session-rail-head, .session-project-list button, .session-cache-opportunities .session-rail-head, .cache-opportunity-list button) {
         -webkit-backdrop-filter:none !important;
         backdrop-filter:none !important;
         background:#fff !important;

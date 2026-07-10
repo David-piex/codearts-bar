@@ -32,6 +32,7 @@ function nodeSupportsNativeSqlite() {
 }
 
 runNode(path.join(root, 'src', 'build-dashboard-renderer.js'), []);
+runNode(path.join(root, 'src', 'build-dashboard-css.js'), []);
 runNode(path.join(root, 'src', 'build-cli-resources.js'), []);
 runNode(path.join(root, 'src', 'prepare-extension.js'), []);
 runNode(path.join(root, 'src', 'cli.js'), ['self-test']);

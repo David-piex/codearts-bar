@@ -272,7 +272,7 @@ async function changeValue(win, selector, value) {
 }
 
 async function setPageTotalOverride(win, payload) {
-  return evalIn(win, (next) => require("electron").ipcRenderer.invoke("dashboard:e2eSetPageTotalOverride", next), payload);
+  return evalIn(win, (next) => window.codeartsApi.invoke("dashboard:e2eSetPageTotalOverride", next), payload);
 }
 
 async function main() {
@@ -287,8 +287,9 @@ async function main() {
     autoHideMenuBar: true,
     backgroundColor: "#f7f8fb",
     webPreferences: {
-      nodeIntegration: true,
-      contextIsolation: false,
+      nodeIntegration: false,
+      contextIsolation: true,
+      sandbox: true,
       backgroundThrottling: false,
       preload: path.join(__dirname, "electron-dashboard-preload.js"),
       partition: `e2e-${Date.now()}`,
@@ -303,11 +304,17 @@ async function main() {
     return {
       title: document.querySelector(".page-title")?.textContent || "",
       hasTable: Boolean(document.querySelector(".table-card")),
+      hasBackControl: Boolean(document.querySelector(".back, [data-back]")),
+      nodeRequireType: typeof window.require,
+      preloadApi: Boolean(window.codeartsApi && typeof window.codeartsApi.invoke === "function"),
       canvasSize: document.querySelector("#usageChart")?.dataset?.sizeKey || "",
     };
   });
   assert.match(initial.title, /使用分析/);
   assert.equal(initial.hasTable, true);
+  assert.equal(initial.hasBackControl, false, "dashboard should not show a non-functional back control");
+  assert.equal(initial.nodeRequireType, "undefined", "dashboard renderer should not expose Node require");
+  assert.equal(initial.preloadApi, true, "dashboard should use the isolated preload API");
 
   win.setSize(1040, 720, false);
   await delay(120);

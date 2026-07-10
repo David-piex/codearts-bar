@@ -2,7 +2,7 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
-const { BrowserWindow } = require('electron');
+const { BrowserWindow, shell } = require('electron');
 
 function writePackageSmokeResult(packageSmoke, payload = {}) {
   if (!packageSmoke?.resultPath) return false;
@@ -26,14 +26,38 @@ function writePackageSmokeResult(packageSmoke, payload = {}) {
   }
 }
 
-function createSettingsWindow({ appDir, onClosed }) {
+
+function secureWebContents(win, appendLog, scope) {
+  if (!win || win.isDestroyed()) return;
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    if (/^https?:/i.test(String(url || ''))) shell.openExternal(url).catch(() => {});
+    appendLog?.('warn', scope, 'blocked-window-open', { url });
+    return { action: 'deny' };
+  });
+  win.webContents.on('will-navigate', (event, url) => {
+    const current = win.webContents.getURL();
+    if (url === current) return;
+    event.preventDefault();
+    if (/^https?:/i.test(String(url || ''))) shell.openExternal(url).catch(() => {});
+    appendLog?.('warn', scope, 'blocked-navigation', { url });
+  });
+}
+
+function createSettingsWindow({ appDir, appendLog, onClosed }) {
   const win = new BrowserWindow({
     width: 560,
     height: 560,
     title: '码道 Bar 设置',
     icon: path.join(appDir, '..', 'assets', 'codearts-logo.ico'),
-    webPreferences: { nodeIntegration: true, contextIsolation: false },
+    webPreferences: {
+      preload: path.join(appDir, 'settings-preload.js'),
+      nodeIntegration: false,
+      contextIsolation: true,
+      sandbox: true,
+      webSecurity: true,
+    },
   });
+  secureWebContents(win, appendLog, 'settings');
   win.loadFile(path.join(appDir, 'settings.html'));
   win.on('closed', () => { if (typeof onClosed === 'function') onClosed(); });
   return win;
@@ -56,9 +80,16 @@ function createDashboardWindow({ appDir, isQuitting, hideToTray, appendLog, reco
     backgroundColor: process.platform === 'darwin' ? '#00000000' : '#f7f8fb',
     ...nativeSurface,
     icon: path.join(appDir, '..', 'assets', 'codearts-logo.ico'),
-    webPreferences: { nodeIntegration: true, contextIsolation: false },
+    webPreferences: {
+      preload: path.join(appDir, 'dashboard-preload.js'),
+      nodeIntegration: false,
+      contextIsolation: true,
+      sandbox: true,
+      webSecurity: true,
+    },
   });
   win.setMenuBarVisibility(false);
+  secureWebContents(win, appendLog, 'dashboard');
   win.once('ready-to-show', () => {
     if (win && !win.isDestroyed()) {
       try { win.setSkipTaskbar(false); } catch {}

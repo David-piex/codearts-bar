@@ -1,4 +1,5 @@
-const { ipcRenderer } = require('electron');
+const ipcRenderer = window.codeartsApi;
+if(!ipcRenderer || typeof ipcRenderer.invoke !== 'function') throw new Error('Settings preload API unavailable');
 
 const ids = ['dbPath','dailyLimit','windowHours','refreshMs','showPerformance','showTools','notifyDanger'];
 function el(id) { return document.getElementById(id); }

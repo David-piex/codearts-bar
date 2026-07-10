@@ -1,4 +1,5 @@
-const { ipcRenderer } = require('electron');
+const ipcRenderer = window.codeartsApi;
+if(!ipcRenderer || typeof ipcRenderer.invoke !== 'function') throw new Error('Dashboard preload API unavailable');
 
 function serializeRendererError(error){
   if(error instanceof Error) return { name: error.name || 'Error', message: error.message || String(error), stack: error.stack || '' };

@@ -100,7 +100,7 @@
     }
     .content { padding:26px 32px 24px; }
     .topbar { margin-bottom:16px; }
-    .back, .logo, .tabs, .filters, .source-switch, .select, .range, .source-card, .summary-card, .chart-card, .table-card, .mini, .period-card, .footer, .rename-sheet {
+    .logo, .tabs, .filters, .source-switch, .select, .range, .source-card, .summary-card, .chart-card, .table-card, .mini, .period-card, .footer, .rename-sheet {
       -webkit-backdrop-filter: blur(28px) saturate(1.65) contrast(1.02);
       backdrop-filter: blur(28px) saturate(1.65) contrast(1.02);
     }

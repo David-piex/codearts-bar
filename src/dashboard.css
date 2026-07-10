@@ -50,38 +50,7 @@
     .content::-webkit-scrollbar { width:10px; }
     .content::-webkit-scrollbar-thumb { background:#d7dbe4; border-radius:999px; border:3px solid transparent; background-clip:padding-box; }
     .topbar { display:flex; align-items:center; gap:14px; margin-bottom:18px; }
-    .back { width:38px; height:38px; border-radius:13px; border:1px solid var(--line); background:#fff; display:grid; place-items:center; color:#6b7280; font-size:21px; box-shadow:var(--soft); }
-    .logo { width:29px; height:29px; border-radius:9px; overflow:hidden; background:#fff; box-shadow:0 4px 14px rgba(0,0,0,.08); flex:0 0 auto; }
-    .logo img { width:100%; height:100%; object-fit:cover; display:block; }
-    .page-title { font-size:27px; font-weight:850; letter-spacing:-.7px; margin:0; line-height:1; }
-    .page-subtitle { margin-top:6px; color:#667085; font-size:13px; }
-    .tabs { display:grid; grid-template-columns:repeat(5,1fr); gap:0; border:1px solid var(--line); border-radius:15px; background:rgba(255,255,255,.92); padding:5px; margin-bottom:26px; box-shadow:var(--soft); }
-    .tab { border:0; background:transparent; border-radius:11px; color:#a0a4ad; font-size:15px; height:38px; font-weight:800; }
-    .tab.active { background:var(--blue); color:#fff; box-shadow:0 8px 18px rgba(22,135,245,.23); }
-    .page-head { display:flex; align-items:flex-end; justify-content:space-between; gap:20px; margin-bottom:18px; }
-    .head-title h2 { margin:0; font-size:26px; font-weight:880; letter-spacing:-.7px; }
-    .head-title p { margin:7px 0 0; color:#5e6a7d; }
-    .filters { display:flex; flex-wrap:wrap; gap:10px; align-items:center; justify-content:flex-end; }
-    .icon-group, .select, .range { display:flex; align-items:center; gap:6px; min-height:40px; padding:0 10px; border:1px solid var(--line); border-radius:13px; background:rgba(255,255,255,.95); box-shadow:var(--soft); }
-    .select select { border:0; outline:0; background:transparent; color:#20242c; min-width:106px; height:30px; }
-    .select-refresh select { min-width:66px; }
-    .refresh-glyph { color:#4b5563; font-weight:900; font-size:16px; }
-    .icon-chip, .range button, .series-chip { border:0; background:transparent; color:#6b7280; border-radius:10px; min-height:30px; padding:0 10px; font-weight:800; display:inline-flex; align-items:center; gap:7px; }
-    .icon-chip.active, .range button.active, .series-chip.active { background:var(--blue); color:#fff; box-shadow:0 7px 16px rgba(22,135,245,.22); }
-    .provider-dot { width:16px; height:16px; border-radius:50%; display:inline-block; box-shadow:inset 0 0 0 1px rgba(255,255,255,.5); }
-    .source-icon {
-      width:18px;
-      height:18px;
-      border-radius:7px;
-      display:inline-grid;
-      place-items:center;
-      color:#fff;
-      font-size:11px;
-      font-weight:950;
-      line-height:1;
-      box-shadow:inset 0 0 0 1px rgba(255,255,255,.35);
-    }
-    .source-overview { margin-bottom:18px; }
+.source-overview { margin-bottom:18px; }
     .section-title { color:#6b7280; font-weight:850; margin:0 0 10px 2px; }
     .source-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; }
     .source-card { border:1px solid var(--line); background:rgba(255,255,255,.94); border-radius:15px; box-shadow:var(--soft); padding:14px 16px; text-align:left; min-width:0; display:grid; grid-template-columns:auto 1fr; column-gap:11px; row-gap:4px; align-items:center; color:var(--text); transition:transform .14s ease, border-color .14s ease, box-shadow .14s ease; }
@@ -183,7 +152,7 @@
       background:radial-gradient(circle at 30% 40%, rgba(24,185,105,.10), transparent 62%);
     }
     .content { position:relative; max-width:1560px; width:100%; margin:0 auto; }
-    .back, .logo, .tabs, .icon-group, .select, .range, .source-card, .summary-card, .chart-card, .table-card, .footer {
+    .logo, .tabs, .icon-group, .select, .range, .source-card, .summary-card, .chart-card, .table-card, .footer {
       backdrop-filter:blur(22px) saturate(1.4);
       -webkit-backdrop-filter:blur(22px) saturate(1.4);
     }

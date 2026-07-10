@@ -1,4 +1,4 @@
-﻿"use strict";
+"use strict";
 
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
@@ -107,7 +107,7 @@ async function main() {
   const context = {
     console,
     require(name){ if(name === "electron") return { ipcRenderer }; if(name === "node:fs") return require("node:fs"); if(name === "node:path") return require("node:path"); throw new Error(`Unexpected require: ${name}`); },
-    window: { matchMedia: () => ({ matches: false }), devicePixelRatio: 1, innerWidth: 1280, innerHeight: 860, addEventListener(){} },
+    window: { codeartsApi: ipcRenderer, matchMedia: () => ({ matches: false }), devicePixelRatio: 1, innerWidth: 1280, innerHeight: 860, addEventListener(){} },
     document,
     localStorage: storage,
     navigator: { clipboard: { writeText: async (text) => { clipboardWrites.push(String(text)); } } },

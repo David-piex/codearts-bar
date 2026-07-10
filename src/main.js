@@ -113,6 +113,7 @@ function cleanupRuntime() {
     refreshTimer = null;
   }
   dbWatchService.cleanup();
+  Promise.resolve(localProvider.closeSqlJsWorker?.()).catch((error) => appendLog('warn', 'cleanup', 'sql.js worker close failed', { message: error.message }));
   if (tray) {
     try { tray.destroy(); } catch {}
     tray = null;
@@ -275,7 +276,7 @@ function scheduleDbWatch() {
 }
 function openSettingsWindow() {
   if (settingsWindow && !settingsWindow.isDestroyed()) { settingsWindow.focus(); return; }
-  settingsWindow = mainWindow.createSettingsWindow({ appDir: __dirname, onClosed: () => { settingsWindow = null; } });
+  settingsWindow = mainWindow.createSettingsWindow({ appDir: __dirname, appendLog, onClosed: () => { settingsWindow = null; } });
 }
 function openDashboardWindow() {
   if (dashboardWindow && !dashboardWindow.isDestroyed()) { restoreDashboardWindow(); return; }
