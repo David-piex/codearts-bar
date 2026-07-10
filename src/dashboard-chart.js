@@ -47,6 +47,7 @@ function requestTableData(rows, s){
 }
 function tablePaginationHtml(kind, rendered, total, page, pageSize, loading = false){
   const safeTotal = Math.max(0, Number(total || 0));
+  if(safeTotal <= 0) return '';
   const safeRendered = Math.max(0, Number(rendered || 0));
   const totalPages = Math.max(1, Math.ceil(safeTotal / pageSize));
   const safePage = Math.max(0, Math.min(totalPages - 1, Number(page || 0)));
@@ -56,13 +57,14 @@ function tablePaginationHtml(kind, rendered, total, page, pageSize, loading = fa
   const prefix = isSessions ? 'session' : 'request';
   const label = isSessions ? (TXT.sessionPagination || '会话分页') : (TXT.requestPagination || '请求分页');
   const sizeOptions = TABLE_PAGE_SIZE_OPTIONS.map((size) => `<option value="${size}" ${Number(pageSize) === size ? 'selected' : ''}>${size}</option>`).join('');
-  return `<div class="table-limit-note table-page-note ${prefix}-page-note" data-table-limit="${kind}" data-rendered="${safeRendered}" data-total="${safeTotal}" data-page="${safePage}" data-page-size="${pageSize}"><span>${label}：${n(start)}-${n(end)} / ${n(safeTotal)} · ${TXT.page || '第'} ${n(safePage + 1)} / ${n(totalPages)}${loading ? ' · 加载中...' : ''}</span><div class="table-page-actions"><label class="table-page-size">每页 <select data-${prefix}-page-size>${sizeOptions}</select> 行</label><button data-${prefix}-page="prev" ${safePage <= 0 ? 'disabled' : ''}>${TXT.prevPage || '上一页'}</button><label>跳到 <input data-${prefix}-page-input value="${safePage + 1}" inputmode="numeric" pattern="[0-9]*" /> 页</label><button data-${prefix}-page-go>跳转</button><button data-${prefix}-page="next" ${safePage >= totalPages - 1 ? 'disabled' : ''}>${TXT.nextPage || '下一页'}</button></div></div>`;
+  const feedback = pagedTableFeedback?.[kind] || '';
+  return `<div class="table-limit-note table-page-note ${prefix}-page-note ${feedback ? 'is-page-adjusted' : ''}" data-table-limit="${kind}" data-rendered="${safeRendered}" data-total="${safeTotal}" data-page="${safePage}" data-page-size="${pageSize}" ${feedback ? `data-page-feedback="${esc(feedback)}"` : ''}><span>${label}：${n(start)}-${n(end)} / ${n(safeTotal)} · ${TXT.page || '第'} ${n(safePage + 1)} / ${n(totalPages)}${loading ? ' · 加载中...' : ''}${feedback ? ` · ${esc(feedback)}` : ''}</span><div class="table-page-actions"><label class="table-page-size">每页 <select data-${prefix}-page-size>${sizeOptions}</select> 行</label><button data-${prefix}-page="prev" ${safePage <= 0 ? 'disabled' : ''}>${TXT.prevPage || '上一页'}</button><label>跳到 <input data-${prefix}-page-input value="${safePage + 1}" inputmode="numeric" pattern="[0-9]*" ${feedback ? `class="is-page-adjusted" aria-invalid="true" title="${esc(feedback)}"` : 'aria-invalid="false"'} /> 页</label><button data-${prefix}-page-go>跳转</button><button data-${prefix}-page="next" ${safePage >= totalPages - 1 ? 'disabled' : ''}>${TXT.nextPage || '下一页'}</button></div></div>`;
 }
 function tableRows(rows, s){
   const tableStartedAt = perfNow();
   const data = requestTableData(rows, s);
   const list = data.list;
-  const body = data.loading ? `<tr><td colspan="15" class="empty-cell">正在加载第 ${n(Number(requestTablePage || 0) + 1)} 页...</td></tr>` : (list.length ? list.map(requestRowHtml).join('') : emptyRow(15));
+  const body = data.loading ? `<tr><td colspan="15" class="empty-cell table-loading-cell">正在加载第 ${n(Number(requestTablePage || 0) + 1)} 页...</td></tr>` : (list.length ? list.map(requestRowHtml).join('') : emptyRow(15));
   const pager = tablePaginationHtml('requests', list.length, data.total, requestTablePage, REQUEST_PAGE_SIZE, data.loading);
   const html = `<div class="request-manager request-manager-flat"><div class="request-main request-main-full"><div class="table-scroll"><table><thead><tr><th>${TXT.time}</th><th>${TXT.source}</th><th>${TXT.provider}</th><th>${TXT.model}</th><th>${TXT.input}</th><th>${TXT.output}</th><th>${TXT.cacheWrite}</th><th>${TXT.cacheRead}</th><th>${TXT.cacheHitRate}</th><th>${TXT.total}</th><th>${TXT.ttft}</th><th>${TXT.wait}</th><th>${TXT.speed}</th><th>${TXT.status}</th><th>${TXT.session}</th></tr></thead><tbody>${body}</tbody></table></div>${pager}</div></div>`;
   markPerfStage('tableRenderMs', perfNow() - tableStartedAt);

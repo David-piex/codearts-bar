@@ -1,0 +1,24 @@
+/* 1.20.2 semantic analytics layer: quieter dashboard cards and source overview */
+:where(.usage-total-board, .summary-card, .source-card, .idle-summary-card, .cache-insights, .cache-governance) {
+  border-color: var(--cb-border-soft);
+  border-radius: var(--cb-radius-lg);
+  background: var(--cb-surface-card);
+  box-shadow: var(--cb-shadow-card);
+}
+
+:where(.usage-total-board, .summary-card, .source-card, .idle-summary-card):hover {
+  box-shadow: var(--cb-shadow-card);
+  transform: none;
+}
+
+:where(.usage-total-strip, .usage-detail-stack, .agent-rhythm-lists, .cache-insight-grid) {
+  gap: var(--cb-card-gap);
+}
+
+:where(.usage-total-board .muted, .summary-card .muted, .source-card .muted, .idle-summary-card .muted) {
+  color: var(--cb-muted);
+}
+
+:where(.usage-total-board.cache-hot, .usage-total-board.cache-warm, .usage-total-board.cache-cold) {
+  --cache-panel-accent: var(--cb-accent);
+}

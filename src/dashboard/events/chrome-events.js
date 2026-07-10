@@ -7,6 +7,8 @@ async function handleDashboardChromeClick(e){
     if(settingsButton){ await ipcRenderer.invoke('dashboard:settings'); throw DASHBOARD_EVENT_HANDLED; }
     const copyDiagnostics = e.target.closest('[data-copy-diagnostics]');
     if(copyDiagnostics){ await copyDiagnosticsReport(); throw DASHBOARD_EVENT_HANDLED; }
+    const copyPerfReport = e.target.closest('[data-copy-perf-report]');
+    if(copyPerfReport){ await copyPerformanceReport(); throw DASHBOARD_EVENT_HANDLED; }
     const layoutModeBtn = e.target.closest('[data-layout-mode]');
     if(layoutModeBtn){
       switchLayoutMode(layoutModeBtn.dataset.layoutMode);

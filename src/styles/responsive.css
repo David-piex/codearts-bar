@@ -1,0 +1,28 @@
+/* 1.20.2 semantic responsive layer: predictable compacting without full-page visual churn */
+@media (max-width: 980px) {
+  .content {
+    padding-inline: max(18px, env(safe-area-inset-left)) max(18px, env(safe-area-inset-right));
+  }
+
+  :where(.page-head, .table-toolbar) {
+    align-items: stretch;
+  }
+
+  :where(.filters, .session-primary-filters, .session-advanced-controls) {
+    justify-content: flex-start;
+  }
+}
+
+@media (max-width: 760px) {
+  :where(.page-head, .topbar) {
+    gap: 12px;
+  }
+
+  :where(.icon-group, .select, .range, .source-switch, .workspace-tabs, .table-tabs) {
+    min-height: var(--cb-control-height);
+  }
+
+  :where(.summary-card, .chart-card, .table-card, .source-card, .usage-total-board, .session-simple-shell, .session-inspector) {
+    border-radius: var(--cb-radius-md);
+  }
+}

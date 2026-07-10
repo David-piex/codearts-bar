@@ -181,7 +181,14 @@ function patchSessionRow(key){
   let patched = false;
   document.querySelectorAll('.session-row').forEach((row) => {
     if(row?.dataset?.sessionSelect !== key) return;
-    row.outerHTML = sessionRowHtml(item, false);
+    const html = sessionRowHtml(item, false);
+    if(row.outerHTML === html) return;
+    const tmp = document.createElement('tbody');
+    tmp.innerHTML = html;
+    const next = tmp.querySelector?.('.session-row');
+    if(!next) return;
+    row.className = next.className;
+    row.innerHTML = next.innerHTML;
     patched = true;
   });
   return patched;
@@ -325,15 +332,22 @@ function patchSessionView(s = snapshot || {}, opts = {}){
 }
 function patchSessionAfterLocalMutation(key, opts = {}){
   if(typeof document.querySelectorAll !== 'function') return false;
+  const started = perfNow();
   const state = captureSessionDomState();
   const s = snapshot || {};
   if(opts.table) return patchSessionView(s, { table: true, toolbar: true, inspector: true });
   patchSessionOverview(s);
   patchSessionToolbar(s);
-  patchSessionRow(key);
+  const rowPatched = patchSessionRow(key);
   patchSessionInspector();
   patchSessionBulk();
   patchSessionModal();
   restoreSessionDomState(state);
+  if(typeof recordPatchPerf === 'function'){
+    recordPatchPerf('sessions:local-mutation-patch', started, sessionTableItems?.length || 0, {
+      rowPatched: rowPatched ? 1 : 0,
+      domCommitMs: Math.round(perfNow() - started),
+    });
+  }
   return true;
 }

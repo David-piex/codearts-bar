@@ -76,11 +76,13 @@ npm run stress:dashboard
 
 - `src/dashboard/slots/slot-core.js`: shared slot HTML cache and base patch helpers.
 - `src/dashboard/slots/analytics-slots.js`: analytics summary, filters, chart, table and advanced slot patching.
-- `src/dashboard/slots/data-page-slots.js`: request/session page loading, first-screen limits and incremental append.
+- `src/dashboard/slots/data-page-core.js`: shared pagination UI, page notes, loading state and range payload helpers.
+- `src/dashboard/slots/request-page-slot.js`: request DB page cache, table row patching and incremental request append.
+- `src/dashboard/slots/session-page-slot.js`: session DB page cache, table row patching and chunked session hydration.
 - `src/dashboard/slots/session-slots.js`: session overview, toolbar, table, inspector and modal patching.
 - `src/dashboard/slots/perf-panel-slot.js`: developer performance panel.
 
-The largest slot file is reduced from about 44KB to about 16KB, so future rendering work can stay localized instead of growing one large renderer file again.
+The old `data-page-slots.js` monolith is now a small compatibility note. Request and session pagination can evolve independently without growing one large renderer slot file again.
 
 ## Event Module Split
 
@@ -95,9 +97,31 @@ The largest slot file is reduced from about 44KB to about 16KB, so future render
 
 The dispatcher keeps one click listener and executes handlers in a stable order, so split modules do not compete for the same DOM event.
 
+## Aggregation Module Split
+
+`src/providers/codearts/aggregation.js` is now focused on public aggregation entrypoints. Shared runtime and DB worker logic is split out:
+
+- `src/providers/codearts/aggregation-runtime.js`: aggregate cache timing, 300ms slow aggregate logging, source selection, trend range normalization, and merge helpers.
+- `src/providers/codearts/aggregation-workers.js`: native/sql.js DB adapter loops plus fallback workers for summary, model stats and session summary.
+- `src/providers/codearts/aggregation-sql-expressions.js`: token JSON path expressions, assistant token CTEs, usage select columns and row-to-usage helpers.
+- `src/providers/codearts/aggregation.js`: summary, trend, source stats, model stats, session summary, dashboard bundle and database health entrypoints.
+- `src/providers/codearts/aggregation-sql.js`: SQL query functions for summary, trend, source stats, model stats, session summary, aggregate bundle and token rows.
+
+This keeps the hot-path behavior unchanged while making future cold-path optimization easier to test. Full aggregation stress currently covers 10k / 50k / 100k messages for both `node:sqlite` and `sql.js`, and slow cold queries continue to print `[codearts-bar] slow aggregate ...` logs above the 300ms threshold.
+
+## Usage Rollup Module Split
+
+`src/providers/codearts/usage-rollup.js` is now focused on sidecar cache reads/writes, build scheduling and diagnostics stats. Pure row math moved out:
+
+- `src/providers/codearts/usage-rollup-calc.js`: token/session row normalization, compact hourly buckets, range filtering, trend/model/session rollup summaries, and dashboard bundle parts.
+- `src/providers/codearts/usage-rollup.js`: read/write compact/token/session sidecars, schedule background builds, expose hit/build stats and preserve public exports.
+
+The split keeps the 100k hot dashboard bundle path in the tens of milliseconds while making future cold-path rollup work easier to isolate.
+
 ## Next Optimization
 
-1. Add an optional "load more" request timeline inside session details while keeping session management simple by default.
-2. Continue polishing resize / maximize compositor cost with real Electron probes.
-3. Add optional native-probe baselines for packaged builds and large real-world databases.
-4. Prepare packaged-build smoke checks for diagnostics, tray menu and installer update flow.
+1. Productize diagnostics for sqlite adapter, sidecar state, DB health and missing resources.
+2. Continue optimizing 50k / 100k cold aggregation and first sidecar build.
+3. Continue polishing resize / maximize compositor cost with real Electron probes.
+4. Add optional native-probe baselines for packaged builds and large real-world databases.
+5. Prepare packaged-build smoke checks for diagnostics, tray menu and installer update flow.

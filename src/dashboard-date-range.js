@@ -55,10 +55,20 @@ function ensureDateRangeDraft(){
   if(!dateRangeDraftEnd) dateRangeDraftEnd = r.end;
   if(!dateRangeMonth) dateRangeMonth = monthStart(dateRangeFocus === 'end' ? dateRangeDraftEnd : dateRangeDraftStart);
 }
+function dateRangeDraftValidation(){
+  ensureDateRangeDraft();
+  const start = Number(dateRangeDraftStart || 0);
+  const end = Number(dateRangeDraftEnd || 0);
+  if(!Number.isFinite(start) || !Number.isFinite(end) || start <= 0 || end <= 0) return TXT.dateRangeInvalid || 'Invalid date range';
+  if(end <= start) return TXT.dateRangeOrderInvalid || 'End time must be later than start time';
+  if(end - start > 366 * 86400000) return TXT.dateRangeTooLong || 'Date range is too long';
+  return '';
+}
 function openDateRangePopover(){
   const r = normalizeCustomDateRange(snapshot || {});
   dateRangeDraftStart = r.start;
   dateRangeDraftEnd = r.end;
+  dateRangeError = '';
   dateRangeFocus = 'start';
   dateRangeMonth = monthStart(r.start);
   dateRangeOpen = true;
@@ -73,6 +83,7 @@ function setDateRangeQuick(key){
   }
   dateRangeDraftStart = start;
   dateRangeDraftEnd = end;
+  dateRangeError = '';
   dateRangeMonth = monthStart(start);
 }
 function dateRangeSameMinute(a, b){ return Math.abs(Number(a || 0) - Number(b || 0)) < 60000; }
@@ -93,6 +104,7 @@ function updateDateRangeDraft(which, part, value){
   const timeValue = part === 'time' ? value : timeInputValue(base);
   const next = composeDateTime(dateValue, timeValue, base);
   if(isStart) dateRangeDraftStart = next; else dateRangeDraftEnd = next;
+  dateRangeError = dateRangeDraftValidation();
   dateRangeMonth = monthStart(isStart ? dateRangeDraftStart : dateRangeDraftEnd);
 }
 function chooseCalendarDay(dayMs){
@@ -109,6 +121,7 @@ function chooseCalendarDay(dayMs){
     dateRangeFocus = 'start';
   }
   if(dateRangeDraftStart > dateRangeDraftEnd) [dateRangeDraftStart, dateRangeDraftEnd] = [dateRangeDraftEnd, dateRangeDraftStart];
+  dateRangeError = '';
 }
 function dateRangeCalendarHtml(){
   ensureDateRangeDraft();
@@ -136,8 +149,9 @@ function dateRangeFieldHtml(which, label, value){
 }
 function dateRangePopoverHtml(){
   ensureDateRangeDraft();
+  const error = dateRangeError || dateRangeDraftValidation();
   const quick = [['today', TXT.today], ['1d', '1d'], ['7d', '7d'], ['14d', '14d'], ['30d', '30d']];
-  return `<div class="date-range-popover" role="dialog" aria-label="${TXT.dateRange}"><div class="date-range-quick">${quick.map(([k, label]) => `<button type="button" data-date-range-quick="${k}" class="${dateRangeQuickActive(k) ? 'active' : ''}">${label}</button>`).join('')}</div><div class="date-range-body"><div class="date-range-editor"><span class="date-range-support">${TXT.supportDateTime}</span>${dateRangeFieldHtml('start', TXT.startTime, dateRangeDraftStart)}${dateRangeFieldHtml('end', TXT.endTime, dateRangeDraftEnd)}<div class="date-range-actions"><button type="button" class="ghost" data-date-range-cancel="1">${TXT.cancel}</button><button type="button" class="primary" data-date-range-confirm="1">${TXT.confirm}</button></div></div>${dateRangeCalendarHtml()}</div></div>`;
+  return `<div class="date-range-popover" role="dialog" aria-label="${TXT.dateRange}"><div class="date-range-quick">${quick.map(([k, label]) => `<button type="button" data-date-range-quick="${k}" class="${dateRangeQuickActive(k) ? 'active' : ''}">${label}</button>`).join('')}</div><div class="date-range-body"><div class="date-range-editor"><span class="date-range-support">${TXT.supportDateTime}</span>${dateRangeFieldHtml('start', TXT.startTime, dateRangeDraftStart)}${dateRangeFieldHtml('end', TXT.endTime, dateRangeDraftEnd)}<p class="date-range-error" data-date-range-error ${error ? '' : 'hidden'}>${esc(error)}</p><div class="date-range-actions"><button type="button" class="ghost" data-date-range-cancel="1">${TXT.cancel}</button><button type="button" class="primary" data-date-range-confirm="1" ${error ? 'disabled' : ''}>${TXT.confirm}</button></div></div>${dateRangeCalendarHtml()}</div></div>`;
 }
 function rangeHtml(){
   rangeFilter = normalizeRangeFilter(rangeFilter);

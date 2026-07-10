@@ -5,12 +5,20 @@ const os = require('node:os');
 const path = require('node:path');
 
 function configDir() {
+  if (process.env.CODEARTS_BAR_CONFIG_DIR) return path.resolve(process.env.CODEARTS_BAR_CONFIG_DIR);
   const base = process.env.APPDATA || path.join(os.homedir(), '.config');
   return path.join(base, 'CodeArtsBar');
 }
 function settingsPath() { return path.join(configDir(), 'settings.json'); }
 function cachePath() { return path.join(configDir(), 'snapshot-cache.json'); }
 function officialStatsCachePath() { return path.join(configDir(), 'official-stats-cache.json'); }
+function rollupCacheDir() { return path.join(configDir(), 'rollup-cache'); }
+function rollupCachePath(dbPath, kind = 'usage-rollup') {
+  const crypto = require('node:crypto');
+  const safeKind = String(kind || 'usage-rollup').replace(/[^a-z0-9._-]+/gi, '-').slice(0, 64) || 'usage-rollup';
+  const hash = crypto.createHash('sha256').update(path.resolve(String(dbPath || ''))).digest('hex').slice(0, 24);
+  return path.join(rollupCacheDir(), `${hash}.${safeKind}.json`);
+}
 
 const defaults = {
   dbPath: path.join(os.homedir(), '.codeartsdoer', 'codearts-data', 'opencode.db'),
@@ -70,4 +78,4 @@ function readCache() {
   return data;
 }
 
-module.exports = { defaults, configDir, settingsPath, cachePath, officialStatsCachePath, loadSettings, saveSettings, writeCache, readCache };
+module.exports = { defaults, configDir, settingsPath, cachePath, officialStatsCachePath, rollupCacheDir, rollupCachePath, loadSettings, saveSettings, writeCache, readCache };

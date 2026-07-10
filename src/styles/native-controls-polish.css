@@ -1,0 +1,347 @@
+/* Native control hover states and cache insight polish split from dashboard-sessions.css. */
+:where(button, .icon-chip, .range button, .series-chip, .table-tabs button, .footer button, .actions button, .inspector-actions button, .session-filter button, .session-bulk button, .session-quick button, .session-filter-context button):hover:not(:disabled) {
+      border-color:var(--native-control-border-hover);
+      background:var(--native-control-bg-hover);
+      box-shadow:inset 0 1px 0 rgba(255,255,255,.88),0 8px 18px rgba(10,132,255,.055);
+    }
+    :where(button, .icon-chip, .range button, .series-chip, .table-tabs button, .footer button, .actions button, .inspector-actions button, .session-filter button, .session-bulk button, .session-quick button, .session-filter-context button):active:not(:disabled) {
+      transform:translateY(1px) scale(.992);
+      background:var(--native-control-bg-pressed);
+      box-shadow:inset 0 1px 2px rgba(15,23,42,.08);
+    }
+    :where(button, select, input, textarea):disabled,
+    :where(button, select, input, textarea)[aria-disabled="true"] {
+      opacity:.52;
+      cursor:not-allowed;
+      filter:saturate(.72);
+      border-color:var(--native-control-border-disabled);
+      background:var(--native-control-bg-disabled);
+      box-shadow:inset 0 1px 0 rgba(255,255,255,.50);
+    }
+    :where(input, select, textarea) {
+      caret-color:var(--native-caret);
+      border-color:var(--native-control-border);
+      background:rgba(255,255,255,.78);
+      box-shadow:inset 0 1px 2px rgba(15,23,42,.035),inset 0 1px 0 rgba(255,255,255,.78);
+    }
+    :where(input, select, textarea)::placeholder {
+      color:var(--native-placeholder);
+      opacity:.92;
+    }
+    :where(button, select, input, textarea, canvas):focus-visible {
+      outline:0;
+      border-color:rgba(10,132,255,.56);
+      box-shadow:var(--native-focus);
+    }
+    :where(.summary-card, .chart-card, .table-card, .source-card, .session-overview-card, .session-filter-context, .session-smart-views .session-rail-head, .smart-view-list button, .session-project-rail .session-rail-head, .session-project-list button, .session-cache-opportunities .session-rail-head, .cache-opportunity-list button) {
+      position:relative;
+      isolation:isolate;
+    }
+    :where(.summary-card, .chart-card, .table-card, .source-card, .session-overview-card, .session-filter-context, .session-smart-views .session-rail-head, .smart-view-list button, .session-project-rail .session-rail-head, .session-project-list button, .session-cache-opportunities .session-rail-head, .cache-opportunity-list button)::after {
+      content:"";
+      position:absolute;
+      inset:0;
+      z-index:-1;
+      border-radius:inherit;
+      pointer-events:none;
+      background:
+        linear-gradient(180deg,rgba(255,255,255,.44),rgba(255,255,255,0) 42%),
+        radial-gradient(circle at 16% 0%,rgba(255,255,255,.36),transparent 28%);
+      opacity:.72;
+    }
+    :where(.content, .table-scroll, .session-scroll, .session-project-list, .session-inspector, .compact-deep-panel) {
+      scrollbar-width:thin;
+      scrollbar-color:rgba(148,163,184,.42) transparent;
+    }
+    :where(.content, .table-scroll, .session-scroll, .session-project-list, .session-inspector, .compact-deep-panel)::-webkit-scrollbar {
+      width:10px;
+      height:10px;
+    }
+    :where(.content, .table-scroll, .session-scroll, .session-project-list, .session-inspector, .compact-deep-panel)::-webkit-scrollbar-track {
+      background:transparent;
+    }
+    :where(.content, .table-scroll, .session-scroll, .session-project-list, .session-inspector, .compact-deep-panel)::-webkit-scrollbar-thumb {
+      border:3px solid transparent;
+      border-radius:999px;
+      background:rgba(148,163,184,.42);
+      background-clip:padding-box;
+    }
+    :where(.content, .table-scroll, .session-scroll, .session-project-list, .session-inspector, .compact-deep-panel)::-webkit-scrollbar-thumb:hover {
+      background:rgba(100,116,139,.56);
+      background-clip:padding-box;
+    }
+    .footer {
+      box-shadow:inset 0 1px 0 rgba(255,255,255,.82),0 -12px 28px rgba(30,41,59,.045);
+    }
+    .page-title,
+    .head-title h2,
+    .card-title,
+    .inspector-title {
+      letter-spacing:-.028em;
+    }
+    @supports not ((-webkit-backdrop-filter:blur(1px)) or (backdrop-filter:blur(1px))) {
+      :where(.back, .logo, .tabs, .filters, .source-switch, .select, .range, .source-card, .summary-card, .chart-card, .table-card, .mini, .period-card, .footer, .rename-sheet, .session-filter-context, .session-smart-views .session-rail-head, .smart-view-list button, .session-project-rail .session-rail-head, .session-project-list button, .session-cache-opportunities .session-rail-head, .cache-opportunity-list button) {
+        background:#fff;
+      }
+    }
+    @media (prefers-reduced-transparency: reduce) {
+      :where(.back, .logo, .tabs, .filters, .source-switch, .select, .range, .source-card, .summary-card, .chart-card, .table-card, .mini, .period-card, .footer, .rename-sheet, .session-filter-context, .session-smart-views .session-rail-head, .smart-view-list button, .session-project-rail .session-rail-head, .session-project-list button, .session-cache-opportunities .session-rail-head, .cache-opportunity-list button) {
+        -webkit-backdrop-filter:none !important;
+        backdrop-filter:none !important;
+        background:#fff !important;
+      }
+      body::before,
+      body::after {
+        display:none;
+      }
+    }
+    @media (forced-colors: active) {
+      :where(button, input, select, textarea, .summary-card, .chart-card, .table-card, .source-card) {
+        forced-color-adjust:auto;
+        border:1px solid CanvasText;
+        box-shadow:none;
+      }
+      :where(button, input, select, textarea):focus-visible {
+        outline:2px solid Highlight;
+        outline-offset:2px;
+      }
+    }
+
+    /* 1.18.3 native segmented controls convergence */
+    :root {
+      --native-segmented-bg:
+        linear-gradient(180deg,rgba(245,247,251,.88),rgba(255,255,255,.62)),
+        rgba(255,255,255,.66);
+      --native-segmented-border:rgba(191,201,216,.78);
+      --native-segmented-inset:inset 0 1px 2px rgba(15,23,42,.075),inset 0 -1px 0 rgba(255,255,255,.70),0 1px 0 rgba(255,255,255,.84);
+      --native-segment-active-bg:linear-gradient(180deg,#168cff 0%,#0a84ff 52%,#0472dc 100%);
+      --native-segment-active-shadow:inset 0 1px 0 rgba(255,255,255,.42),inset 0 -1px 0 rgba(0,50,120,.22),0 7px 16px rgba(10,132,255,.20);
+      --native-segment-hover:linear-gradient(180deg,rgba(255,255,255,.72),rgba(247,250,253,.52));
+      --native-segment-text:#667085;
+      --native-segment-text-active:#fff;
+    }
+    :where(.workspace-tabs, .source-switch, .range, .table-tabs) {
+      position:relative;
+      isolation:isolate;
+      gap:3px;
+      padding:4px;
+      border:1px solid var(--native-segmented-border);
+      background:var(--native-segmented-bg);
+      box-shadow:var(--native-segmented-inset);
+      -webkit-backdrop-filter:blur(26px) saturate(1.55) contrast(1.02);
+      backdrop-filter:blur(26px) saturate(1.55) contrast(1.02);
+    }
+    :where(.workspace-tabs, .source-switch, .range, .table-tabs)::before {
+      content:"";
+      position:absolute;
+      inset:1px;
+      z-index:-1;
+      border-radius:inherit;
+      pointer-events:none;
+      background:
+        linear-gradient(180deg,rgba(255,255,255,.64),rgba(255,255,255,0) 48%),
+        radial-gradient(circle at 18% 0%,rgba(255,255,255,.55),transparent 32%);
+    }
+    :where(.workspace-tabs .tab, .source-switch-btn, .range button, .table-tabs button) {
+      position:relative;
+      overflow:hidden;
+      min-height:30px;
+      border:0;
+      color:var(--native-segment-text);
+      background:transparent;
+      box-shadow:none;
+      text-shadow:none;
+      transform:translateZ(0);
+      transition:background .16s ease,color .16s ease,box-shadow .16s ease,transform .12s ease,filter .16s ease;
+    }
+    :where(.workspace-tabs .tab, .source-switch-btn, .range button, .table-tabs button):hover:not(.active):not(:disabled) {
+      color:#2f3a4a;
+      background:var(--native-segment-hover);
+      box-shadow:inset 0 1px 0 rgba(255,255,255,.78),0 1px 2px rgba(15,23,42,.035);
+    }
+    :where(.workspace-tabs .tab.active, .source-switch-btn.active, .range button.active, .table-tabs button.active) {
+      color:var(--native-segment-text-active);
+      background:var(--native-segment-active-bg);
+      box-shadow:var(--native-segment-active-shadow);
+      text-shadow:0 -1px 0 rgba(0,40,90,.20);
+      filter:saturate(1.02);
+    }
+    :where(.workspace-tabs .tab.active, .source-switch-btn.active, .range button.active, .table-tabs button.active)::before {
+      content:"";
+      position:absolute;
+      inset:1px 1px auto;
+      height:45%;
+      border-radius:inherit;
+      pointer-events:none;
+      background:linear-gradient(180deg,rgba(255,255,255,.24),rgba(255,255,255,0));
+      mix-blend-mode:screen;
+    }
+    :where(.workspace-tabs .tab, .source-switch-btn, .range button, .table-tabs button):active:not(:disabled) {
+      transform:translateY(1px) scale(.992);
+      box-shadow:inset 0 1px 2px rgba(15,23,42,.11);
+    }
+    .workspace-tabs {
+      border-radius:16px;
+      max-width:560px;
+    }
+    .workspace-tabs .tab {
+      height:34px;
+      border-radius:12px;
+      font-size:13px;
+      letter-spacing:-.018em;
+    }
+    .workspace-tabs .tab.active::after {
+      display:none;
+    }
+    .source-switch {
+      border-radius:15px;
+    }
+    .source-switch-btn {
+      border-radius:11px;
+      padding:0 10px;
+    }
+    .range {
+      border-radius:14px;
+    }
+    .range button {
+      min-width:42px;
+      border-radius:10px;
+    }
+    .table-tabs {
+      align-items:center;
+      border-radius:15px;
+      width:max-content;
+      max-width:100%;
+      overflow:auto;
+      margin-bottom:14px;
+    }
+    .table-tabs button {
+      min-height:32px;
+      border-radius:11px;
+      padding:0 14px;
+      white-space:nowrap;
+    }
+
+    /* 1.17.9 commercial cache insight center */
+    .cache-insights {
+      margin:0 0 20px;
+      animation:cardIn .34s cubic-bezier(.16,1,.3,1) both;
+      animation-delay:.055s;
+    }
+    .cache-insight-grid {
+      display:grid;
+      grid-template-columns:1.1fr 1.1fr .9fr;
+      gap:14px;
+    }
+    .cache-insight-panel {
+      min-width:0;
+      overflow:hidden;
+      border:1px solid var(--native-border);
+      border-radius:var(--native-radius-lg);
+      background:
+        linear-gradient(180deg,rgba(255,255,255,.78),rgba(247,250,254,.62)),
+        var(--native-glass);
+      box-shadow:var(--native-shadow-soft);
+      backdrop-filter:blur(22px) saturate(1.35);
+      -webkit-backdrop-filter:blur(22px) saturate(1.35);
+    }
+    .cache-insight-panel-head {
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      gap:10px;
+      padding:12px 13px;
+      border-bottom:1px solid rgba(226,232,240,.82);
+      background:linear-gradient(180deg,rgba(255,255,255,.58),rgba(255,255,255,.18));
+    }
+    .cache-insight-panel-head b {
+      color:#172033;
+      font-size:13px;
+      font-weight:910;
+      letter-spacing:-.01em;
+    }
+    .cache-insight-panel-head span {
+      color:#7a8494;
+      font-size:11px;
+      font-weight:820;
+    }
+    .cache-insight-list {
+      display:grid;
+      gap:8px;
+      padding:10px;
+    }
+    .cache-insight-row {
+      position:relative;
+      display:grid;
+      grid-template-columns:minmax(0,1.25fr) auto;
+      gap:8px 12px;
+      width:100%;
+      padding:11px 12px 12px;
+      border:1px solid rgba(219,226,236,.84);
+      border-radius:13px;
+      background:linear-gradient(180deg,rgba(255,255,255,.76),rgba(247,250,254,.58));
+      text-align:left;
+      cursor:pointer;
+      overflow:hidden;
+      box-shadow:0 1px 0 rgba(255,255,255,.86) inset;
+      transition:transform .14s ease, border-color .14s ease, background .14s ease, box-shadow .14s ease;
+    }
+    .cache-insight-row::before {
+      content:"";
+      position:absolute;
+      left:0;
+      top:0;
+      bottom:0;
+      width:3px;
+      background:#94a3b8;
+      opacity:.72;
+    }
+    .cache-insight-row.hot::before { background:#8b5cf6; }
+    .cache-insight-row.warm::before { background:#f59e0b; }
+    .cache-insight-row.cold::before { background:#64748b; }
+    .cache-insight-row:hover {
+      transform:translateY(-1px);
+      border-color:rgba(10,132,255,.28);
+      background:linear-gradient(180deg,rgba(250,253,255,.92),rgba(239,247,255,.70));
+      box-shadow:0 12px 26px rgba(27,39,61,.07);
+    }
+    .cache-insight-main,
+    .cache-insight-metrics,
+    .cache-insight-score,
+    .cache-insight-action {
+      position:relative;
+      z-index:1;
+      min-width:0;
+    }
+    .cache-insight-main b {
+      display:block;
+      overflow:hidden;
+      text-overflow:ellipsis;
+      white-space:nowrap;
+      color:#111827;
+      font-size:13px;
+      font-weight:900;
+    }
+    .cache-insight-main em,
+    .cache-insight-metrics small,
+    .cache-insight-score em {
+      display:block;
+      overflow:hidden;
+      text-overflow:ellipsis;
+      white-space:nowrap;
+      color:#7a8494;
+      font-style:normal;
+      font-size:11px;
+      font-weight:760;
+      line-height:1.35;
+    }
+    .cache-insight-metrics {
+      text-align:right;
+    }
+    .cache-insight-metrics strong {
+      display:block;
+      color:#172033;
+      font-size:13px;
+      font-weight:910;
+      letter-spacing:-.02em;
+    }

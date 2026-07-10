@@ -101,12 +101,42 @@ function hasFreshAggregatesForView(s = snapshot || {}){
   const age = Date.now() - Number(s.aggregateAt || s.timestamp || 0);
   return age >= 0 && age < 2500;
 }
+function dashboardAggregateInteractionActive(){
+  try {
+    const body = document.body;
+    const app = document.getElementById('app');
+    const now = Date.now();
+    return now < Number(chartResizeQuietUntil || 0)
+      || now < Number(zoomInteractionUntil || 0)
+      || body?.classList?.contains?.('is-resizing')
+      || body?.classList?.contains?.('is-zooming')
+      || body?.classList?.contains?.('view-switching')
+      || app?.classList?.contains?.('is-resizing')
+      || app?.classList?.contains?.('is-zooming')
+      || app?.classList?.contains?.('view-switching');
+  } catch { return false; }
+}
+function dashboardAggregateDelay(opts = {}){
+  if(Number.isFinite(Number(opts.aggregateDelayMs))) return Math.max(0, Number(opts.aggregateDelayMs));
+  if(opts.sourceSwitch === true) return 220;
+  if(opts.deferHeavy === true) return 180;
+  if(dashboardAggregateInteractionActive()) return 260;
+  return 90;
+}
+function runScheduledDashboardAggregates(s, token, opts = {}){
+  if(token !== aggregateRefreshToken || snapshot !== s || layoutMode !== 'dashboard' || workspaceMode !== 'analytics') return;
+  if(dashboardAggregateInteractionActive()){
+    aggregateRefreshTimer = setTimeout(() => runScheduledDashboardAggregates(s, token, { ...opts, aggregateDelayMs: 140 }), 140);
+    return;
+  }
+  refreshDashboardAggregates(s, token);
+}
 function scheduleDashboardAggregates(s, opts = {}){
   if(opts.skipAggregates || !s?.ok || layoutMode !== 'dashboard' || workspaceMode !== 'analytics') return;
   if(hasFreshAggregatesForView(s)) return;
   if(aggregateRefreshTimer) clearTimeout(aggregateRefreshTimer);
   const token = ++aggregateRefreshToken;
-  aggregateRefreshTimer = setTimeout(() => refreshDashboardAggregates(s, token), 45);
+  aggregateRefreshTimer = setTimeout(() => runScheduledDashboardAggregates(s, token, opts), dashboardAggregateDelay(opts));
 }
 async function refreshDashboardAggregates(s, token){
   try {
@@ -155,7 +185,16 @@ async function refreshDashboardAggregates(s, token){
 
 
 function setRefreshState(text){ const el = document.getElementById('refreshState'); if(el) el.textContent = text || ''; }
+function toast(text, timeout = 900){
+  setRefreshState(text || '');
+  clearTimeout(lastToastTimer);
+  lastToastTimer = setTimeout(() => setRefreshState(''), timeout);
+}
 function applyCustomDateInputs(){
+  if(typeof dateRangeDraftValidation === 'function'){
+    dateRangeError = dateRangeDraftValidation();
+    if(dateRangeError) return false;
+  }
   if(dateRangeDraftStart) customDateStart = dateRangeDraftStart;
   if(dateRangeDraftEnd) customDateEnd = dateRangeDraftEnd;
   normalizeCustomDateRange(snapshot || {});
@@ -163,6 +202,8 @@ function applyCustomDateInputs(){
   localStorage.setItem('statsRange', rangeFilter);
   localStorage.setItem('customDateStart', String(customDateStart));
   localStorage.setItem('customDateEnd', String(customDateEnd));
+  dateRangeError = '';
+  return true;
 }
 function setupAutoRefresh(){ if(autoRefreshTimer) clearInterval(autoRefreshTimer); const sec = Math.max(5, Number(refreshEvery) || 30); autoRefreshTimer = setInterval(refreshNow, sec * 1000); }
 async function load(){ setRefreshState(TXT.refresh); const first = await ipcRenderer.invoke('dashboard:getSnapshot', dashboardPayloadForCurrentView()); render(first, { immediate: true, instantChart: true }); if(!first?.ok) await refreshNow(); setupAutoRefresh(); }

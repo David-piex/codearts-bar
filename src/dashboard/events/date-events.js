@@ -67,6 +67,19 @@ function syncDateRangeFieldChrome(){
     field?.classList?.toggle?.('active', Boolean(active));
   });
   syncDateRangeInputChrome();
+  syncDateRangeErrorChrome();
+}
+function syncDateRangeErrorChrome(){
+  try {
+    const error = dateRangeError || '';
+    const node = document.querySelector('[data-date-range-error]');
+    if(node){
+      node.textContent = error;
+      node.hidden = !error;
+    }
+    const confirm = document.querySelector('[data-date-range-confirm]');
+    if(confirm) confirm.disabled = Boolean(error);
+  } catch {}
 }
 function handleDateRangeDraftInput(target){
   const dateInput = target?.closest?.('[data-date-range-date], [data-date-range-time]');
@@ -77,7 +90,49 @@ function handleDateRangeDraftInput(target){
   syncDateRangeFieldChrome();
   return true;
 }
-document.addEventListener('click', (e) => {
+async function applyDateRangeAndPatchView(opts = {}){
+  if(applyCustomDateInputs() === false){
+    syncDateRangeErrorChrome();
+    return false;
+  }
+  resetIncrementalRenderLimits('all');
+  resetRequestPaging();
+  resetSessionPaging();
+  if(snapshot?.ok && workspaceMode === 'analytics'){
+    setPagedTableLoading?.('requests', true, 0);
+    try {
+      await refreshRequestPageCache(0, { force: true });
+      await ensureRequestPageInBoundsAfterLoad?.();
+      scrollPagedTableToTop?.('requests');
+    } catch {
+      setPagedTableLoading?.('requests', false, 0);
+    } finally {
+      clearPagedTableLoading?.('requests');
+    }
+    if(patchAnalyticsSlotsForState(snapshot, { deferHeavy: true, chartDelayMs: 40, ...opts })) return true;
+    render(snapshot, { windowLayout: false, instantChart: true, deferHeavy: true, partial: true });
+    return true;
+  }
+  if(snapshot?.ok && workspaceMode === 'sessions'){
+    setPagedTableLoading?.('sessions', true, 0);
+    try {
+      const canDbPage = typeof canUseDbSessionPage === 'function' && canUseDbSessionPage();
+      if(canDbPage) await refreshSessionPageCache(0, { force: true });
+      if(canDbPage) await ensureSessionPageInBoundsAfterLoad?.();
+      scrollPagedTableToTop?.('sessions');
+    } catch {
+      setPagedTableLoading?.('sessions', false, 0);
+    } finally {
+      clearPagedTableLoading?.('sessions');
+    }
+    if(patchSessionView(snapshot, { table: true, toolbar: false, inspector: true, pageChange: true })) return true;
+    render(snapshot, { windowLayout: false, instantChart: true, deferHeavy: true, partial: true });
+    return true;
+  }
+  if(snapshot?.ok) render(snapshot, { windowLayout: false, instantChart: true, deferHeavy: true, partial: true });
+  return Boolean(snapshot?.ok);
+}
+document.addEventListener('click', async (e) => {
   const dateControl = e.target.closest('.date-range-control');
   if(dateRangeOpen && !dateControl){
     dateRangeOpen = false;
@@ -94,6 +149,7 @@ document.addEventListener('click', (e) => {
   const dateQuick = e.target.closest('[data-date-range-quick]');
   if(dateQuick){
     setDateRangeQuick(dateQuick.dataset.dateRangeQuick || 'today');
+    dateRangeError = '';
     patchDateRangePopoverOnly();
     e.__dashboardHandled = true; return;
   }
@@ -134,10 +190,13 @@ document.addEventListener('click', (e) => {
   }
   const dateConfirm = e.target.closest('[data-date-range-confirm]');
   if(dateConfirm){
-    applyCustomDateInputs();
+    dateRangeError = dateRangeDraftValidation();
+    if(dateRangeError){
+      syncDateRangeErrorChrome();
+      e.__dashboardHandled = true; return;
+    }
     dateRangeOpen = false;
-    if(snapshot?.ok && workspaceMode === 'analytics' && patchAnalyticsSlotsForState(snapshot, { deferHeavy: true })) {}
-    else if(snapshot?.ok) render(snapshot, { windowLayout: false, instantChart: true, deferHeavy: true, partial: true });
+    await applyDateRangeAndPatchView();
     e.__dashboardHandled = true; return;
   }
 });

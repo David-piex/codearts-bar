@@ -58,6 +58,15 @@ function rowsSignature(rows){
   const last = rows[rows.length - 1] || {};
   return `${rows.length}:${Number(first.time || 0)}:${Number(last.time || 0)}:${Number(first.total || 0)}:${Number(last.total || 0)}`;
 }
+function minValidTimestamp(list, reader, s){
+  let min = Infinity;
+  if(!Array.isArray(list) || !list.length) return min;
+  for(const item of list){
+    const t = Number(reader(item) || 0);
+    if(validTimestamp(t, s) && t < min) min = t;
+  }
+  return min;
+}
 function bucketRows(rows, s){
   let since = sinceForRange(s);
   const until = untilForRange(s);
@@ -71,11 +80,11 @@ function bucketRows(rows, s){
   if(rangeFilter === 'all'){
     let first = now;
     if(useTrendTokens && trendList.length){
-      first = Math.min(...trendList.map((item) => Number(item.start || 0)).filter((t) => validTimestamp(t, s)));
+      first = minValidTimestamp(trendList, (item) => item.start, s);
       if(!Number.isFinite(first)) first = now;
     } else {
-      const times = rows.map((r) => Number(r.time || 0)).filter((t) => validTimestamp(t, s));
-      first = times.length ? Math.min(...times) : now;
+      const minRowTime = minValidTimestamp(rows, (r) => r.time, s);
+      first = Number.isFinite(minRowTime) ? minRowTime : now;
     }
     since = Math.max(dayStart(first), now - 365 * 86400000);
   }

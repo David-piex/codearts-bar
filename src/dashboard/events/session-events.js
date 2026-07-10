@@ -111,17 +111,29 @@ async function handleDashboardSessionClick(e){
     const sessionPage = e.target.closest('[data-session-page]');
     const sessionPageGo = e.target.closest('[data-session-page-go]');
     if(sessionPage || sessionPageGo){
-      const total = Number(document.querySelector('[data-table-limit="sessions"]')?.dataset?.total || 0);
-      const maxPage = Math.max(0, Math.ceil(total / SESSION_PAGE_SIZE) - 1);
-      if(sessionPage) sessionTablePage += sessionPage.dataset.sessionPage === 'next' ? 1 : -1;
+      const total = typeof sessionPageTotalHint === 'function' ? sessionPageTotalHint() : Number(document.querySelector('[data-table-limit="sessions"]')?.dataset?.total || 0);
+      let nextPage = Number(sessionTablePage || 0);
+      let feedback = '';
+      if(sessionPage) nextPage += sessionPage.dataset.sessionPage === 'next' ? 1 : -1;
       if(sessionPageGo){
         const input = document.querySelector('[data-session-page-input]');
-        sessionTablePage = Math.max(0, Number(input?.value || 1) - 1);
+        const state = pageInputState(input?.value, total, SESSION_PAGE_SIZE, sessionTablePage);
+        nextPage = state.page;
+        feedback = state.adjusted ? state.reason : '';
       }
-      sessionTablePage = Math.max(0, Math.min(maxPage, sessionTablePage));
+      sessionTablePage = clampTablePageIndex(nextPage, total, SESSION_PAGE_SIZE);
       localStorage.setItem('sessionTablePage', String(sessionTablePage));
+      setPagedTableFeedback?.('sessions', feedback);
+      syncPagedTableInput?.('sessions', total, sessionTablePage, SESSION_PAGE_SIZE);
       if(workspaceMode === 'sessions'){
-        if(canUseDbSessionPage()) await refreshSessionPageCache(sessionTablePage, { force: true });
+        setPagedTableLoading?.('sessions', true, sessionTablePage);
+        let loaded = true;
+        if(canUseDbSessionPage()) loaded = await refreshSessionPageCache(sessionTablePage, { force: true });
+        if(canUseDbSessionPage()) await ensureSessionPageInBoundsAfterLoad();
+        scrollPagedTableToTop('sessions');
+        if(!loaded) setPagedTableLoading?.('sessions', false, sessionTablePage);
+        else clearPagedTableLoading?.('sessions');
+        if(typeof patchSessionTablePageRows === 'function' && patchSessionTablePageRows(snapshot, { inspector: true })) throw DASHBOARD_EVENT_HANDLED;
         if(patchSessionView(snapshot, { table: true, toolbar: false, inspector: true, pageChange: true })) throw DASHBOARD_EVENT_HANDLED;
       }
       if(snapshot?.ok) render(snapshot, { windowLayout: false, instantChart: true, partial: true });

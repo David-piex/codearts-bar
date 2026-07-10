@@ -1,0 +1,35 @@
+/* 1.20.2 semantic controls layer: one native rhythm for buttons, filters and segmented controls */
+:where(.icon-group, .select, .range, .source-switch, .workspace-tabs, .table-tabs, .filters button, .filters select, .filters input, .date-range-control) {
+  min-height: var(--cb-control-height-lg);
+  border-color: var(--cb-border-soft);
+  border-radius: var(--cb-radius-md);
+  background: var(--cb-surface-panel);
+  box-shadow: var(--cb-shadow-control);
+}
+
+:where(button, .icon-chip, .range button, .series-chip, .table-tabs button, .workspace-tabs .tab, .source-switch button) {
+  min-height: var(--cb-control-height);
+  border-radius: var(--cb-radius-sm);
+}
+
+:where(.icon-chip, .range button, .series-chip, .table-tabs button, .workspace-tabs .tab, .source-switch button):hover {
+  background: var(--cb-hover-fill);
+  box-shadow: none;
+  transform: none;
+}
+
+:where(.icon-chip.active, .range button.active, .series-chip.active, .table-tabs button.active, .workspace-tabs .tab.active, .source-switch button.active) {
+  background: var(--cb-accent);
+  box-shadow: 0 7px 16px rgba(10, 132, 255, .18);
+}
+
+:where(button, .icon-chip, .range button, .series-chip):active {
+  transform: translateY(1px);
+}
+
+body.is-resizing :where(button, .icon-chip, .range button, .series-chip, .table-tabs button, .workspace-tabs .tab, .source-switch button),
+body.is-zooming :where(button, .icon-chip, .range button, .series-chip, .table-tabs button, .workspace-tabs .tab, .source-switch button),
+body.view-switching :where(button, .icon-chip, .range button, .series-chip, .table-tabs button, .workspace-tabs .tab, .source-switch button) {
+  transform: none !important;
+  box-shadow: var(--cb-shadow-control) !important;
+}

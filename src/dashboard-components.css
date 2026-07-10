@@ -15,6 +15,17 @@ body.view-switching {
   --shadow-popover: 0 1px 0 rgba(255,255,255,.78) inset,0 10px 24px rgba(27,39,61,.055);
   --shadow-control: 0 1px 0 rgba(255,255,255,.72) inset,0 3px 8px rgba(27,39,61,.022);
 }
+body.is-resizing :where(.shell,.menu-card,.content,.topbar,.page-head,.footer,.summary-card,.chart-card,.table-card,.source-card,.usage-total-board,.agent-rhythm-card,.analytics-advanced-shell,.session-simple-shell,.session-overview-card,.session-manager,.session-inspector,.filters,.tabs,.select,.source-switch,.range,.chart-tip,.date-range-popover,button,input,select,textarea,tr,td,th,canvas),
+body.is-zooming :where(.shell,.menu-card,.content,.topbar,.page-head,.footer,.summary-card,.chart-card,.table-card,.source-card,.usage-total-board,.agent-rhythm-card,.analytics-advanced-shell,.session-simple-shell,.session-overview-card,.session-manager,.session-inspector,.filters,.tabs,.select,.source-switch,.range,.chart-tip,.date-range-popover,button,input,select,textarea,tr,td,th,canvas) {
+  animation:none !important;
+  transition:none !important;
+}
+body.is-resizing :where(.menu-card,.summary-card,.chart-card,.table-card,.source-card,.usage-total-board,.agent-rhythm-card,.analytics-advanced-shell,.session-overview-card,.session-manager,.session-inspector,.filters,.date-range-popover),
+body.is-zooming :where(.menu-card,.summary-card,.chart-card,.table-card,.source-card,.usage-total-board,.agent-rhythm-card,.analytics-advanced-shell,.session-overview-card,.session-manager,.session-inspector,.filters,.date-range-popover) {
+  -webkit-backdrop-filter:none !important;
+  backdrop-filter:none !important;
+  box-shadow:var(--shadow-card) !important;
+}
 /* 1.19.0 denser commercial table, hover and state polish */
 .table-scroll table tr,
 .session-table.simple tr {
@@ -59,21 +70,38 @@ input:disabled {
   bottom:70px;
   z-index:9999;
   display:none;
-  min-width:190px;
-  padding:10px 12px;
+  min-width:245px;
+  max-width:320px;
+  padding:11px 12px;
   border:1px solid rgba(180,190,205,.72);
-  border-radius:14px;
-  background:rgba(255,255,255,.82);
+  border-radius:16px;
+  background:rgba(255,255,255,.86);
   -webkit-backdrop-filter:blur(18px) saturate(1.35);
   backdrop-filter:blur(18px) saturate(1.35);
   box-shadow:0 16px 38px rgba(24,39,65,.14), inset 0 1px 0 rgba(255,255,255,.78);
   color:#111827;
   font:12px/1.35 var(--native-font-mono,"SF Mono",Consolas,monospace);
 }
-.perf-panel.show { display:grid; gap:4px; }
-.perf-panel b { font-family:var(--native-font-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif); font-size:12px; }
-.perf-panel span { display:flex; justify-content:space-between; color:#475467; }
-.perf-panel em { margin-top:2px; color:#98a2b3; font-style:normal; }
+.perf-panel.show { display:grid; gap:8px; }
+.perf-section { display:grid; gap:4px; padding-bottom:7px; border-bottom:1px solid rgba(210,218,230,.58); }
+.perf-section:last-of-type { border-bottom:0; padding-bottom:0; }
+.perf-panel b { font-family:var(--native-font-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif); font-size:12px; letter-spacing:-.01em; }
+.perf-panel span { display:flex; justify-content:space-between; gap:14px; color:#475467; }
+.perf-panel span i { color:#667085; font-style:normal; }
+.perf-panel span strong { color:#172033; font-weight:650; text-align:right; }
+.perf-panel span.perf-ok strong { color:#15803d; }
+.perf-panel span.perf-warn strong { color:#b45309; }
+.perf-panel span.perf-bad strong { color:#dc2626; }
+.perf-panel em { margin-top:2px; color:#98a2b3; font-style:normal; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.perf-copy {
+  height: 30px;
+  border: 1px solid rgba(148, 163, 184, .32);
+  border-radius: 10px;
+  background: rgba(255,255,255,.72);
+  color: #1f2937;
+  font: 12px/1 var(--native-font-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif);
+}
+.perf-copy:hover { background:#fff; border-color:rgba(47,125,246,.34); }
 
 /* Native polish pass: shared radius, elevation and control rhythm. */
 .icon-group,
@@ -322,6 +350,11 @@ tr:hover td,
 .session-row.selected td {
   box-shadow: inset 0 1px 0 rgba(255,255,255,.68) !important;
 }
+.table-loading-cell {
+  color:#8a94a6;
+  font-weight:720;
+  background:linear-gradient(90deg, rgba(248,250,253,.72), rgba(255,255,255,.92), rgba(248,250,253,.72)) !important;
+}
 .request-row.selected td:first-child,
 .session-row.selected td:first-child {
   box-shadow: inset 0 1px 0 rgba(255,255,255,.68), inset 3px 0 0 rgba(10,132,255,.72) !important;
@@ -538,6 +571,28 @@ body.view-switching::after {
 .table-page-note button:disabled {
   opacity:.42;
   cursor:default;
+}
+.table-page-note.is-page-loading {
+  color:#64748b;
+  background:rgba(248,250,252,.82);
+  border-color:rgba(203,213,225,.72);
+}
+.table-page-note.is-page-loading span::after {
+  content:'';
+  display:inline-block;
+  width:6px;
+  height:6px;
+  margin-left:8px;
+  border-radius:999px;
+  background:#94a3b8;
+  opacity:.72;
+}
+.table-scroll.is-page-loading {
+  opacity:.88;
+  transition:opacity .12s ease;
+}
+.table-scroll.is-page-loading tbody {
+  pointer-events:none;
 }
 
 

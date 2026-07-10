@@ -1,7 +1,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
-const crypto = require('node:crypto');
+const { writeReleaseManifest } = require('./release-manifest');
 
 const root = path.resolve(__dirname, '..');
 const releaseDir = path.join(root, 'release');
@@ -30,12 +30,15 @@ function nodeSupportsNativeSqlite() {
   try { return Boolean(require('node:sqlite').DatabaseSync); }
   catch { return false; }
 }
-function sha256(file) { return crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex'); }
 
+runNode(path.join(root, 'src', 'build-dashboard-renderer.js'), []);
+runNode(path.join(root, 'src', 'build-cli-resources.js'), []);
 runNode(path.join(root, 'src', 'prepare-extension.js'), []);
 runNode(path.join(root, 'src', 'cli.js'), ['self-test']);
 runNode(path.join(root, 'node_modules', '@vscode', 'vsce', 'vsce'), ['package', '--out', path.join(releaseDir, 'codearts-bar-status.vsix')], { cwd: path.join(root, 'extension') });
 runNode(path.join(root, 'node_modules', 'electron-builder', 'cli.js'), ['--win', 'nsis', 'portable', '--x64', '--publish', 'never']);
+runNode(path.join(root, 'tests', 'package-resource-smoke.js'), []);
+runNode(path.join(root, 'tests', 'release-package-smoke.js'), []);
 
 const distDir = path.join(root, 'dist');
 if (fs.existsSync(distDir)) {
@@ -74,10 +77,9 @@ exit $LASTEXITCODE
 writeText(path.join(cliPkg, 'CLI_RUNTIME.md'), '# CodeArts Bar CLI Runtime\n\n- \u5b89\u88c5\u7248 CLI\uff1a\u901a\u8fc7\u5b89\u88c5\u76ee\u5f55\u7684 codearts-bar.cmd / codearts-bar.ps1 \u4f7f\u7528 Electron \u81ea\u5e26 Node\uff0c\u4e0d\u4f9d\u8d56\u7528\u6237\u673a\u5668 Node\u3002\n- \u72ec\u7acb CLI zip\uff1a\u4f18\u5148\u4f7f\u7528\u5305\u5185 node.exe\uff1b\u6ca1\u6709 node.exe \u65f6\u624d\u56de\u9000\u5230\u7cfb\u7edf node\u3002\n- SQLite\uff1a\u4f18\u5148 node:sqlite\uff1b\u5f53\u524d\u8fd0\u884c\u65f6\u4e0d\u652f\u6301\u65f6\u81ea\u52a8\u56de\u9000 sql.js + wasm\u3002\n- \u8bca\u65ad\uff1a\u8fd0\u884c codearts-bar.cmd runtime \u67e5\u770b\u5b9e\u9645 Node \u548c SQLite adapter\u3002\n');
 run('powershell.exe', ['-NoProfile', '-Command', `Compress-Archive -Path '${cliPkg}\\*' -DestinationPath '${path.join(releaseDir, 'codearts-bar-cli.zip')}' -Force`]);
 
-const manifestArtifacts = [];
-for (const name of [`CodeArts-Bar-Setup-${pkg.version}-x64.exe`, `CodeArts-Bar-Portable-${pkg.version}-x64.exe`, 'codearts-bar-cli.zip', 'codearts-bar-status.vsix']) {
-  const file = path.join(releaseDir, name);
-  if (fs.existsSync(file)) manifestArtifacts.push({ name, size: fs.statSync(file).size, sha256: sha256(file) });
-}
-fs.writeFileSync(path.join(releaseDir, 'latest.json'), JSON.stringify({ version: pkg.version, generatedAt: new Date().toISOString(), artifacts: manifestArtifacts }, null, 2));
+writeReleaseManifest({
+  releaseDir,
+  version: pkg.version,
+  artifactNames: [`CodeArts-Bar-Setup-${pkg.version}-x64.exe`, `CodeArts-Bar-Portable-${pkg.version}-x64.exe`, 'codearts-bar-cli.zip', 'codearts-bar-status.vsix'],
+});
 console.log(`Release artifacts in ${releaseDir}`);

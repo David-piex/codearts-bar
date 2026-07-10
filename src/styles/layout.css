@@ -1,0 +1,48 @@
+/* 1.20.2 semantic layout layer: shared spacing and shell surfaces */
+:root {
+  --cb-page-pad-x: clamp(22px, 2.4vw, 30px);
+  --cb-page-pad-y: clamp(20px, 2.2vw, 28px);
+  --cb-section-gap: 18px;
+  --cb-card-gap: 14px;
+}
+
+.content {
+  padding-inline: var(--density-pad-x, var(--cb-page-pad-x));
+  padding-block: var(--density-pad-y, var(--cb-page-pad-y)) 24px;
+}
+
+:where(.page-head, .topbar, .table-toolbar, .session-primary-filters) {
+  gap: var(--cb-card-gap);
+}
+
+:where(.summary-card, .chart-card, .table-card, .source-card, .usage-total-board, .agent-rhythm-card, .analytics-advanced-shell, .session-simple-shell, .session-workspace-card, .session-inspector) {
+  border-color: var(--cb-border-soft);
+  border-radius: var(--cb-radius-lg);
+  background: var(--cb-surface-card);
+  box-shadow: var(--cb-shadow-card);
+}
+
+body.is-resizing :where(.summary-card, .chart-card, .table-card, .source-card, .usage-total-board, .agent-rhythm-card, .analytics-advanced-shell, .session-simple-shell, .session-workspace-card, .session-inspector),
+body.is-zooming :where(.summary-card, .chart-card, .table-card, .source-card, .usage-total-board, .agent-rhythm-card, .analytics-advanced-shell, .session-simple-shell, .session-workspace-card, .session-inspector) {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+  box-shadow: var(--cb-shadow-card) !important;
+}
+
+body.is-resizing :where(#app, .shell, .menu-card, .topbar, .footer, .filters, .source-switch, .select, .range, .date-range-control, .date-range-popover, .summary-card, .chart-card, .table-card, .source-card, .mini, .period-card, .usage-total-board, .agent-rhythm-card, .analytics-advanced-shell, .session-simple-shell, .session-workspace-card, .session-inspector),
+body.is-zooming :where(#app, .shell, .menu-card, .topbar, .footer, .filters, .source-switch, .select, .range, .date-range-control, .date-range-popover, .summary-card, .chart-card, .table-card, .source-card, .mini, .period-card, .usage-total-board, .agent-rhythm-card, .analytics-advanced-shell, .session-simple-shell, .session-workspace-card, .session-inspector),
+body.view-switching :where(#app, .shell, .menu-card, .topbar, .footer, .filters, .source-switch, .select, .range, .date-range-control, .date-range-popover, .summary-card, .chart-card, .table-card, .source-card, .mini, .period-card, .usage-total-board, .agent-rhythm-card, .analytics-advanced-shell, .session-simple-shell, .session-workspace-card, .session-inspector) {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+  filter: none !important;
+  transition-duration: 0ms !important;
+  animation: none !important;
+  transform: none !important;
+}
+
+body.is-resizing :where(#app *, .chart-card *, .table-card *, .session-simple-shell *),
+body.is-zooming :where(#app *, .chart-card *, .table-card *, .session-simple-shell *) {
+  transition-duration: 0ms !important;
+  animation-duration: 0ms !important;
+  animation-delay: 0ms !important;
+}

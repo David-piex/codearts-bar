@@ -1,0 +1,61 @@
+/* 1.20.1 semantic table layer: lighter macOS-like rows and consistent pagination controls */
+.table-scroll table,
+.request-manager-flat table,
+.session-table.simple {
+  border-color: var(--cb-border-hairline);
+}
+
+.table-scroll tbody td,
+.request-manager-flat tbody td,
+.session-table.simple tbody td {
+  border-bottom-color: var(--cb-row-border);
+}
+
+.table-scroll tbody tr,
+.request-manager-flat tbody tr,
+.session-table.simple .session-row {
+  transition: background-color .12s ease, opacity .12s ease;
+}
+
+.table-scroll tbody tr:hover td,
+.request-manager-flat tbody tr:hover td,
+.session-table.simple .session-row:hover td {
+  background: var(--cb-row-hover);
+  box-shadow: none;
+}
+
+.session-table.simple .session-row.selected td,
+.table-scroll tbody tr.selected td,
+.request-manager-flat tbody tr.selected td {
+  background: var(--cb-row-selected);
+}
+
+.table-page-note {
+  border-color: var(--cb-border-soft);
+  border-radius: var(--cb-radius-md);
+  background: var(--cb-surface-panel);
+  box-shadow: var(--cb-shadow-control);
+}
+
+.table-page-actions button,
+.table-page-actions select,
+.table-page-actions input {
+  min-height: var(--cb-control-height);
+  border-radius: var(--cb-radius-sm);
+}
+
+.table-scroll.is-page-loading,
+.session-scroll.is-page-loading,
+.session-table.is-page-loading {
+  opacity: .78;
+}
+
+.table-page-note.is-page-adjusted {
+  border-color: rgba(10, 132, 255, .22);
+  background: color-mix(in srgb, var(--cb-surface-panel) 88%, rgba(10, 132, 255, .10));
+}
+
+.table-page-actions input.is-page-adjusted {
+  border-color: rgba(10, 132, 255, .36);
+  background: rgba(10, 132, 255, .06);
+}

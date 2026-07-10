@@ -1,0 +1,30 @@
+/* 1.20.2 semantic chart layer: stable canvas and restrained chart controls */
+.chart-card {
+  border-color: var(--cb-border-soft);
+  border-radius: var(--cb-radius-lg);
+  background: var(--cb-surface-card);
+  box-shadow: var(--cb-shadow-card);
+}
+
+.chart-card canvas,
+.chart-canvas,
+.chart-hover-meta,
+.chart-hover-scrubber {
+  contain: layout paint style;
+}
+
+.chart-card canvas {
+  display: block;
+}
+
+:where(.series-chip, .chart-range-button, .chartPinnedScrub, .scrubber-focus) {
+  min-height: var(--cb-control-height);
+  border-radius: var(--cb-radius-sm);
+}
+
+body.is-resizing .chart-card,
+body.is-zooming .chart-card {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+  box-shadow: var(--cb-shadow-card) !important;
+}

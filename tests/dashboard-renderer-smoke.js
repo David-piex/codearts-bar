@@ -98,6 +98,7 @@ async function main() {
     async invoke(channel, ...args){
       calls.push([channel, ...args]);
       if(channel === "dashboard:getSnapshot" || channel === "dashboard:refresh") return snapshot;
+      if(channel === "dashboard:getDiagnostics") return { ok: true, performance: { aggregateCache: { hits: 2, misses: 1, reads: 3, hitRate: 2 / 3, size: 2, limit: 64 }, usageRollup: { compactHits: 1, tokenHits: 0, misses: 1, invalid: 0, pendingCount: 0, hitRate: 0.5, buildCompleted: 1, buildFailed: 0 } } };
       if(channel === "dashboard:getSessionRequestsPage") return { ok: true, limit: 12, offset: 0, total: 1, hasMore: false, items: [{ id: "db-only-request", sessionId: "s1", sessionTitle: "Build landing", source: "desktop", sourceLabel: "\u684c\u9762\u7aef", provider: "p", model: "db-only-model", time: now - 1234, input: 1, output: 2, cacheRead: 3, cacheWrite: 0, total: 6, ok: true, status: "200", latencyMs: 11, ttftMs: 7, outputTokensPerSec: 4 }] };
       return null;
     },
@@ -359,6 +360,20 @@ async function main() {
   assert.match(diagnosticsHtml, /diagnostics-notice/);
   assert.match(diagnosticsHtml, /data-copy-diagnostics/);
   assert.match(diagnosticsHtml, /missing db/);
+  const perfPanelHtml = context.perfPanelHtml();
+  assert.match(perfPanelHtml, /渲染性能/);
+  assert.match(perfPanelHtml, /数据层/);
+  assert.match(perfPanelHtml, /聚合缓存/);
+  assert.match(perfPanelHtml, /冷聚合/);
+  assert.match(perfPanelHtml, /rollup/);
+  assert.match(perfPanelHtml, /resize/);
+  assert.match(perfPanelHtml, /data-copy-perf-report/);
+  await context.copyPerformanceReport();
+  const perfReport = JSON.parse(clipboardWrites[clipboardWrites.length - 1]);
+  assert.equal(perfReport.report, "dashboard-performance");
+  assert.equal(perfReport.dataLayer.aggregateCache.hits, 2);
+  assert.equal(perfReport.dataLayer.usageRollup.compactHits, 1);
+  assert.equal(Object.prototype.hasOwnProperty.call(perfReport.snapshot.sources[0] || {}, "dbPath"), false);
   assert.match(analyticsHtml, /cache-warm/);
   assert.match(analyticsHtml, /--cache-hit:/);
   assert.match(analyticsHtml, /1,100 \/ 2,300/);

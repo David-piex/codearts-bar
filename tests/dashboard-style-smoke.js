@@ -7,6 +7,8 @@ const path = require("node:path");
 const dashboardSourceFiles = [
   "dashboard.html",
   "dashboard.css",
+  "styles/tokens.css",
+  "styles/base.css",
   "dashboard-controls.css",
   "dashboard-analytics.css",
   "dashboard-sessions.css",
@@ -16,6 +18,20 @@ const dashboardSourceFiles = [
   "dashboard-native.css",
   "dashboard-layout.css",
   "dashboard-components.css",
+  "styles/sessions-inspector.css",
+  "styles/request-manager.css",
+  "styles/session-library.css",
+  "styles/native-controls-polish.css",
+  "styles/usage-summary.css",
+  "styles/responsive-states.css",
+  "styles/layout.css",
+  "styles/controls.css",
+  "styles/analytics.css",
+  "styles/sessions.css",
+  "styles/chart.css",
+  "styles/tables.css",
+  "styles/popover.css",
+  "styles/responsive.css",
 ];
 const html = dashboardSourceFiles
   .map((file) => fs.readFileSync(path.join(__dirname, "..", "src", file), "utf8"))
@@ -31,7 +47,9 @@ const rendererFiles = [
   "dashboard/dashboard-slots.js",
   "dashboard/slots/slot-core.js",
   "dashboard/slots/analytics-slots.js",
-  "dashboard/slots/data-page-slots.js",
+  "dashboard/slots/data-page-core.js",
+  "dashboard/slots/request-page-slot.js",
+  "dashboard/slots/session-page-slot.js",
   "dashboard/slots/session-slots.js",
   "dashboard/slots/perf-panel-slot.js",
   "dashboard/events/date-events.js",
@@ -63,6 +81,21 @@ const rendererFiles = [
   "dashboard/sessions/session-workspace.js",
 ];
 const renderer = rendererFiles
+  .map((file) => fs.readFileSync(path.join(__dirname, "..", "src", file), "utf8"))
+  .join("\n");
+const generatedRenderer = fs.readFileSync(path.join(__dirname, "..", "src", "dashboard-renderer.js"), "utf8");
+const mainFiles = [
+  "main.js",
+  "main/logger.js",
+  "main/tray.js",
+  "main/window.js",
+  "main/db-watch-service.js",
+  "main/ipc-dashboard.js",
+  "main/ipc-session.js",
+  "main/ipc-settings.js",
+  "main/lifecycle.js",
+];
+const mainProcess = mainFiles
   .map((file) => fs.readFileSync(path.join(__dirname, "..", "src", file), "utf8"))
   .join("\n");
 
@@ -212,6 +245,8 @@ assert.match(html, /1\.19\.0 performance and native visual unification pass/);
 assert.match(html, /1\.19\.0 local rendering layout pass/);
 assert.match(html, /1\.19\.0 denser commercial table, hover and state polish/);
 assert.match(html, /href="dashboard\.css"/);
+assert.match(html, /href="styles\/tokens\.css"/);
+assert.match(html, /href="styles\/base\.css"/);
 assert.match(html, /href="dashboard-native\.css"/);
 assert.match(html, /href="dashboard-layout\.css"/);
 assert.match(html, /href="dashboard-components\.css"/);
@@ -221,6 +256,54 @@ assert.match(html, /href="dashboard-sessions\.css"/);
 assert.match(html, /href="dashboard-chart\.css"/);
 assert.match(html, /href="dashboard-compact\.css"/);
 assert.match(html, /href="dashboard-responsive\.css"/);
+assert.match(html, /href="styles\/sessions-inspector\.css"/);
+assert.match(html, /href="styles\/request-manager\.css"/);
+assert.match(html, /href="styles\/session-library\.css"/);
+assert.match(html, /href="styles\/native-controls-polish\.css"/);
+assert.match(html, /href="styles\/usage-summary\.css"/);
+assert.match(html, /href="styles\/responsive-states\.css"/);
+assert.match(html, /href="styles\/layout\.css"/);
+assert.match(html, /href="styles\/controls\.css"/);
+assert.match(html, /href="styles\/analytics\.css"/);
+assert.match(html, /href="styles\/sessions\.css"/);
+assert.match(html, /href="styles\/chart\.css"/);
+assert.match(html, /href="styles\/tables\.css"/);
+assert.match(html, /href="styles\/popover\.css"/);
+assert.match(html, /href="styles\/responsive\.css"/);
+assert.match(html, /1\.20\.1 semantic token layer/);
+assert.match(html, /--cb-radius-sm: var\(--radius-sm, 10px\)/);
+assert.match(html, /--cb-control-height: var\(--control-height, 34px\)/);
+assert.match(html, /--cb-surface-panel: var\(--surface-panel/);
+assert.match(html, /--cb-surface-card: var\(--surface-card/);
+assert.match(html, /--cb-border-soft: var\(--border-soft/);
+assert.match(html, /--cb-shadow-card: var\(--shadow-card/);
+assert.match(html, /--cb-shadow-popover: var\(--shadow-popover/);
+assert.match(html, /1\.20\.1 semantic base layer/);
+assert.match(html, /font-family: var\(--cb-font-ui\)/);
+assert.match(html, /1\.20\.2 semantic controls layer/);
+assert.match(html, /box-shadow: var\(--cb-shadow-control\)/);
+assert.match(html, /1\.20\.2 semantic layout layer/);
+assert.match(html, /--cb-page-pad-x:/);
+assert.match(html, /date-range-popover/);
+assert.match(html, /transition-duration: 0ms !important/);
+assert.match(html, /max-height:calc\(100vh - 118px\)/);
+assert.match(html, /1\.20\.2 semantic analytics layer/);
+assert.match(html, /--cache-panel-accent: var\(--cb-accent\)/);
+assert.match(html, /1\.20\.2 semantic sessions layer/);
+assert.match(html, /inset 3px 0 0 var\(--cb-accent\)/);
+assert.match(html, /1\.20\.2 semantic chart layer/);
+assert.match(html, /contain: layout paint style/);
+assert.match(html, /1\.20\.1 semantic table layer/);
+assert.match(html, /background: var\(--cb-row-hover\)/);
+assert.match(html, /box-shadow: var\(--cb-shadow-control\)/);
+assert.match(html, /1\.20\.1 semantic popover layer/);
+assert.match(html, /background: var\(--cb-surface-popover\)/);
+assert.match(html, /box-shadow: var\(--cb-shadow-popover\)/);
+assert.match(html, /1\.20\.2 semantic responsive layer/);
+for (const file of dashboardSourceFiles.filter((name) => name.endsWith(".css"))) {
+  const size = fs.statSync(path.join(__dirname, "..", "src", file)).size;
+  assert.ok(size < 25 * 1024, `${file} should stay below 25KB after semantic CSS split`);
+}
 assert.match(renderer, /analyticsSummarySlot/);
 assert.match(renderer, /analyticsChartSlot/);
 assert.match(renderer, /analyticsTableSlot/);
@@ -240,7 +323,9 @@ assert.match(renderer, /dashboard\/dashboard-bootstrap\.js/);
 assert.match(renderer, /dashboard\/dashboard-perf\.js/);
 assert.match(renderer, /dashboard\/dashboard-slots\.js/);
 assert.match(renderer, /dashboard\/slots\/analytics-slots\.js/);
-assert.match(renderer, /dashboard\/slots\/data-page-slots\.js/);
+assert.match(renderer, /dashboard\/slots\/data-page-core\.js/);
+assert.match(renderer, /dashboard\/slots\/request-page-slot\.js/);
+assert.match(renderer, /dashboard\/slots\/session-page-slot\.js/);
 assert.match(renderer, /dashboard\/slots\/session-slots\.js/);
 assert.match(renderer, /dashboard\/slots\/perf-panel-slot\.js/);
 assert.match(renderer, /dashboard\/dashboard-events\.js/);
@@ -264,9 +349,41 @@ assert.match(renderer, /sessionOverviewSlot/);
 assert.match(renderer, /sessionToolbarSlot/);
 assert.match(renderer, /sessionModalSlot/);
 assert.match(renderer, /渲染性能/);
+assert.doesNotMatch(renderer, /\?\?\?\?/);
+assert.doesNotMatch(renderer, /鐮侀亾|鈥|�/);
 assert.match(renderer, /togglePerfPanel/);
+assert.match(renderer, /refreshPerfDiagnostics/);
+assert.match(renderer, /dashboard:getDiagnostics/);
+assert.match(renderer, /copyPerformanceReport/);
+assert.match(renderer, /data-copy-perf-report/);
+assert.match(renderer, /dashboard-performance/);
+assert.match(renderer, /聚合缓存/);
+assert.match(renderer, /perfPanelSlowHint/);
+assert.match(renderer, /冷聚合/);
+assert.match(renderer, /sidecar/);
+assert.match(renderer, /rollup miss/);
+assert.match(renderer, /慢聚合/);
+assert.match(renderer, /slowAggregates/);
+assert.match(renderer, /max \$\{perfPanelMs\(slow\.maxMs\)\}/);
+assert.match(renderer, /pending/);
+assert.match(renderer, /lastBuildMs/);
+assert.match(renderer, /last build/);
+assert.match(html, /\.perf-section/);
+assert.match(html, /\.perf-copy/);
+assert.match(html, /perf-ok/);
+assert.match(html, /perf-warn/);
+assert.match(html, /perf-bad/);
 assert.match(renderer, /dashboard:getAggregates/);
 assert.match(renderer, /scheduleDashboardAggregates/);
+assert.match(renderer, /dashboardAggregateInteractionActive/);
+assert.match(renderer, /dashboardAggregateDelay/);
+assert.match(renderer, /runScheduledDashboardAggregates/);
+assert.doesNotMatch(renderer, /setTimeout\(\(\) => refreshDashboardAggregates\(s, token\), 45\)/);
+assert.match(generatedRenderer, /Generated by src\/build-dashboard-renderer\.js/);
+assert.match(generatedRenderer, /Renderer parts:/);
+assert.doesNotMatch(generatedRenderer, /\beval\s*\(/);
+assert.doesNotMatch(generatedRenderer, /\breadRendererPart\b/);
+assert.doesNotMatch(generatedRenderer, /\brendererPartPath\b/);
 
 
 assert.match(renderer, /TABLE_PAGE_SIZE_OPTIONS = \[20, 50, 100\]/);
@@ -282,7 +399,40 @@ assert.match(html, /1\.19\.2 aligned filter toolbar and explicit table paginatio
 assert.match(html, /table-page-actions/);
 assert.match(renderer, /SESSION_PAGE_SIZE = normalizeTablePageSize/);
 assert.match(renderer, /sessionTableRenderLimit = SESSION_PAGE_SIZE/);
-assert.match(renderer, /Math\.ceil\(total \/ SESSION_PAGE_SIZE\)/);
+assert.match(renderer, /normalizePageInputToIndex/);
+assert.match(renderer, /maxTablePageIndex/);
+assert.match(renderer, /scrollPagedTableToTop/);
+assert.match(renderer, /dateRangeDraftValidation/);
+assert.match(renderer, /data-date-range-error/);
+assert.match(renderer, /dateRangeOrderInvalid/);
+assert.match(renderer, /data-date-range-confirm/);
+assert.match(renderer, /preserveDatePopover/);
+assert.match(renderer, /preserveFilters/);
+assert.match(renderer, /patchDateRangeChrome\?\.\(\)/);
+assert.match(html, /\.date-range-error/);
+assert.match(html, /\.date-range-actions \.primary:disabled/);
+assert.match(renderer, /setPagedTableLoading/);
+assert.match(renderer, /pageInputState/);
+assert.match(renderer, /setPagedTableFeedback/);
+assert.match(renderer, /pagedTableFeedbackTimers/);
+assert.doesNotMatch(renderer, /let pagedTableFeedbackTimer = null/);
+assert.match(renderer, /is-page-adjusted/);
+assert.match(renderer, /syncPagedTableInput/);
+assert.match(renderer, /data-request-page-input/);
+assert.match(renderer, /data-session-page-input/);
+assert.match(renderer, /data-request-page-go/);
+assert.match(renderer, /data-session-page-go/);
+assert.match(html, /\.table-page-note\.is-page-loading/);
+assert.match(html, /\.table-scroll\.is-page-loading/);
+assert.match(html, /\.session-scroll\.is-page-loading/);
+assert.match(html, /\.table-page-note\.is-page-adjusted/);
+assert.match(renderer, /renderer-resize-perf/);
+assert.match(renderer, /resizeStart/);
+assert.match(renderer, /resizeQuietWait/);
+assert.match(renderer, /chartRedraw/);
+assert.match(renderer, /minValidTimestamp/);
+assert.doesNotMatch(renderer, /Math\.min\(\.\.\.times\)/);
+assert.doesNotMatch(renderer, /rows\.map\(\(r\) => Number\(r\.time \|\| 0\)\.filter/);
 assert.match(renderer, /renderer-perf/);
 assert.match(renderer, /filterMs/);
 assert.match(renderer, /chartDrawMs/);
@@ -291,6 +441,14 @@ assert.match(renderer, /tableRenderMs/);
 assert.match(renderer, /bindIncrementalTables/);
 assert.match(renderer, /lastChartTipKey/);
 assert.match(renderer, /contentChanged/);
+assert.match(mainProcess, /registerDashboardIpc/);
+assert.match(mainProcess, /registerSessionIpc/);
+assert.match(mainProcess, /registerSettingsIpc/);
+assert.match(mainProcess, /requestSingleInstance/);
+assert.match(mainProcess, /createDashboardWindow/);
+assert.match(mainProcess, /createLogger/);
+assert.match(mainProcess, /createDbWatchService/);
+assert.match(mainProcess, /targetFingerprint/);
 
 console.log("ok - dashboard style smoke");
 

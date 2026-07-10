@@ -11,6 +11,10 @@ const localProvider = require('../src/providers/codeartsLocal');
 const agg = require('../src/core/aggregator');
 const cacheMetrics = require('../src/core/cacheMetrics');
 const { getSnapshotAsync } = require('../src/codeartsData');
+const rollupCache = require('../src/providers/codearts/rollup-cache');
+const dashboardUsageRollup = require('../src/providers/codearts/usage-rollup');
+const usageRollupCalc = require('../src/providers/codearts/usage-rollup-calc');
+const aggregationRuntime = require('../src/providers/codearts/aggregation-runtime');
 
 function testOfficialStatsParser() {
   const text = fs.readFileSync(path.join(__dirname, 'fixtures', 'codearts-stats.txt'), 'utf8');
@@ -38,6 +42,8 @@ function testProviders() {
   assert.deepEqual(ids, ['codearts-local', 'codearts-official', 'codearts-desktop']);
   assert.equal(typeof localProvider.collectRows, 'function');
   assert.equal(typeof localProvider.scanTtftLogs, 'function');
+  assert.equal(typeof localProvider.aggregateCacheStats, 'function');
+  assert.equal(typeof localProvider.usageRollupStats, 'function');
 }
 function testAggregator() {
   const base = Date.UTC(2026, 6, 7, 1, 0, 0);
@@ -58,6 +64,158 @@ function testCacheMetricsFormula() {
   ]);
   assert.equal(usage.cacheHitDenominator, 200);
   assert.equal(usage.cacheHitRate, 50);
+}
+function testCacheMetricPipelineConsistency() {
+  const base = Date.UTC(2026, 6, 8, 9, 0, 0);
+  const tokenRows = [
+    { id: 'cache-a', sessionId: 's-cache', timeCreated: base, timeUpdated: base + 1000, provider: 'p', model: 'm-cache', total: 1377000, input: 842000, output: 26000, reasoning: 0, cacheRead: 509000, cacheWrite: 0, messages: 1, errors: 0, latencyMs: 1200 },
+    { id: 'cache-b', sessionId: 's-cache', timeCreated: base + 3600000, timeUpdated: base + 3601000, provider: 'p', model: 'm-cache', total: 310, input: 100, output: 10, reasoning: 0, cacheRead: 100, cacheWrite: 100, messages: 1, errors: 0, latencyMs: 900 },
+    { id: 'cache-c', sessionId: 's-cold', timeCreated: base + 7200000, timeUpdated: base + 7201000, provider: 'p', model: 'm-cold', total: 160, input: 120, output: 30, reasoning: 0, cacheRead: 0, cacheWrite: 10, messages: 1, errors: 0, latencyMs: 800 },
+  ];
+  const expectedDenominator = 842000 + 100 + 120 + 509000 + 100;
+  const expectedRate = (509000 + 100) / expectedDenominator * 100;
+  const messages = tokenRows.map((row) => ({
+    id: row.id,
+    session_id: row.sessionId,
+    time_created: row.timeCreated,
+    time_updated: row.timeUpdated,
+    data: JSON.stringify({
+      role: 'assistant',
+      providerID: row.provider,
+      modelID: row.model,
+      tokens: {
+        input: row.input,
+        output: row.output,
+        reasoning: row.reasoning,
+        cacheRead: row.cacheRead,
+        cacheWrite: row.cacheWrite,
+        total: row.total,
+      },
+    }),
+  }));
+
+  const core = agg.sumTokens(messages);
+  const rollup = usageRollupCalc.sumRows(tokenRows);
+  const compact = usageRollupCalc.buildCompactUsageRollup({ id: 'fixture', label: 'Fixture', dbPath: 'cache-fixture.db' }, tokenRows, 3600000);
+  const dashboardPart = usageRollupCalc.dashboardPartFromCompactRollup(compact, {
+    payload: { range: { start: 0, end: base + 86400000 } },
+    windows: { dayStartMs: 0, windowStartMs: 0, weekStartMs: 0 },
+    trendRange: { start: 0, end: base + 86400000, bucketMs: 3600000 },
+  });
+  const modelCache = dashboardPart.modelStats.find((item) => item.model === 'm-cache');
+  const firstBucket = dashboardPart.trendBuckets.find((bucket) => bucket.start === base);
+
+  for (const usage of [core, rollup, dashboardPart.summary.usage.all]) {
+    assert.equal(usage.cacheHitDenominator, expectedDenominator);
+    assert.equal(Math.round(usage.cacheHitRate * 10) / 10, Math.round(expectedRate * 10) / 10);
+  }
+  assert.equal(firstBucket.cacheHitDenominator, 842000 + 509000);
+  assert.equal(Math.round(firstBucket.cacheHitRate), 38);
+  assert.equal(modelCache.cacheHitDenominator, 842000 + 100 + 509000 + 100);
+  assert.equal(Math.round(modelCache.cacheHitRate * 10) / 10, Math.round(((509000 + 100) / modelCache.cacheHitDenominator) * 1000) / 10);
+  assert.notEqual(core.cacheHitRate, (core.cacheRead / Math.max(1, core.cacheRead + core.cacheWrite)) * 100, 'cache hit rate must not use cacheRead/(cacheRead+cacheWrite)');
+}
+function testRollupSidecarCache() {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'codearts-bar-rollup-'));
+  const previousConfigDir = process.env.CODEARTS_BAR_CONFIG_DIR;
+  const dbDir = path.join(tmp, 'db');
+  const configDir = path.join(tmp, 'config');
+  const dbPath = path.join(dbDir, 'opencode.db');
+  fs.mkdirSync(dbDir, { recursive: true });
+  fs.writeFileSync(dbPath, 'fixture-v1', 'utf8');
+  process.env.CODEARTS_BAR_CONFIG_DIR = configDir;
+  try {
+    const written = rollupCache.writeRollupCache(dbPath, { summary: { total: 42 }, buckets: [{ total: 42 }] }, {
+      kind: 'unit-rollup',
+      rowCount: 1,
+      generatedAt: 123,
+    });
+    assert.equal(written.ok, true);
+    assert.equal(written.meta.kind, 'unit-rollup');
+    assert.equal(written.meta.rowCount, 1);
+    assert.equal(written.payload.summary.total, 42);
+    assert.equal(fs.readFileSync(written.path, 'utf8').includes('\n'), false);
+    assert.ok(path.resolve(written.path).startsWith(path.resolve(configDir)));
+    assert.deepEqual(fs.readdirSync(dbDir), ['opencode.db']);
+
+    const read = rollupCache.readRollupCache(dbPath, { kind: 'unit-rollup' });
+    assert.equal(read.ok, true);
+    assert.equal(read.payload.buckets[0].total, 42);
+
+    fs.appendFileSync(dbPath, 'fixture-v2', 'utf8');
+    const stale = rollupCache.readRollupCache(dbPath, { kind: 'unit-rollup' });
+    assert.equal(stale.ok, false);
+    assert.equal(stale.reason, 'fingerprint-mismatch');
+
+    fs.writeFileSync(rollupCache.rollupCachePath(dbPath, 'unit-rollup'), '{not-json', 'utf8');
+    const corrupt = rollupCache.readRollupCache(dbPath, { kind: 'unit-rollup' });
+    assert.equal(corrupt.ok, false);
+    assert.equal(corrupt.reason, 'corrupt');
+  } finally {
+    if (previousConfigDir == null) delete process.env.CODEARTS_BAR_CONFIG_DIR;
+    else process.env.CODEARTS_BAR_CONFIG_DIR = previousConfigDir;
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+}
+function testUsageRollupStats() {
+  dashboardUsageRollup.resetUsageRollupStats();
+  const previousDisabled = process.env.CODEARTS_BAR_DISABLE_USAGE_ROLLUP_BUILD;
+  try {
+    process.env.CODEARTS_BAR_DISABLE_USAGE_ROLLUP_BUILD = '1';
+    const disabled = dashboardUsageRollup.scheduleUsageRollupBuild({ id: 'cli', label: 'CLI', dbPath: 'C:\\private\\opencode.db' }, { adapter: 'sql.js' });
+    assert.equal(disabled.scheduled, false);
+    assert.equal(disabled.reason, 'disabled');
+    assert.equal(dashboardUsageRollup.usageRollupStats().skippedDisabled, 1);
+
+    delete process.env.CODEARTS_BAR_DISABLE_USAGE_ROLLUP_BUILD;
+    const scheduled = dashboardUsageRollup.scheduleUsageRollupBuild({ id: 'cli', label: 'CLI', dbPath: 'C:\\private\\opencode.db' }, { adapter: 'sql.js', delayMs: 60000 });
+    assert.equal(scheduled.scheduled, true);
+    const duplicate = dashboardUsageRollup.scheduleUsageRollupBuild({ id: 'cli', label: 'CLI', dbPath: 'C:\\private\\opencode.db' }, { adapter: 'sql.js', delayMs: 60000 });
+    assert.equal(duplicate.scheduled, false);
+    assert.equal(duplicate.reason, 'pending');
+    const stats = dashboardUsageRollup.usageRollupStats();
+    assert.equal(stats.pendingCount, 1);
+    assert.equal(stats.scheduled, 1);
+    assert.equal(stats.skippedPending, 1);
+    assert.equal(stats.pending[0].sourceId, 'cli');
+    assert.equal(stats.pending[0].adapter, 'sql.js');
+    assert.equal(stats.pending[0].dbName, 'opencode.db');
+    assert.equal(typeof stats.pending[0].dbHash, 'string');
+    assert.equal(Object.prototype.hasOwnProperty.call(stats.pending[0], 'dbPath'), false);
+  } finally {
+    dashboardUsageRollup.resetUsageRollupStats();
+    if (previousDisabled == null) delete process.env.CODEARTS_BAR_DISABLE_USAGE_ROLLUP_BUILD;
+    else process.env.CODEARTS_BAR_DISABLE_USAGE_ROLLUP_BUILD = previousDisabled;
+  }
+}
+function testSlowAggregateStats() {
+  aggregationRuntime.resetSlowAggregateStats();
+  const previousWarn = console.warn;
+  const warnings = [];
+  console.warn = (message) => warnings.push(String(message || ''));
+  try {
+    const result = aggregationRuntime.timeAggregateSync('summary', 'unit', {
+      dbPath: 'C:\\private\\opencode.db',
+      slowAggregateMs: 0,
+      disableAggregateCache: true,
+      range: { start: 1, end: 2 },
+    }, () => ({ ok: true, value: 1 }));
+    assert.equal(result.ok, true);
+    const stats = aggregationRuntime.slowAggregateStats();
+    assert.equal(stats.count, 1);
+    assert.equal(stats.failed, 0);
+    assert.equal(stats.last.label, 'summary');
+    assert.equal(stats.last.adapter, 'unit');
+    assert.equal(stats.byLabel.summary.count, 1);
+    assert.equal(stats.byAdapter.unit.count, 1);
+    assert.ok(stats.maxMs >= 0);
+    assert.equal(Object.prototype.hasOwnProperty.call(stats.last, 'dbPath'), false);
+    assert.doesNotMatch(JSON.stringify(stats), /opencode\.db|C:\\private/);
+    assert.ok(warnings.some((line) => line.includes('slow aggregate summary')));
+  } finally {
+    console.warn = previousWarn;
+    aggregationRuntime.resetSlowAggregateStats();
+  }
 }
 function testMultiTurnSessionTokensPreferStepFinish() {
   const base = Date.UTC(2026, 6, 7, 1, 0, 0);
@@ -212,22 +370,26 @@ async function testProviderDbAggregates() {
     assert.equal(summary.usage.window.messages, 3);
     assert.equal(summary.usage.all.cacheHitDenominator, 141);
     assert.equal(Math.round(summary.usage.all.cacheHitRate * 10) / 10, 7.8);
+    assert.notEqual(summary.usage.all.cacheHitDenominator, summary.usage.all.cacheRead + summary.usage.all.cacheWrite);
 
     const trend = await localProvider.getTrendBuckets({ dbPath, start: 0, end: Date.UTC(2030, 0, 1), bucketMs: 86400000 });
     assert.equal(trend.ok, true);
     assert.equal(trend.buckets.length, 1);
     assert.equal(trend.buckets[0].total, 220);
     assert.equal(trend.buckets[0].cacheHitDenominator, 141);
+    assert.equal(Math.round(trend.buckets[0].cacheHitRate * 10) / 10, 7.8);
 
     const source = await localProvider.getSourceStats({ dbPath, range: { start: 0, end: Date.UTC(2030, 0, 1) } });
     assert.equal(source.items[0].total, 220);
     assert.equal(source.items[0].requests, 3);
     assert.equal(source.items[0].cacheHitDenominator, 141);
+    assert.equal(Math.round(source.items[0].cacheHitRate * 10) / 10, 7.8);
 
     const models = await localProvider.getModelStats({ dbPath, range: { start: 0, end: Date.UTC(2030, 0, 1) } });
     assert.equal(models.items[0].model, 'fixture-model');
     assert.equal(models.items[0].total, 167);
     assert.equal(models.items[0].cacheHitDenominator, 105);
+    assert.equal(Math.round(models.items[0].cacheHitRate * 10) / 10, 4.8);
 
     const sessions = await localProvider.getSessionSummary({ dbPath, timestamp });
     assert.equal(sessions.total, 2);
@@ -241,12 +403,96 @@ async function testProviderDbAggregates() {
   }
 }
 
+async function testDashboardUsageRollupCache() {
+  const sourceDb = path.join(__dirname, 'fixtures', 'opencode-fixture.db');
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'codearts-bar-dashboard-rollup-'));
+  const dbPath = path.join(tmpDir, 'opencode-fixture.db');
+  const previousForce = process.env.CODEARTS_BAR_FORCE_SQLJS;
+  const previousConfigDir = process.env.CODEARTS_BAR_CONFIG_DIR;
+  const previousDisableRollupBuild = process.env.CODEARTS_BAR_DISABLE_USAGE_ROLLUP_BUILD;
+  fs.copyFileSync(sourceDb, dbPath);
+  process.env.CODEARTS_BAR_FORCE_SQLJS = '1';
+  process.env.CODEARTS_BAR_CONFIG_DIR = path.join(tmpDir, 'config');
+  process.env.CODEARTS_BAR_DISABLE_USAGE_ROLLUP_BUILD = '1';
+  try {
+    const payload = {
+      dbPath,
+      timestamp: Date.UTC(2026, 6, 8, 0, 0, 0),
+      range: { start: 0, end: Date.UTC(2030, 0, 1) },
+      bucketMs: 86400000,
+      disableAggregateCache: true,
+    };
+    const first = await localProvider.getDashboardAggregates(payload);
+    assert.equal(first.ok, true);
+    assert.equal(first.usage.all.total, 220);
+    assert.equal(first.perf.usageRollup.statuses[0].status, 'miss-pass-through');
+
+    const built = await dashboardUsageRollup.buildAndWriteUsageRollupForSource({ id: 'custom', label: 'Custom', dbPath }, { adapter: 'sql.js' });
+    assert.equal(built.usageRollup.status, 'miss');
+    assert.equal(built.usageRollup.rowCount, 3);
+    const buildStats = dashboardUsageRollup.usageRollupStats();
+    assert.equal(buildStats.buildRuns, 1);
+    assert.equal(buildStats.recentBuilds.length, 1);
+    assert.equal(buildStats.recentBuilds[0].adapter, 'sql.js');
+    assert.equal(buildStats.recentBuilds[0].dbName, 'opencode-fixture.db');
+    assert.equal(typeof buildStats.recentBuilds[0].dbHash, 'string');
+    assert.equal(Object.prototype.hasOwnProperty.call(buildStats.recentBuilds[0], 'dbPath'), false);
+    assert.ok(Number(buildStats.lastBuildMs) >= 0);
+
+    const second = await localProvider.getDashboardAggregates(payload);
+    assert.equal(second.ok, true);
+    assert.equal(second.usage.all.total, first.usage.all.total);
+    assert.equal(second.buckets[0].total, first.buckets[0].total);
+    assert.equal(second.modelStats[0].total, first.modelStats[0].total);
+    assert.equal(second.perf.usageRollup.hits, 1);
+    assert.equal(second.perf.usageRollup.compactHits, 1);
+    assert.equal(second.perf.usageRollup.statuses[0].status, 'compact-hit');
+    assert.equal(second.perf.usageRollup.statuses[0].sessionStatus, 'session-hit');
+    assert.equal(second.sessionSummary.total, first.sessionSummary.total);
+    assert.ok(second.perf.usageRollup.statuses[0].compactBuckets >= 1);
+
+    const summaryFast = await localProvider.getSummary(payload);
+    assert.equal(summaryFast.ok, true);
+    assert.equal(summaryFast.usage.all.total, first.usage.all.total);
+    assert.equal(summaryFast.perf.usageRollup.compactHits, 1);
+
+    const trendFast = await localProvider.getTrendBuckets(payload);
+    assert.equal(trendFast.ok, true);
+    assert.equal(trendFast.buckets[0].total, first.buckets[0].total);
+    assert.equal(trendFast.perf.usageRollup.compactHits, 1);
+
+    const sourceFast = await localProvider.getSourceStats(payload);
+    assert.equal(sourceFast.ok, true);
+    assert.equal(sourceFast.items[0].total, first.sourceStats[0].total);
+    assert.equal(sourceFast.perf.usageRollup.compactHits, 1);
+
+    const modelFast = await localProvider.getModelStats(payload);
+    assert.equal(modelFast.ok, true);
+    assert.equal(modelFast.items[0].total, first.modelStats[0].total);
+    assert.equal(modelFast.perf.usageRollup.compactHits, 1);
+
+    const sessionFast = await localProvider.getSessionSummary(payload);
+    assert.equal(sessionFast.ok, true);
+    assert.equal(sessionFast.total, first.sessionSummary.total);
+    assert.equal(sessionFast.perf.usageRollup.sessionHits, 1);
+  } finally {
+    if (previousForce == null) delete process.env.CODEARTS_BAR_FORCE_SQLJS; else process.env.CODEARTS_BAR_FORCE_SQLJS = previousForce;
+    if (previousConfigDir == null) delete process.env.CODEARTS_BAR_CONFIG_DIR; else process.env.CODEARTS_BAR_CONFIG_DIR = previousConfigDir;
+    if (previousDisableRollupBuild == null) delete process.env.CODEARTS_BAR_DISABLE_USAGE_ROLLUP_BUILD; else process.env.CODEARTS_BAR_DISABLE_USAGE_ROLLUP_BUILD = previousDisableRollupBuild;
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+}
+
 (async () => {
   testOfficialStatsParser();
   testQuota();
   testProviders();
   testAggregator();
   testCacheMetricsFormula();
+  testCacheMetricPipelineConsistency();
+  testRollupSidecarCache();
+  testUsageRollupStats();
+  testSlowAggregateStats();
   testMultiTurnSessionTokensPreferStepFinish();
   testTtftLogFixture();
   testQueueLogFixture();
@@ -255,6 +501,7 @@ async function testProviderDbAggregates() {
   await testSqliteFixtureSqlJsFallback();
   await testProviderDbPagination();
   await testProviderDbAggregates();
+  await testDashboardUsageRollupCache();
   await testRenameSessionFixture();
   console.log('ok - unit tests');
 })().catch((error) => { console.error(error); process.exit(1); });

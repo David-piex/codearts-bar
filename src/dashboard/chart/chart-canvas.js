@@ -176,15 +176,25 @@ function drawChart(rows, s, hover = -1, progress = 1){
     if(ownPerfBucket){ finishPerfBucket(0); try { updatePerfPanel(); } catch {} }
     return;
   }
-  const bucketStartedAt = perfNow();
-  const data = bucketRows(rows, s);
-  markPerfStage('chartBucketMs', perfNow() - bucketStartedAt);
-  const canvasStartedAt = perfNow();
   const app = document.getElementById('app');
   const zoomSettling = Date.now() < Number(zoomInteractionUntil || 0) || Boolean(document.body?.classList?.contains?.('is-zooming')) || Boolean(app?.classList?.contains?.('is-zooming'));
   const resizeSettling = Date.now() < Number(chartResizeQuietUntil || 0) || Boolean(document.body?.classList?.contains?.('is-resizing')) || Boolean(app?.classList?.contains?.('is-resizing'));
   const canReuseExistingBitmap = chartPoints.length && canvas.width > 0 && canvas.height > 0 && hover < 0 && Number(chartPinnedIndex || -1) < 0;
-  if(light && (zoomSettling || resizeSettling) && canReuseExistingBitmap){
+  if(light && !chartGeometryDirty && (zoomSettling || resizeSettling) && canReuseExistingBitmap){
+    markPerfStage('chartBucketMs', 0);
+    markPerfStage('chartCanvasMs', 0);
+    markPerfStage('chartDrawMs', perfNow() - chartDrawStartedAt);
+    if(ownPerfBucket){
+      finishPerfBucket(0);
+      try { updatePerfPanel(); } catch {}
+    }
+    return;
+  }
+  const bucketStartedAt = perfNow();
+  const data = bucketRows(rows, s);
+  markPerfStage('chartBucketMs', perfNow() - bucketStartedAt);
+  const canvasStartedAt = perfNow();
+  if(light && !chartGeometryDirty && (zoomSettling || resizeSettling) && canReuseExistingBitmap){
     markPerfStage('chartCanvasMs', perfNow() - canvasStartedAt);
     markPerfStage('chartDrawMs', perfNow() - chartDrawStartedAt);
     if(ownPerfBucket){

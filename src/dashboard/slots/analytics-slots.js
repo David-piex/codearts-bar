@@ -3,21 +3,25 @@ function analyticsAdvancedHtml(rows, s){ const t = perfNow(); const html = rende
 function analyticsDeferredHtml(label = TXT.updatingDetails || '正在更新明细...'){
   return `<div class="analytics-deferred"><span>${esc(label)}</span></div>`;
 }
-function scheduleAnalyticsDeferredPatches(token, rows, s){
+function scheduleAnalyticsDeferredPatches(token, rows, s, opts = {}){
   const stillValid = () => token === analyticsDeferredToken && snapshot === s && layoutMode === 'dashboard' && workspaceMode === 'analytics';
   const defer = (delay, fn) => setTimeout(() => {
     if(!stillValid()) return;
     fn();
   }, delay);
-  defer(16, () => patchHtmlSlot('analyticsAgentSlot', renderAgentRhythm(s)));
-  defer(72, () => {
-    patchHtmlSlot('analyticsTableSlot', analyticsTableHtml(rows, s));
-    bindIncrementalTables();
-  });
-  defer(180, () => {
-    patchHtmlSlot('analyticsAdvancedSlot', analyticsAdvancedHtml(rows, s));
-    bindIncrementalTables();
-  });
+  if(opts.skipAgent !== true) defer(16, () => patchHtmlSlot('analyticsAgentSlot', renderAgentRhythm(s)));
+  if(opts.skipTable !== true){
+    defer(72, () => {
+      patchHtmlSlot('analyticsTableSlot', analyticsTableHtml(rows, s));
+      bindIncrementalTables();
+    });
+  }
+  if(opts.skipAdvanced !== true){
+    defer(180, () => {
+      patchHtmlSlot('analyticsAdvancedSlot', analyticsAdvancedHtml(rows, s));
+      bindIncrementalTables();
+    });
+  }
 }
 function analyticsShellHtml(s, rows, opts = {}){
   const deferHeavy = opts.deferHeavy === true;
@@ -56,7 +60,8 @@ function patchChartChrome(rows, s){
 }
 function patchAnalyticsView(s, rows, opts = {}){
   if(!analyticsSlotsReady()) return false;
-  patchHtmlSlot('analyticsFiltersSlot', filtersHtml(s));
+  const preserveDatePopover = opts.preserveFilters === true || Boolean(dateRangeOpen && document.querySelector?.('.date-range-popover'));
+  if(!preserveDatePopover) patchHtmlSlot('analyticsFiltersSlot', filtersHtml(s));
   patchHtmlSlot('analyticsSummarySlot', renderSummary(rows, s));
   patchHtmlSlot('analyticsDiagnosticsSlot', renderDiagnosticsNotice(s));
   patchHtmlSlot('analyticsEmptySlot', analyticsEmptyState(rows));
@@ -64,9 +69,17 @@ function patchAnalyticsView(s, rows, opts = {}){
   const token = ++analyticsDeferredToken;
   if(opts.deferHeavy === true){
     patchHtmlSlot('analyticsAgentSlot', analyticsDeferredHtml(TXT.updatingAgentIdle || '正在更新 Agent idle...'));
-    patchHtmlSlot('analyticsTableSlot', analyticsDeferredHtml(TXT.updatingDetails || '正在更新明细...'));
+    if(opts.sourceSwitch === true){
+      patchHtmlSlot('analyticsTableSlot', analyticsTableHtml(rows, s));
+      bindIncrementalTables();
+    } else {
+      patchHtmlSlot('analyticsTableSlot', analyticsDeferredHtml(TXT.updatingDetails || '正在更新明细...'));
+    }
     patchHtmlSlot('analyticsAdvancedSlot', '');
-    scheduleAnalyticsDeferredPatches(token, rows, s);
+    scheduleAnalyticsDeferredPatches(token, rows, s, {
+      skipTable: opts.sourceSwitch === true,
+      skipAdvanced: opts.sourceSwitch === true && !analyticsAdvancedOpen,
+    });
   } else {
     patchHtmlSlot('analyticsAgentSlot', renderAgentRhythm(s));
     patchHtmlSlot('analyticsTableSlot', analyticsTableHtml(rows, s));
@@ -93,7 +106,7 @@ function scheduleChartBind(rows, s, opts = {}, delay = 42, after = null){
         if(typeof after === 'function') after();
       });
     };
-    const preferIdleBind = opts.resize === true || opts.settled === true || delay > 80;
+    const preferIdleBind = opts.settled === true ? false : (opts.resize === true || delay > 80);
     if(preferIdleBind && typeof requestIdleCallback === 'function'){
       requestIdleCallback(commit, { timeout: opts.resize === true ? 900 : 700 });
       return;
@@ -123,6 +136,10 @@ function patchAnalyticsSlotsForState(s = snapshot || {}, opts = {}){
   const started = perfNow();
   const rows = currentAnalyticsRows(s);
   if(opts.tableOnly === true){
+    if(tableTab === 'requests' && typeof patchRequestTablePageRows === 'function' && patchRequestTablePageRows(s)){
+      if(!currentRenderPerf) recordPatchPerf('analytics:request-page-patch', started, rows.length, { domCommitMs: Math.round(perfNow() - started) });
+      return true;
+    }
     patchHtmlSlot('analyticsTableSlot', analyticsTableHtml(rows, s));
     bindIncrementalTables();
     if(!currentRenderPerf) recordPatchPerf('analytics:table-patch', started, rows.length, { domCommitMs: Math.round(perfNow() - started) });
@@ -137,7 +154,7 @@ function patchAnalyticsSlotsForState(s = snapshot || {}, opts = {}){
   }
   setInteractionMode('is-filtering', 190);
   if(!patchAnalyticsView(s, rows, opts)) return false;
-  if(!currentRenderPerf) recordPatchPerf('analytics:slots-patch', started, rows.length, { domCommitMs: Math.round(perfNow() - started) });
+  if(!currentRenderPerf) recordPatchPerf(opts.sourceSwitch === true ? 'analytics:source-switch-patch' : 'analytics:slots-patch', started, rows.length, { domCommitMs: Math.round(perfNow() - started) });
   bindIncrementalTables();
   scheduleDashboardAggregates(s, opts);
   scheduleChartBind(rows, s, { instant: true, patch: true }, opts.chartDelayMs ?? 220);
@@ -152,6 +169,7 @@ function patchAnalyticsChartOnly(s = snapshot || {}){
 }
 function patchAnalyticsFiltersOnly(s = snapshot || {}){
   if(!analyticsSlotsReady() || layoutMode !== 'dashboard' || workspaceMode !== 'analytics') return false;
+  if(dateRangeOpen && document.querySelector?.('.date-range-popover')) return true;
   return patchHtmlSlot('analyticsFiltersSlot', filtersHtml(s));
 }
 function currentRequestTableList(rows = currentAnalyticsRows(snapshot || {})){
@@ -177,12 +195,13 @@ function patchRequestSelection(){
 }
 function patchDashboardAggregateSlots(s = snapshot || {}, changes = {}){
   if(!analyticsSlotsReady() || layoutMode !== 'dashboard' || workspaceMode !== 'analytics') return false;
+  const preserveDatePopover = Boolean(dateRangeOpen && document.querySelector?.('.date-range-popover'));
   const patchAll = !Object.keys(changes || {}).length;
   const trendChangesChart = Boolean(changes.trend && trendListCanDriveChart(s, isDayRange()));
   const needsRows = patchAll || changes.summary || trendChangesChart || (analyticsAdvancedOpen && (changes.sourceStats || changes.modelStats || changes.sessionSummary));
   const rows = needsRows ? getFilteredRowsForView(s) : null;
   const started = perfNow();
-  if(patchAll || changes.sourceStats || changes.modelStats) patchHtmlSlot('analyticsFiltersSlot', filtersHtml(s));
+  if(!preserveDatePopover && (patchAll || changes.sourceStats || changes.modelStats)) patchHtmlSlot('analyticsFiltersSlot', filtersHtml(s));
   if(patchAll || changes.summary) patchHtmlSlot('analyticsSummarySlot', renderSummary(rows || getFilteredRowsForView(s), s));
   if(patchAll || changes.summary || changes.sourceStats) patchHtmlSlot('analyticsDiagnosticsSlot', renderDiagnosticsNotice(s));
   if(patchAll || trendChangesChart) patchChartChrome(rows || getFilteredRowsForView(s), s);
