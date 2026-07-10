@@ -5,8 +5,8 @@ const path = require('node:path');
 const root = path.resolve(__dirname, '..');
 const src = path.join(root, 'src');
 const manifest = JSON.parse(fs.readFileSync(path.join(src, 'dashboard-css-sources.json'), 'utf8'));
-assert.equal(manifest.length, 26, 'dashboard CSS source count must not grow without an intentional budget update');
-for (const owner of ['styles/popover.css','styles/tables.css','styles/chart.css']) assert.equal(manifest.includes(owner), true, `semantic owner missing from CSS manifest: ${owner}`);
+assert.equal(manifest.length, 9, 'dashboard CSS domain source count must not grow without an intentional budget update');
+for (const owner of ['styles/domain-controls.css','styles/domain-sessions.css','styles/domain-chart.css','styles/domain-semantic.css']) assert.equal(manifest.includes(owner), true, `semantic owner missing from CSS manifest: ${owner}`);
 const source = manifest.map((rel) => fs.readFileSync(path.join(src, rel), 'utf8')).join('\n');
 const count = (pattern) => (source.match(pattern) || []).length;
 const metrics = { important:count(/!important/g), backdropFilter:count(/backdrop-filter/g), boxShadow:count(/box-shadow/g), media:count(/@media/g) };
@@ -16,6 +16,6 @@ assert.ok(metrics.boxShadow <= 304, `box-shadow budget exceeded: ${metrics.boxSh
 assert.ok(metrics.media <= 70, `media-query budget exceeded: ${metrics.media}`);
 const bundleBytes = fs.statSync(path.join(src, 'dashboard-bundle.css')).size;
 assert.ok(bundleBytes <= 205 * 1024, `dashboard CSS bundle exceeded 205 KiB: ${bundleBytes}`);
-const popover = fs.readFileSync(path.join(src, 'styles', 'popover.css'), 'utf8');
+const popover = fs.readFileSync(path.join(src, 'styles', 'domain-semantic.css'), 'utf8');
 assert.match(popover, /\.date-range-popover,\s*\.chart-tip,\s*\.perf-panel\s*\{[^}]*color:\s*var\(--cb-text\)/s, 'popover semantic owner should share the common text color rule');
 console.log(`ok - dashboard css budget bundle=${bundleBytes} important=${metrics.important} backdrop=${metrics.backdropFilter} shadow=${metrics.boxShadow} media=${metrics.media}`);

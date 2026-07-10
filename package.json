@@ -12,7 +12,7 @@
     "stats": "node src/cli.js stats",
     "e2e:electron": "npm run build:renderer && node tests/electron-dashboard-e2e.js",
     "screenshot:dashboard": "npm run build:renderer && node tests/dashboard-preview-screenshot.js",
-    "test": "npm run build:renderer && node tests/run-tests.js && node tests/dashboard-renderer-smoke.js && node tests/chart-axis-smoke.js && node tests/cli-bin-smoke.js && node tests/source-encoding-smoke.js && node tests/date-range-state-smoke.js && node tests/electron-security-smoke.js && node tests/extension-package-smoke.js && node tests/extension-webview-smoke.js && node tests/extension-refresh-smoke.js && node tests/dashboard-style-smoke.js && node tests/dashboard-css-budget-smoke.js && node tests/app-runtime-smoke.js && node tests/i18n-smoke.js && node tests/dashboard-preview-smoke.js && node tests/database-diagnostics-smoke.js && node tests/crash-reporter-smoke.js && node tests/release-manifest-smoke.js && node src/cli.js self-test",
+    "test": "npm run build:renderer && node tests/run-tests.js && node tests/dashboard-renderer-smoke.js && node tests/chart-axis-smoke.js && node tests/cli-bin-smoke.js && node tests/source-encoding-smoke.js && node tests/date-range-state-smoke.js && node tests/electron-security-smoke.js && node tests/extension-package-smoke.js && node tests/extension-webview-smoke.js && node tests/extension-refresh-smoke.js && node tests/dashboard-style-smoke.js && node tests/dashboard-css-budget-smoke.js && node tests/settings-store-smoke.js && node tests/app-runtime-smoke.js && node tests/i18n-smoke.js && node tests/dashboard-preview-smoke.js && node tests/database-diagnostics-smoke.js && node tests/crash-reporter-smoke.js && node tests/release-manifest-smoke.js && node src/cli.js self-test",
     "prepare:extension": "node src/prepare-extension.js",
     "build:extension": "node src/build-extension.js",
     "build:app": "npm run build:renderer && npm run build:cli-resources && npm run build:app-resources && electron-builder --projectDir .cache/app-runtime --config ../../electron-builder.runtime.js --win nsis portable --x64",
@@ -21,12 +21,14 @@
     "stress:pagination": "node tests/pagination-stress.js",
     "stress:aggregation": "node tests/aggregation-stress.js",
     "stress:aggregation:full": "node tests/aggregation-stress.js --full",
-    "verify": "npm test && npm run e2e:electron && npm run stress:dashboard && npm run stress:pagination && npm run stress:aggregation",
+    "verify": "npm test && npm run e2e:electron && npm run e2e:vscode && npm run stress:dashboard && npm run stress:pagination && npm run stress:aggregation",
     "smoke:release": "node tests/release-package-smoke.js",
     "smoke:package-resources": "node tests/package-resource-smoke.js",
     "build:cli-resources": "node src/build-cli-resources.js",
     "build:app-resources": "node src/build-app-resources.js",
-    "smoke:app-asar": "node tests/app-asar-smoke.js"
+    "smoke:app-asar": "node tests/app-asar-smoke.js",
+    "e2e:vscode": "npm run prepare:extension && node tests/vscode-extension-host-runner.js",
+    "screenshot:vscode": "npm run prepare:extension && node tests/vscode-readme-screenshots.js"
   },
   "keywords": [
     "codearts",
@@ -39,10 +41,12 @@
   "author": "CodeArts Bar",
   "license": "MIT",
   "devDependencies": {
+    "@vscode/test-electron": "^3.0.0",
     "@vscode/vsce": "^3.9.2",
     "electron": "^35.7.5",
     "electron-builder": "^26.15.3",
-    "esbuild": "^0.28.1"
+    "esbuild": "^0.28.1",
+    "puppeteer-core": "^24.16.0"
   },
   "dependencies": {
     "sql.js": "^1.14.1"

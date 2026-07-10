@@ -1,3 +1,5 @@
+/* Dashboard CSS domain bundle. Preserve section order to retain cascade semantics. */
+/* merged source: styles/sessions-inspector.css */
 /* Session inspector, source cards and modal surfaces split from dashboard.css. */
 .source-grid { grid-template-columns:repeat(3,minmax(240px,1fr)); }
     .source-card {

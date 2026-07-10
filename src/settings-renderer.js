@@ -1,7 +1,7 @@
 const ipcRenderer = window.codeartsApi;
 if(!ipcRenderer || typeof ipcRenderer.invoke !== 'function') throw new Error('Settings preload API unavailable');
 
-const ids = ['dbPath','dailyLimit','windowHours','refreshMs','showPerformance','showTools','notifyDanger'];
+const ids = ['dbPath','dailyLimit','windowHours','refreshMs','dbWatchVisiblePollMs','dbWatchHiddenPollMs','showPerformance','showTools','notifyDanger'];
 function el(id) { return document.getElementById(id); }
 async function load() {
   const s = await ipcRenderer.invoke('settings:get');
@@ -22,6 +22,8 @@ document.getElementById('save').onclick = async () => {
   s.dailyLimit = Number(s.dailyLimit);
   s.windowHours = Number(s.windowHours);
   s.refreshMs = Number(s.refreshMs);
+  s.dbWatchVisiblePollMs = Number(s.dbWatchVisiblePollMs);
+  s.dbWatchHiddenPollMs = Number(s.dbWatchHiddenPollMs);
   await ipcRenderer.invoke('settings:set', s);
   el('status').textContent = '\u5df2\u4fdd\u5b58\u5e76\u5237\u65b0';
 };

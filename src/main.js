@@ -6,7 +6,7 @@ const path = require('node:path');
 const os = require('node:os');
 const { spawn } = require('node:child_process');
 const { getSnapshotWithCache, snapshotToText, errorSnapshot, fmtInt } = require('./codeartsData');
-const { loadSettings, saveSettings } = require('./settings');
+const { loadSettings, saveSettings, watchSettings, closeSettingsStore } = require('./settings');
 const { diagnose } = require('./diagnose');
 const { notificationEvents } = require('./health');
 const localProvider = require('./providers/codeartsLocal');
@@ -45,6 +45,7 @@ let forcedExitTimer = null;
 let trayHintShown = false;
 let fullRefreshInFlight = null;
 let lightRefreshInFlight = null;
+let stopSettingsWatch = null;
 
 const trayAssetsDir = path.join(__dirname, '..', 'assets');
 const packageSmokeStartedAt = Date.now();
@@ -65,6 +66,12 @@ const dbWatchService = createDbWatchService({
   dashboardWindowVisible,
   refreshLightAndPush,
   refreshTraySummaryOnly,
+});
+stopSettingsWatch = watchSettings(({ reason } = {}) => {
+  if (reason === 'save') return;
+  scheduleRefresh();
+  dbWatchService.schedule();
+  refreshLight({ reason: 'settings-file-change' });
 });
 
 function trayActions() {
@@ -113,6 +120,8 @@ function cleanupRuntime() {
     refreshTimer = null;
   }
   dbWatchService.cleanup();
+  stopSettingsWatch?.();
+  closeSettingsStore();
   Promise.resolve(localProvider.closeSqlJsWorker?.()).catch((error) => appendLog('warn', 'cleanup', 'sql.js worker close failed', { message: error.message }));
   if (tray) {
     try { tray.destroy(); } catch {}

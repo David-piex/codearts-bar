@@ -6,32 +6,7 @@ const path = require("node:path");
 
 const dashboardSourceFiles = [
   "dashboard.html",
-  "dashboard.css",
-  "styles/tokens.css",
-  "styles/base.css",
-  "dashboard-controls.css",
-  "dashboard-analytics.css",
-  "dashboard-sessions.css",
-  "dashboard-chart.css",
-  "dashboard-compact.css",
-  "dashboard-responsive.css",
-  "dashboard-native.css",
-  "dashboard-layout.css",
-  "dashboard-components.css",
-  "styles/sessions-inspector.css",
-  "styles/request-manager.css",
-  "styles/session-library.css",
-  "styles/native-controls-polish.css",
-  "styles/usage-summary.css",
-  "styles/responsive-states.css",
-  "styles/layout.css",
-  "styles/controls.css",
-  "styles/analytics.css",
-  "styles/sessions.css",
-  "styles/chart.css",
-  "styles/tables.css",
-  "styles/popover.css",
-  "styles/responsive.css",
+  ...JSON.parse(fs.readFileSync(path.join(__dirname, "..", "src", "dashboard-css-sources.json"), "utf8")),
 ];
 const html = dashboardSourceFiles
   .map((file) => fs.readFileSync(path.join(__dirname, "..", "src", file), "utf8"))
@@ -310,7 +285,7 @@ assert.match(html, /box-shadow: var\(--cb-shadow-popover\)/);
 assert.match(html, /1\.20\.2 semantic responsive layer/);
 for (const file of dashboardSourceFiles.filter((name) => name.endsWith(".css"))) {
   const size = fs.statSync(path.join(__dirname, "..", "src", file)).size;
-  assert.ok(size < 25 * 1024, `${file} should stay below 25KB after semantic CSS split`);
+  assert.ok(size < 70 * 1024, `${file} should stay below 70KB after page-domain CSS merge`);
 }
 assert.match(renderer, /analyticsSummarySlot/);
 assert.match(renderer, /analyticsChartSlot/);

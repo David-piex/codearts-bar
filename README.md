@@ -102,6 +102,28 @@ npm run stress:aggregation
 生成预览截图：`npm run screenshot:dashboard`
 构建 Windows 安装包和便携版：`npm run build:app`
 
-## License
+## VS Code / CodeArts visual regression
 
+The extension loads the lightweight Summary first and fills trend, model and session aggregates only after the Webview becomes visible. The chart keeps its axes when every value is zero. Hovering the trend shows time, total tokens and output tokens.
+
+| Hover tooltip | Zero-data state |
+| --- | --- |
+| ![VS Code trend hover tooltip](docs/screenshots/vscode-tooltip.png) | ![VS Code zero-data chart state](docs/screenshots/vscode-empty-state.png) |
+
+## Adaptive local refresh
+
+Database file watching covers the main database, WAL, SHM, touch file and related directories. The fallback poll interval defaults to 4000 ms while the dashboard is visible and 15000 ms while hidden in the tray. These values are configurable in Settings or with `CODEARTS_BAR_DB_WATCH_VISIBLE_POLL_MS` and `CODEARTS_BAR_DB_WATCH_HIDDEN_POLL_MS`.
+
+The Settings module keeps an in-memory normalized snapshot and watches `settings.json` for external changes, avoiding repeated synchronous parsing on refresh hot paths.
+
+## Additional verification
+
+```powershell
+npm run e2e:vscode
+npm run screenshot:vscode
+```
+
+The Extension Host test launches the official VS Code test runtime and measures real extension activation and refresh-command latency.
+
+## License
 MIT

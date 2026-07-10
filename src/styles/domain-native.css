@@ -1,4 +1,89 @@
+/* Dashboard CSS domain bundle. Preserve section order to retain cascade semantics. */
+/* merged source: dashboard-native.css */
+/* 1.19.0 performance and native visual unification pass */
+:root {
+  --radius-sm:10px;
+  --radius-md:14px;
+  --radius-lg:18px;
+  --radius-xl:24px;
+  --shadow-card:0 1px 0 rgba(255,255,255,.86) inset,0 12px 30px rgba(24,39,65,.058);
+  --shadow-card-hover:0 1px 0 rgba(255,255,255,.9) inset,0 14px 34px rgba(24,39,65,.072);
+  --shadow-control:inset 0 1px 0 rgba(255,255,255,.72),0 4px 10px rgba(24,39,65,.026);
+  --control-height:34px;
+  --control-radius:10px;
+  --surface-soft:rgba(255,255,255,.72);
+  --surface-strong:rgba(255,255,255,.88);
+  --hairline:rgba(210,218,230,.72);
+}
+:where(button, input, select, textarea) {
+  min-height:var(--control-height);
+  border-radius:var(--control-radius);
+}
+:where(.summary-card,.chart-card,.table-card,.source-card,.session-simple-shell,.session-advanced-shell,.session-essential-inspector,.session-inspector,.cache-governance,.usage-total-board,.agent-rhythm-card) {
+  border-color:var(--hairline) !important;
+  box-shadow:var(--shadow-card) !important;
+}
+:where(.summary-card,.source-card,.chart-snapshot-card,.session-row-actions button,.icon-chip,.series-chip,.range button):hover {
+  transform:translateY(-.5px);
+  box-shadow:var(--shadow-card-hover);
+}
+@media (prefers-reduced-motion: reduce) {
+  :where(.summary-card,.source-card,.chart-snapshot-card,.session-row-actions button,.icon-chip,.series-chip,.range button):hover { transform:none; }
+}
 
+
+/* 1.20.0 commercial native restraint: softer rows, Finder-like session surfaces, productized diagnostics */
+:root{
+  --native-row-border:rgba(15,23,42,.052);
+  --native-row-hover:rgba(10,132,255,.038);
+  --native-row-selected:rgba(10,132,255,.082);
+  --native-popover-shadow:0 18px 50px rgba(23,37,84,.13),0 1px 0 rgba(255,255,255,.75) inset;
+}
+.table-card table tbody tr{border-color:var(--native-row-border)}
+.table-card table tbody tr:hover{background:var(--native-row-hover);box-shadow:none}
+.table-card table tbody tr:active{background:rgba(10,132,255,.06)}
+.session-table.simple .session-row td{border-bottom-color:var(--native-row-border)}
+.session-table.simple .session-row:hover td{background:var(--native-row-hover)}
+.session-table.simple .session-row.selected td{background:var(--native-row-selected)}
+.session-workspace-card,.session-simple-shell,.session-advanced-shell,.session-inspector{box-shadow:0 10px 34px rgba(26,42,74,.055),inset 0 1px 0 rgba(255,255,255,.68)}
+.session-row-actions button,.session-essential-actions button,.topbar-actions button,.filters button{transition:background .14s ease,border-color .14s ease,transform .12s ease,opacity .14s ease}
+.session-row-actions button:hover,.session-essential-actions button:hover,.topbar-actions button:hover,.filters button:hover{background:rgba(15,23,42,.045);transform:none}
+.session-row-actions button:active,.session-essential-actions button:active,.topbar-actions button:active,.filters button:active{transform:translateY(1px)}
+.commercial-error-state{border-color:rgba(239,68,68,.16);background:linear-gradient(180deg,rgba(255,255,255,.86),rgba(248,250,252,.78));box-shadow:var(--native-popover-shadow)}
+.commercial-error-state .error-orb{background:rgba(239,68,68,.10);color:#c2410c;box-shadow:inset 0 1px 0 rgba(255,255,255,.86)}
+@media (prefers-color-scheme: dark){
+  :root{--native-row-border:rgba(226,232,240,.07);--native-row-hover:rgba(125,211,252,.08);--native-row-selected:rgba(10,132,255,.18)}
+  .commercial-error-state{background:linear-gradient(180deg,rgba(15,23,42,.78),rgba(2,6,23,.62));border-color:rgba(248,113,113,.22)}
+}
+
+/* merged source: dashboard-layout.css */
+/* 1.19.0 local rendering layout pass */
+.content {
+  scroll-behavior:smooth;
+  contain:layout style;
+}
+.view-switching .table-card,
+.view-switching .chart-card,
+.view-switching .summary-card {
+  content-visibility:auto;
+}
+.request-main .table-scroll,
+.session-scroll {
+  overscroll-behavior:contain;
+  contain:layout paint style;
+}
+.analytics-deferred {
+  min-height:220px;
+  display:grid;
+  place-items:center;
+  color:var(--muted);
+  border:1px solid var(--hairline);
+  border-radius:var(--radius-lg);
+  background:linear-gradient(180deg,rgba(255,255,255,.76),rgba(247,249,252,.64));
+  box-shadow:var(--shadow-card);
+}
+
+/* merged source: dashboard-components.css */
 :root {
   --ui-scale: 1;
 }

@@ -1,3 +1,5 @@
+/* Dashboard CSS domain bundle. Preserve section order to retain cascade semantics. */
+/* merged source: dashboard.css */
 :root {
       color-scheme: light;
       --bg:#f7f8fb;
@@ -423,3 +425,97 @@
       font-size:12px;
       font-weight:900;
     }
+
+/* merged source: styles/tokens.css */
+/* 1.20.1 semantic token layer for open-source native tool polish */
+:root {
+  --cb-radius-sm: var(--radius-sm, 10px);
+  --cb-radius-md: var(--radius-md, 14px);
+  --cb-radius-lg: var(--radius-lg, 18px);
+  --cb-radius-xl: var(--radius-xl, 24px);
+  --cb-control-height: var(--control-height, 34px);
+  --cb-control-height-lg: var(--control-height-lg, 38px);
+
+  --cb-font-ui: var(--native-font-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI Variable", "Segoe UI", "Microsoft YaHei UI", sans-serif);
+  --cb-font-mono: var(--native-font-mono, "SF Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+
+  --cb-text: var(--text, #101114);
+  --cb-muted: var(--muted, #707684);
+  --cb-subtle: var(--subtle, #9aa0aa);
+  --cb-accent: var(--blue, #1687f5);
+  --cb-accent-soft: rgba(10, 132, 255, .08);
+
+  --cb-surface-panel: var(--surface-panel, rgba(255, 255, 255, .86));
+  --cb-surface-card: var(--surface-card, rgba(255, 255, 255, .94));
+  --cb-surface-muted: var(--surface-muted, rgba(247, 249, 253, .86));
+  --cb-surface-popover: rgba(255, 255, 255, .88);
+  --cb-border-soft: var(--border-soft, rgba(210, 218, 230, .72));
+  --cb-border-hairline: var(--border-hairline, rgba(226, 231, 239, .82));
+
+  --cb-shadow-card: var(--shadow-card, 0 1px 0 rgba(255, 255, 255, .86) inset, 0 12px 28px rgba(27, 39, 61, .045));
+  --cb-shadow-control: var(--shadow-control, 0 1px 0 rgba(255, 255, 255, .84) inset, 0 4px 12px rgba(27, 39, 61, .035));
+  --cb-shadow-popover: var(--shadow-popover, 0 1px 0 rgba(255, 255, 255, .88) inset, 0 22px 54px rgba(27, 39, 61, .13));
+
+  --cb-row-border: var(--native-row-border, rgba(15, 23, 42, .052));
+  --cb-row-hover: var(--native-row-hover, rgba(10, 132, 255, .038));
+  --cb-row-selected: var(--native-row-selected, rgba(10, 132, 255, .082));
+  --cb-hover-fill: rgba(15, 23, 42, .045);
+}
+
+body.is-resizing,
+body.is-zooming,
+body.view-switching {
+  --cb-shadow-card: var(--shadow-card, 0 1px 0 rgba(255, 255, 255, .74) inset, 0 6px 14px rgba(27, 39, 61, .026));
+  --cb-shadow-popover: var(--shadow-popover, 0 1px 0 rgba(255, 255, 255, .78) inset, 0 10px 24px rgba(27, 39, 61, .055));
+  --cb-shadow-control: var(--shadow-control, 0 1px 0 rgba(255, 255, 255, .72) inset, 0 3px 8px rgba(27, 39, 61, .022));
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --cb-surface-panel: rgba(15, 23, 42, .72);
+    --cb-surface-card: rgba(15, 23, 42, .82);
+    --cb-surface-popover: rgba(15, 23, 42, .88);
+    --cb-border-soft: rgba(226, 232, 240, .12);
+    --cb-border-hairline: rgba(226, 232, 240, .08);
+    --cb-row-border: rgba(226, 232, 240, .07);
+    --cb-row-hover: rgba(125, 211, 252, .08);
+    --cb-row-selected: rgba(10, 132, 255, .18);
+    --cb-hover-fill: rgba(226, 232, 240, .08);
+  }
+}
+
+/* merged source: styles/base.css */
+/* 1.20.1 semantic base layer: keep the Electron shell feeling native and quiet */
+html {
+  text-rendering: geometricPrecision;
+  scrollbar-width: thin;
+}
+
+body {
+  font-family: var(--cb-font-ui);
+  color: var(--cb-text);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+:where(button, input, select, textarea) {
+  min-height: var(--cb-control-height);
+  border-radius: var(--cb-radius-sm);
+  font-family: var(--cb-font-ui);
+}
+
+:where(code, kbd, samp, pre, .mono, .perf-panel) {
+  font-family: var(--cb-font-mono);
+}
+
+:where(button, [role="button"], select, input, textarea) {
+  -webkit-tap-highlight-color: transparent;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+  }
+}
