@@ -1,8 +1,8 @@
 {
   "name": "codearts-bar-status",
-  "displayName": "\u7801\u9053\u72b6\u6001\u680f",
-  "description": "\u5728 VS Code / CodeArts Agent \u72b6\u6001\u680f\u663e\u793a\u672c\u5730\u7801\u9053 token \u4f7f\u7528\u60c5\u51b5\u3002",
-  "version": "1.16.26",
+  "displayName": "\u7801\u9053 \u00b7 \u4f7f\u7528\u5206\u6790",
+  "description": "\u5728 VS Code / CodeArts Agent \u4e2d\u53ef\u89c6\u5316\u672c\u5730 token \u7528\u91cf\u3001\u8d8b\u52bf\u3001\u6a21\u578b\u3001\u6570\u636e\u6e90\u4e0e\u6700\u8fd1\u4f1a\u8bdd\u3002",
+  "version": "1.16.27",
   "publisher": "local-codearts",
   "license": "MIT",
   "engines": {
@@ -14,26 +14,42 @@
   "activationEvents": [
     "onStartupFinished",
     "onCommand:codeartsBar.refresh",
-    "onCommand:codeartsBar.showDetails"
+    "onCommand:codeartsBar.showDetails",
+    "onView:codeartsBar.overview",
+    "onCommand:codeartsBar.openDashboard",
+    "onCommand:codeartsBar.openOverview"
   ],
   "main": "./extension.js",
   "contributes": {
     "commands": [
       {
         "command": "codeartsBar.refresh",
-        "title": "\u7801\u9053\u72b6\u6001\u680f\uff1a\u5237\u65b0\u4f7f\u7528\u60c5\u51b5"
+        "title": "\u7801\u9053\uff1a\u5237\u65b0\u4f7f\u7528\u6570\u636e",
+        "icon": "$(refresh)"
       },
       {
         "command": "codeartsBar.showDetails",
-        "title": "\u7801\u9053\u72b6\u6001\u680f\uff1a\u663e\u793a\u8be6\u60c5"
+        "title": "\u7801\u9053\uff1a\u6253\u5f00\u5b8c\u6574\u4f7f\u7528\u5206\u6790",
+        "icon": "$(graph)"
       },
       {
         "command": "codeartsBar.openDataFolder",
-        "title": "\u7801\u9053\u72b6\u6001\u680f\uff1a\u6253\u5f00\u6570\u636e\u76ee\u5f55"
+        "title": "\u7801\u9053\uff1a\u6253\u5f00\u672c\u5730\u6570\u636e\u76ee\u5f55",
+        "icon": "$(folder-opened)"
+      },
+      {
+        "command": "codeartsBar.openDashboard",
+        "title": "\u7801\u9053\uff1a\u6253\u5f00\u5b8c\u6574\u4f7f\u7528\u5206\u6790",
+        "icon": "$(graph)"
+      },
+      {
+        "command": "codeartsBar.openOverview",
+        "title": "\u7801\u9053\uff1a\u6253\u5f00\u6982\u89c8\u4fa7\u8fb9\u680f",
+        "icon": "$(layout-sidebar-left)"
       }
     ],
     "configuration": {
-      "title": "\u7801\u9053\u72b6\u6001\u680f",
+      "title": "\u7801\u9053 \u00b7 \u4f7f\u7528\u5206\u6790",
       "properties": {
         "codeartsBar.dbPath": {
           "type": "string",
@@ -56,6 +72,54 @@
           "description": "\u81ea\u52a8\u5237\u65b0\u95f4\u9694\uff0c\u6beb\u79d2\u3002"
         }
       }
+    },
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "codeartsBar",
+          "title": "\u7801\u9053",
+          "icon": "media/codearts.svg"
+        }
+      ]
+    },
+    "views": {
+      "codeartsBar": [
+        {
+          "type": "webview",
+          "id": "codeartsBar.overview",
+          "name": "\u4f7f\u7528\u6982\u89c8",
+          "icon": "media/codearts.svg",
+          "contextualTitle": "\u7801\u9053 \u00b7 \u4f7f\u7528\u6982\u89c8"
+        }
+      ]
+    },
+    "menus": {
+      "view/title": [
+        {
+          "command": "codeartsBar.refresh",
+          "when": "view == codeartsBar.overview",
+          "group": "navigation@1"
+        },
+        {
+          "command": "codeartsBar.openDashboard",
+          "when": "view == codeartsBar.overview",
+          "group": "navigation@2"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "codeartsBar.refresh"
+        },
+        {
+          "command": "codeartsBar.openDashboard"
+        },
+        {
+          "command": "codeartsBar.openOverview"
+        },
+        {
+          "command": "codeartsBar.openDataFolder"
+        }
+      ]
     }
   },
   "files": [
@@ -96,7 +160,19 @@
     "providers/codearts/sqljs-worker-pool.js",
     "providers/codearts/sqljs-worker.js",
     "providers/codearts/usage-rollup-calc.js",
-    "providers/codearts/usage-rollup.js"
+    "providers/codearts/usage-rollup.js",
+    "dashboard.js",
+    "media/codearts.svg",
+    "webview/html.js",
+    "webview/model.js",
+    "media/styles/tokens.css",
+    "media/styles/foundation.css",
+    "media/styles/components.css",
+    "media/styles/responsive.css",
+    "media/scripts/format.js",
+    "media/scripts/chart.js",
+    "media/scripts/views.js",
+    "media/scripts/dashboard.js"
   ],
   "repository": {
     "type": "git",

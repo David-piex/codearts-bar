@@ -1,0 +1,160 @@
+body[data-mode="sidebar"] .app-shell {
+  padding: 15px 11px 25px;
+}
+body[data-mode="sidebar"] .app-header {
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+body[data-mode="sidebar"] .app-icon {
+  width: 38px;
+  height: 38px;
+  padding: 8px;
+  border-radius: 10px;
+}
+body[data-mode="sidebar"] .app-icon i:nth-child(1) {
+  height: 10px;
+}
+body[data-mode="sidebar"] .app-icon i:nth-child(2) {
+  height: 20px;
+}
+body[data-mode="sidebar"] .app-icon i:nth-child(3) {
+  height: 15px;
+}
+body[data-mode="sidebar"] h1 {
+  font-size: 18px;
+}
+body[data-mode="sidebar"] .app-kicker {
+  display: none;
+}
+body[data-mode="sidebar"] .header-actions .accent-button {
+  display: none;
+}
+body[data-mode="sidebar"] .segmented-control {
+  display: flex;
+  width: 100%;
+}
+body[data-mode="sidebar"] .segmented-control button {
+  flex: 1;
+  min-width: 0;
+  padding: 0 4px;
+  font-size: 10px;
+}
+body[data-mode="sidebar"] .metric-grid {
+  grid-template-columns: 1fr 1fr;
+}
+body[data-mode="sidebar"] .metric-card {
+  min-height: 94px;
+  padding: 13px;
+  border-radius: 11px;
+}
+body[data-mode="sidebar"] .metric-card strong,
+body[data-mode="sidebar"] .metric-primary strong {
+  font-size: 21px;
+}
+body[data-mode="sidebar"] .surface {
+  padding: 14px;
+  border-radius: 14px;
+}
+body[data-mode="sidebar"] .content-grid {
+  grid-template-columns: 1fr;
+}
+body[data-mode="sidebar"] .source-surface,
+body[data-mode="sidebar"] .performance-surface {
+  display: none;
+}
+body[data-mode="sidebar"] .trend-surface {
+  min-height: 224px;
+}
+body[data-mode="sidebar"] .chart-area {
+  height: 145px;
+}
+body[data-mode="sidebar"] .rank-row {
+  grid-template-columns: minmax(90px, 1fr) minmax(52px, 0.75fr) auto;
+  gap: 7px;
+}
+body[data-mode="sidebar"] .rank-row:nth-child(n + 6),
+body[data-mode="sidebar"] .session-row:nth-child(n + 5) {
+  display: none;
+}
+body[data-mode="sidebar"] .session-row {
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+body[data-mode="sidebar"] .session-meta {
+  display: none;
+}
+body[data-mode="sidebar"] .privacy-footer {
+  align-items: flex-start;
+  flex-direction: column;
+}
+@media (max-width: 760px) {
+  .app-shell {
+    padding: 20px 15px 30px;
+  }
+  .app-header {
+    align-items: flex-start;
+  }
+  .header-actions .accent-button {
+    display: none;
+  }
+  .metric-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+  .content-grid {
+    grid-template-columns: 1fr;
+  }
+  .performance-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+  .session-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .session-meta {
+    display: none;
+  }
+}
+@media (max-width: 430px) {
+  .metric-card {
+    min-height: 96px;
+    padding: 13px;
+  }
+  .metric-card strong,
+  .metric-primary strong {
+    font-size: 21px;
+  }
+  .segmented-control {
+    display: flex;
+    width: 100%;
+  }
+  .segmented-control button {
+    flex: 1;
+    padding: 0 4px;
+  }
+  .chart-legend {
+    display: none;
+  }
+  .source-layout {
+    grid-template-columns: 96px minmax(0, 1fr);
+  }
+  .performance-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+@supports not (
+  (-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))
+) {
+  .surface,
+  .metric-card,
+  .state-card {
+    background: var(--surface-solid);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

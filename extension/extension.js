@@ -2,11 +2,20 @@
 
 const vscode = require("vscode");
 const path = require("node:path");
-const { getSnapshotAsync, snapshotToText, errorSnapshot, fmtInt, fmtMs } = require("./codeartsData");
+const {
+  getSnapshotWithCache,
+  snapshotToText,
+  errorSnapshot,
+  fmtInt,
+  fmtMs,
+} = require("./codeartsData");
+const { DashboardHost, OverviewViewProvider } = require("./dashboard");
 
 let statusItem;
 let timer;
 let lastSnapshot;
+let refreshPromise;
+let dashboardHost;
 
 const T = {
   app: "\u7801\u9053 Bar",
@@ -54,64 +63,129 @@ function iconFor(level) {
 }
 
 function markdownDetails(snapshot) {
-  if (!snapshot || !snapshot.ok) return new vscode.MarkdownString(`${T.app}\n\n${snapshot ? snapshot.error : T.loading}`);
+  if (!snapshot || !snapshot.ok)
+    return new vscode.MarkdownString(
+      `${T.app}\n\n${snapshot ? snapshot.error : T.loading}`,
+    );
   const md = new vscode.MarkdownString(undefined, true);
   md.isTrusted = true;
   md.appendMarkdown(`**${T.app} - ${T.today} ${snapshot.status.label}**\n\n`);
   md.appendMarkdown(`${T.updated}: ${snapshot.updatedAt}\n\n`);
-  md.appendMarkdown(`| ${T.window} | token | ${T.reply} | ${T.error} |\n|---|---:|---:|---:|\n`);
-  md.appendMarkdown(`| ${T.today} | ${fmtInt(snapshot.usage.today.total)} | ${snapshot.usage.today.messages} | ${snapshot.usage.today.errors} |\n`);
-  md.appendMarkdown(`| ${snapshot.config.windowHours}h | ${fmtInt(snapshot.usage.window.total)} | ${snapshot.usage.window.messages} | ${snapshot.usage.window.errors} |\n`);
-  md.appendMarkdown(`| 7d | ${fmtInt(snapshot.usage.week.total)} | ${snapshot.usage.week.messages} | ${snapshot.usage.week.errors} |\n`);
-  md.appendMarkdown(`| ${T.total} | ${fmtInt(snapshot.usage.all.total)} | ${snapshot.usage.all.messages} | ${snapshot.usage.all.errors} |\n\n`);
+  md.appendMarkdown(
+    `| ${T.window} | token | ${T.reply} | ${T.error} |\n|---|---:|---:|---:|\n`,
+  );
+  md.appendMarkdown(
+    `| ${T.today} | ${fmtInt(snapshot.usage.today.total)} | ${snapshot.usage.today.messages} | ${snapshot.usage.today.errors} |\n`,
+  );
+  md.appendMarkdown(
+    `| ${snapshot.config.windowHours}h | ${fmtInt(snapshot.usage.window.total)} | ${snapshot.usage.window.messages} | ${snapshot.usage.window.errors} |\n`,
+  );
+  md.appendMarkdown(
+    `| 7d | ${fmtInt(snapshot.usage.week.total)} | ${snapshot.usage.week.messages} | ${snapshot.usage.week.errors} |\n`,
+  );
+  md.appendMarkdown(
+    `| ${T.total} | ${fmtInt(snapshot.usage.all.total)} | ${snapshot.usage.all.messages} | ${snapshot.usage.all.errors} |\n\n`,
+  );
   if (snapshot.performance && snapshot.performance.window) {
     const p = snapshot.performance.window;
     md.appendMarkdown(`**${T.perf}**\n\n`);
-    md.appendMarkdown(`- ${T.totalWait}: \`${fmtMs(p.latency.avg)}\`, P95: \`${fmtMs(p.latency.p95)}\`, P99: \`${fmtMs(p.latency.p99)}\`\n`);
-    md.appendMarkdown(`- ${T.firstToken}: \`${fmtMs(p.ttft.avg)}\`, P95: \`${fmtMs(p.ttft.p95)}\`, match: \`${snapshot.performance.ttftMatched}/${snapshot.performance.ttftEvents}\`\n`);
-    md.appendMarkdown(`- ${T.firstContent}: \`${fmtMs(p.firstContentApprox.avg)}\`, P95: \`${fmtMs(p.firstContentApprox.p95)}\`\n`);
-    md.appendMarkdown(`- ${T.outputSpeed}: \`${Number.isFinite(p.outputTokensPerSec.avg) ? p.outputTokensPerSec.avg.toFixed(2) : T.noData} token/s\`\n`);
-    md.appendMarkdown(`- ${T.errorRate}: \`${(p.errorRate * 100).toFixed(1)}%\`\n\n`);
+    md.appendMarkdown(
+      `- ${T.totalWait}: \`${fmtMs(p.latency.avg)}\`, P95: \`${fmtMs(p.latency.p95)}\`, P99: \`${fmtMs(p.latency.p99)}\`\n`,
+    );
+    md.appendMarkdown(
+      `- ${T.firstToken}: \`${fmtMs(p.ttft.avg)}\`, P95: \`${fmtMs(p.ttft.p95)}\`, match: \`${snapshot.performance.ttftMatched}/${snapshot.performance.ttftEvents}\`\n`,
+    );
+    md.appendMarkdown(
+      `- ${T.firstContent}: \`${fmtMs(p.firstContentApprox.avg)}\`, P95: \`${fmtMs(p.firstContentApprox.p95)}\`\n`,
+    );
+    md.appendMarkdown(
+      `- ${T.outputSpeed}: \`${Number.isFinite(p.outputTokensPerSec.avg) ? p.outputTokensPerSec.avg.toFixed(2) : T.noData} token/s\`\n`,
+    );
+    md.appendMarkdown(
+      `- ${T.errorRate}: \`${(p.errorRate * 100).toFixed(1)}%\`\n\n`,
+    );
   }
   if (snapshot.queue && snapshot.queue.window) {
     const q = snapshot.queue.window;
     md.appendMarkdown(`**${T.queue}**\n\n`);
-    md.appendMarkdown(q.samples ? `- ${T.avg}: \`${fmtMs(q.avg)}\`, P95: \`${fmtMs(q.p95)}\`, ${T.max}: \`${fmtMs(q.max)}\`, ${T.times}: \`${q.samples}\`\n\n` : `- ${T.noData}\n\n`);
+    md.appendMarkdown(
+      q.samples
+        ? `- ${T.avg}: \`${fmtMs(q.avg)}\`, P95: \`${fmtMs(q.p95)}\`, ${T.max}: \`${fmtMs(q.max)}\`, ${T.times}: \`${q.samples}\`\n\n`
+        : `- ${T.noData}\n\n`,
+    );
   }
-  if (snapshot.trends && snapshot.trends.hourly24h && snapshot.trends.hourly24h.length) {
-    const last = snapshot.trends.hourly24h[snapshot.trends.hourly24h.length - 1];
-    md.appendMarkdown(`**${T.trend}**\n\n- ${T.lastHour}: ${fmtInt(last.total)} token\n\n`);
+  if (
+    snapshot.trends &&
+    snapshot.trends.hourly24h &&
+    snapshot.trends.hourly24h.length
+  ) {
+    const last =
+      snapshot.trends.hourly24h[snapshot.trends.hourly24h.length - 1];
+    md.appendMarkdown(
+      `**${T.trend}**\n\n- ${T.lastHour}: ${fmtInt(last.total)} token\n\n`,
+    );
   }
-  if (snapshot.tools && snapshot.tools.window && snapshot.tools.window.byName.length) {
+  if (
+    snapshot.tools &&
+    snapshot.tools.window &&
+    snapshot.tools.window.byName.length
+  ) {
     md.appendMarkdown(`**${T.tools}**\n\n`);
-    for (const t of snapshot.tools.window.byName.slice(0, 5)) md.appendMarkdown(`- ${t.name}: ${t.calls} calls${t.errors ? `, ${t.errors} errors` : ""}\n`);
+    for (const t of snapshot.tools.window.byName.slice(0, 5))
+      md.appendMarkdown(
+        `- ${t.name}: ${t.calls} calls${t.errors ? `, ${t.errors} errors` : ""}\n`,
+      );
     md.appendMarkdown("\n");
   }
   if (snapshot.models.length) {
     md.appendMarkdown(`**${T.models}**\n\n`);
-    for (const m of snapshot.models.slice(0, 5)) md.appendMarkdown(`- ${m.model}: ${fmtInt(m.total)} token\n`);
+    for (const m of snapshot.models.slice(0, 5))
+      md.appendMarkdown(`- ${m.model}: ${fmtInt(m.total)} token\n`);
   }
-  md.appendMarkdown(`\n[${T.refresh}](command:codeartsBar.refresh) - [${T.details}](command:codeartsBar.showDetails) - [${T.openData}](command:codeartsBar.openDataFolder)`);
+  md.appendMarkdown(
+    `\n[${T.refresh}](command:codeartsBar.refresh) - [${T.details}](command:codeartsBar.showDetails) - [${T.openData}](command:codeartsBar.openDataFolder)`,
+  );
   return md;
 }
 
-async function refresh() {
-  const c = config();
-  try {
-    lastSnapshot = await getSnapshotAsync(c);
-  } catch (error) {
-    lastSnapshot = errorSnapshot(error, c.dbPath);
-  }
+function updateStatus(snapshot) {
   if (!statusItem) return;
-  if (lastSnapshot.ok) {
-    statusItem.text = `${iconFor(lastSnapshot.status.level)} CodeArts ${lastSnapshot.status.label}`;
-    statusItem.tooltip = markdownDetails(lastSnapshot);
-    statusItem.backgroundColor = lastSnapshot.status.level === "danger" ? new vscode.ThemeColor("statusBarItem.errorBackground") : lastSnapshot.status.level === "warning" ? new vscode.ThemeColor("statusBarItem.warningBackground") : undefined;
+  if (snapshot?.ok) {
+    statusItem.text = `${iconFor(snapshot.status.level)} CodeArts ${snapshot.status.label}`;
+    statusItem.tooltip = markdownDetails(snapshot);
+    statusItem.backgroundColor =
+      snapshot.status.level === "danger"
+        ? new vscode.ThemeColor("statusBarItem.errorBackground")
+        : snapshot.status.level === "warning"
+          ? new vscode.ThemeColor("statusBarItem.warningBackground")
+          : undefined;
   } else {
     statusItem.text = "$(error) CodeArts";
-    statusItem.tooltip = markdownDetails(lastSnapshot);
-    statusItem.backgroundColor = new vscode.ThemeColor("statusBarItem.errorBackground");
+    statusItem.tooltip = markdownDetails(snapshot);
+    statusItem.backgroundColor = new vscode.ThemeColor(
+      "statusBarItem.errorBackground",
+    );
   }
+}
+
+async function refresh() {
+  if (refreshPromise) return refreshPromise;
+  const c = config();
+  dashboardHost?.setRefreshing(true);
+  refreshPromise = (async () => {
+    try {
+      lastSnapshot = await getSnapshotWithCache(c);
+    } catch (error) {
+      lastSnapshot = errorSnapshot(error, c.dbPath);
+    }
+    updateStatus(lastSnapshot);
+    dashboardHost?.broadcast(lastSnapshot);
+    return lastSnapshot;
+  })().finally(() => {
+    refreshPromise = null;
+    dashboardHost?.setRefreshing(false);
+  });
+  return refreshPromise;
 }
 
 function schedule(context) {
@@ -121,9 +195,12 @@ function schedule(context) {
 }
 
 async function showDetails() {
+  dashboardHost?.openPanel();
   if (!lastSnapshot) await refresh();
-  const text = lastSnapshot && lastSnapshot.ok ? snapshotToText(lastSnapshot) : (lastSnapshot ? lastSnapshot.error : T.noData);
-  vscode.window.showInformationMessage(text, { modal: true });
+}
+
+async function openOverview() {
+  await vscode.commands.executeCommand("workbench.view.extension.codeartsBar");
 }
 
 async function openDataFolder() {
@@ -134,22 +211,57 @@ async function openDataFolder() {
 }
 
 function activate(context) {
-  statusItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 99);
+  dashboardHost = new DashboardHost(
+    context,
+    () => lastSnapshot,
+    refresh,
+    openDataFolder,
+  );
+  const overviewProvider = new OverviewViewProvider(dashboardHost);
+  statusItem = vscode.window.createStatusBarItem(
+    vscode.StatusBarAlignment.Right,
+    99,
+  );
   statusItem.name = T.app;
-  statusItem.command = "codeartsBar.showDetails";
+  statusItem.command = "codeartsBar.openOverview";
   statusItem.text = "$(sync~spin) CodeArts";
+  statusItem.tooltip = "\u6253\u5f00\u7801\u9053\u4f7f\u7528\u5206\u6790";
   statusItem.show();
 
   context.subscriptions.push(statusItem);
-  context.subscriptions.push(vscode.commands.registerCommand("codeartsBar.refresh", refresh));
-  context.subscriptions.push(vscode.commands.registerCommand("codeartsBar.showDetails", showDetails));
-  context.subscriptions.push(vscode.commands.registerCommand("codeartsBar.openDataFolder", openDataFolder));
-  context.subscriptions.push(vscode.workspace.onDidChangeConfiguration((event) => {
-    if (event.affectsConfiguration("codeartsBar")) {
-      schedule(context);
-      refresh();
-    }
-  }));
+  context.subscriptions.push(
+    vscode.window.registerWebviewViewProvider(
+      "codeartsBar.overview",
+      overviewProvider,
+      { webviewOptions: { retainContextWhenHidden: true } },
+    ),
+  );
+  context.subscriptions.push(
+    vscode.commands.registerCommand("codeartsBar.refresh", refresh),
+  );
+  context.subscriptions.push(
+    vscode.commands.registerCommand("codeartsBar.showDetails", showDetails),
+  );
+  context.subscriptions.push(
+    vscode.commands.registerCommand("codeartsBar.openDashboard", showDetails),
+  );
+  context.subscriptions.push(
+    vscode.commands.registerCommand("codeartsBar.openOverview", openOverview),
+  );
+  context.subscriptions.push(
+    vscode.commands.registerCommand(
+      "codeartsBar.openDataFolder",
+      openDataFolder,
+    ),
+  );
+  context.subscriptions.push(
+    vscode.workspace.onDidChangeConfiguration((event) => {
+      if (event.affectsConfiguration("codeartsBar")) {
+        schedule(context);
+        refresh();
+      }
+    }),
+  );
 
   schedule(context);
   refresh();

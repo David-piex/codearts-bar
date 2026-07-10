@@ -1,0 +1,96 @@
+:root {
+  color-scheme: light dark;
+  --font-ui:
+    -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI Variable Text",
+    "Segoe UI", sans-serif;
+  --font-display:
+    -apple-system, BlinkMacSystemFont, "SF Pro Display",
+    "Segoe UI Variable Display", "Segoe UI", sans-serif;
+  --page: color-mix(
+    in srgb,
+    var(--vscode-editor-background, #f4f7fb) 96%,
+    #eef3f9
+  );
+  --surface: color-mix(
+    in srgb,
+    var(--vscode-editor-background, #fff) 88%,
+    transparent
+  );
+  --surface-solid: color-mix(
+    in srgb,
+    var(--vscode-editor-background, #fff) 96%,
+    #fff
+  );
+  --surface-soft: color-mix(
+    in srgb,
+    var(--vscode-sideBar-background, #f6f8fb) 88%,
+    transparent
+  );
+  --text: var(--vscode-foreground, #172033);
+  --muted: var(--vscode-descriptionForeground, #6f7a8d);
+  --faint: color-mix(in srgb, var(--muted) 72%, transparent);
+  --line: color-mix(
+    in srgb,
+    var(--vscode-foreground, #172033) 11%,
+    transparent
+  );
+  --line-strong: color-mix(
+    in srgb,
+    var(--vscode-foreground, #172033) 18%,
+    transparent
+  );
+  --accent: var(--vscode-textLink-foreground, #0a84ff);
+  --accent-hover: var(--vscode-textLink-activeForeground, #0077ed);
+  --accent-soft: color-mix(in srgb, var(--accent) 12%, transparent);
+  --accent-border: color-mix(in srgb, var(--accent) 28%, transparent);
+  --cyan: #30b7aa;
+  --danger: var(--vscode-errorForeground, #d84b4b);
+  --warning: var(--vscode-editorWarning-foreground, #c78617);
+  --shadow-sm:
+    0 1px 2px rgba(15, 23, 42, 0.04), inset 0 1px rgba(255, 255, 255, 0.54);
+  --shadow-md:
+    0 12px 32px rgba(24, 39, 75, 0.075), 0 2px 8px rgba(24, 39, 75, 0.04),
+    inset 0 1px rgba(255, 255, 255, 0.5);
+  --radius-sm: 8px;
+  --radius-md: 13px;
+  --radius-lg: 18px;
+  --control-h: 34px;
+}
+body.vscode-dark,
+body.vscode-high-contrast:not(.vscode-light) {
+  --page: color-mix(
+    in srgb,
+    var(--vscode-editor-background, #17191d) 94%,
+    #101216
+  );
+  --surface: color-mix(
+    in srgb,
+    var(--vscode-editor-background, #1e2127) 82%,
+    rgba(255, 255, 255, 0.035)
+  );
+  --surface-solid: color-mix(
+    in srgb,
+    var(--vscode-editor-background, #1e2127) 94%,
+    #242830
+  );
+  --surface-soft: color-mix(
+    in srgb,
+    var(--vscode-sideBar-background, #181b20) 88%,
+    transparent
+  );
+  --line: color-mix(
+    in srgb,
+    var(--vscode-foreground, #e7ecf4) 12%,
+    transparent
+  );
+  --line-strong: color-mix(
+    in srgb,
+    var(--vscode-foreground, #e7ecf4) 20%,
+    transparent
+  );
+  --shadow-sm:
+    0 1px 2px rgba(0, 0, 0, 0.22), inset 0 1px rgba(255, 255, 255, 0.04);
+  --shadow-md:
+    0 16px 38px rgba(0, 0, 0, 0.22), 0 2px 8px rgba(0, 0, 0, 0.16),
+    inset 0 1px rgba(255, 255, 255, 0.045);
+}
