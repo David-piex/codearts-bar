@@ -404,6 +404,9 @@ async function main() {
   assert.doesNotMatch(analyticsHtml, /chart-hover-meta/);
   assert.match(analyticsHtml, /id="usageChart"/);
   assert.match(analyticsHtml, /series-panel/);
+  assert.match(analyticsHtml, /app-header/);
+  assert.match(analyticsHtml, /analytics-page-head/);
+  assert.match(analyticsHtml, /--series-color:/);
   const seriesPanelHtml = analyticsHtml.match(/<div class="series-panel[^>]*>([\s\S]*?)<\/div>/)?.[1] || "";
   assert.match(seriesPanelHtml, /data-series="total"/);
   assert.match(seriesPanelHtml, /data-series="input"/);

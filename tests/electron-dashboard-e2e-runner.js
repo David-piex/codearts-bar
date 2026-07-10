@@ -275,6 +275,25 @@ async function setPageTotalOverride(win, payload) {
   return evalIn(win, (next) => window.codeartsApi.invoke("dashboard:e2eSetPageTotalOverride", next), payload);
 }
 
+function paginationGeometry(kind){
+  const prefix = kind === 'sessions' ? 'session' : 'request';
+  const note = document.querySelector(`[data-table-limit="${kind}"]`);
+  const sizeField = note?.querySelector('.table-page-size');
+  const sizeSelect = note?.querySelector(`[data-${prefix}-page-size]`);
+  const jumpField = note?.querySelector('.table-page-jump');
+  const jumpInput = note?.querySelector(`[data-${prefix}-page-input]`);
+  const sizeUnits = sizeField ? [...sizeField.querySelectorAll('span')].map((node) => node.getBoundingClientRect()) : [];
+  const jumpUnits = jumpField ? [...jumpField.querySelectorAll('span')].map((node) => node.getBoundingClientRect()) : [];
+  const selectRect = sizeSelect?.getBoundingClientRect();
+  const inputRect = jumpInput?.getBoundingClientRect();
+  return {
+    present: Boolean(note && sizeField && sizeSelect && jumpField && jumpInput),
+    controlsSameHeight: Boolean(sizeField && jumpField && Math.round(sizeField.getBoundingClientRect().height) === Math.round(jumpField.getBoundingClientRect().height)),
+    sizeSeparated: Boolean(selectRect && sizeUnits.length === 2 && sizeUnits[0].right <= selectRect.left && selectRect.right <= sizeUnits[1].left),
+    jumpSeparated: Boolean(inputRect && jumpUnits.length === 2 && jumpUnits[0].right <= inputRect.left && inputRect.right <= jumpUnits[1].left),
+  };
+}
+
 async function main() {
   registerIpc();
   await app.whenReady();
@@ -310,11 +329,49 @@ async function main() {
       canvasSize: document.querySelector("#usageChart")?.dataset?.sizeKey || "",
     };
   });
-  assert.match(initial.title, /使用分析/);
+  assert.match(initial.title, /Bar/);
   assert.equal(initial.hasTable, true);
   assert.equal(initial.hasBackControl, false, "dashboard should not show a non-functional back control");
   assert.equal(initial.nodeRequireType, "undefined", "dashboard renderer should not expose Node require");
   assert.equal(initial.preloadApi, true, "dashboard should use the isolated preload API");
+  const requestPaginationGeometry = await evalIn(win, (kind) => {
+    const prefix = kind === 'sessions' ? 'session' : 'request';
+    const note = document.querySelector(`[data-table-limit="${kind}"]`);
+    const sizeField = note?.querySelector('.table-page-size');
+    const sizeSelect = note?.querySelector(`[data-${prefix}-page-size]`);
+    const jumpField = note?.querySelector('.table-page-jump');
+    const jumpInput = note?.querySelector(`[data-${prefix}-page-input]`);
+    const sizeUnits = sizeField ? [...sizeField.querySelectorAll('span')].map((node) => node.getBoundingClientRect()) : [];
+    const jumpUnits = jumpField ? [...jumpField.querySelectorAll('span')].map((node) => node.getBoundingClientRect()) : [];
+    const selectRect = sizeSelect?.getBoundingClientRect();
+    const inputRect = jumpInput?.getBoundingClientRect();
+    return {
+      present: Boolean(note && sizeField && sizeSelect && jumpField && jumpInput),
+      controlsSameHeight: Boolean(sizeField && jumpField && Math.round(sizeField.getBoundingClientRect().height) === Math.round(jumpField.getBoundingClientRect().height)),
+      sizeSeparated: Boolean(selectRect && sizeUnits.length === 2 && sizeUnits[0].right <= selectRect.left && selectRect.right <= sizeUnits[1].left),
+      jumpSeparated: Boolean(inputRect && jumpUnits.length === 2 && jumpUnits[0].right <= inputRect.left && inputRect.right <= jumpUnits[1].left),
+    };
+  }, 'requests');
+  assert.deepEqual(requestPaginationGeometry, { present: true, controlsSameHeight: true, sizeSeparated: true, jumpSeparated: true }, `request pagination controls should not overlap their labels: ${JSON.stringify(requestPaginationGeometry)}`);
+  const collapsedAdvancedGeometry = await evalIn(win, () => {
+    const content = document.querySelector('.content');
+    const shell = document.querySelector('.analytics-advanced-shell.collapsed');
+    if(content && shell) content.scrollTop = Math.max(0, shell.offsetTop - content.clientHeight + shell.offsetHeight + 18);
+    const rect = shell?.getBoundingClientRect();
+    const style = shell ? getComputedStyle(shell) : null;
+    return {
+      present: Boolean(shell),
+      height: Math.round(rect?.height || 0),
+      contentVisibility: style?.contentVisibility || '',
+      intrinsicSize: style?.containIntrinsicSize || '',
+      withinViewport: Boolean(rect && rect.top < window.innerHeight && rect.bottom > 0),
+    };
+  });
+  assert.equal(collapsedAdvancedGeometry.present, true, 'collapsed advanced analytics should render in the normal window');
+  assert.ok(collapsedAdvancedGeometry.height >= 60 && collapsedAdvancedGeometry.height <= 100, `collapsed advanced analytics should use its real compact height: ${JSON.stringify(collapsedAdvancedGeometry)}`);
+  assert.equal(collapsedAdvancedGeometry.contentVisibility, 'visible', `collapsed advanced analytics should not defer its header: ${JSON.stringify(collapsedAdvancedGeometry)}`);
+  assert.equal(collapsedAdvancedGeometry.withinViewport, true, `collapsed advanced analytics header should be scrollable into the normal viewport: ${JSON.stringify(collapsedAdvancedGeometry)}`);
+  await evalIn(win, () => { const content = document.querySelector('.content'); if(content) content.scrollTop = 0; });
 
   win.setSize(1040, 720, false);
   await delay(120);
@@ -329,21 +386,52 @@ async function main() {
   assert.equal(resizeState.isMaxViewport, true);
   const maximizedLayout = await evalIn(win, () => {
     const content = document.querySelector('.content')?.getBoundingClientRect();
+    const header = document.querySelector('.app-header')?.getBoundingClientRect();
+    const brand = document.querySelector('.app-brand')?.getBoundingClientRect();
+    const headerNav = document.querySelector('.app-header-nav')?.getBoundingClientRect();
+    const pageHead = document.querySelector('.analytics-page-head')?.getBoundingClientRect();
+    const filters = document.querySelector('.analytics-page-head .filters')?.getBoundingClientRect();
     const summary = document.querySelector('#analyticsSummarySlot')?.getBoundingClientRect();
     const diagnostics = document.querySelector('#analyticsDiagnosticsSlot')?.getBoundingClientRect();
     const advanced = document.querySelector('#analyticsAdvancedSlot')?.getBoundingClientRect();
+    const seriesPanel = document.querySelector('.series-panel-lean')?.getBoundingClientRect();
+    const series = [...document.querySelectorAll('.series-panel-lean .series-chip')].map((chip) => ({
+      color: getComputedStyle(chip).color,
+      background: getComputedStyle(chip).backgroundColor,
+      right: chip.getBoundingClientRect().right,
+      panelRight: seriesPanel?.right || 0,
+    }));
     return {
       viewport: window.innerWidth,
+      documentClientWidth: document.documentElement.clientWidth,
+      documentScrollWidth: document.documentElement.scrollWidth,
       contentWidth: content?.width || 0,
+      headerContainsNav: Boolean(header && headerNav && headerNav.left >= header.left && headerNav.right <= header.right),
+      headerDoesNotOverlap: Boolean(brand && headerNav && brand.right <= headerNav.left),
+      filtersInsidePage: Boolean(pageHead && filters && filters.left >= pageHead.left && filters.right <= pageHead.right + 1),
       summaryWidth: summary?.width || 0,
       diagnosticsWidth: diagnostics?.width || 0,
       diagnosticsAfterAdvanced: Boolean(diagnostics && advanced && diagnostics.top >= advanced.bottom),
+      filterHeights: ['.source-switch', '.select-model', '.select-refresh', '.date-range-control'].map((selector) => Math.round(document.querySelector(`.analytics-page-head ${selector}`)?.getBoundingClientRect().height || 0)),
+      refreshPartsSeparated: (() => {
+        const glyph = document.querySelector('.analytics-page-head .refresh-glyph')?.getBoundingClientRect();
+        const select = document.querySelector('.analytics-page-head .select-refresh select')?.getBoundingClientRect();
+        return Boolean(glyph && select && glyph.right <= select.left);
+      })(),
+      seriesReadable: series.every((chip) => chip.color !== 'rgb(255, 255, 255)' && chip.right <= chip.panelRight + 1),
     };
   });
   assert.ok(maximizedLayout.contentWidth >= Math.min(maximizedLayout.viewport - 100, 1400), "maximized dashboard should use the available desktop width");
   assert.ok(maximizedLayout.summaryWidth >= maximizedLayout.contentWidth - 80, `summary should align to the maximized content width: ${JSON.stringify(maximizedLayout)}`);
   assert.ok(maximizedLayout.diagnosticsWidth >= maximizedLayout.contentWidth - 80, `diagnostics should align to the content width: ${JSON.stringify(maximizedLayout)}`);
   assert.equal(maximizedLayout.diagnosticsAfterAdvanced, true, "diagnostics center should render after the analytics content");
+  assert.ok(maximizedLayout.documentScrollWidth <= maximizedLayout.documentClientWidth, `maximized dashboard should not overflow horizontally: ${JSON.stringify(maximizedLayout)}`);
+  assert.equal(maximizedLayout.headerContainsNav, true, `workspace navigation should remain inside the application header: ${JSON.stringify(maximizedLayout)}`);
+  assert.equal(maximizedLayout.headerDoesNotOverlap, true, `application identity and navigation must not overlap: ${JSON.stringify(maximizedLayout)}`);
+  assert.equal(maximizedLayout.filtersInsidePage, true, `analytics filters should stay inside the page heading: ${JSON.stringify(maximizedLayout)}`);
+  assert.equal(maximizedLayout.seriesReadable, true, `chart series controls should retain readable text and fit their panel: ${JSON.stringify(maximizedLayout)}`);
+  assert.deepEqual(maximizedLayout.filterHeights, [42, 42, 42, 42], `analytics filter controls should share one height: ${JSON.stringify(maximizedLayout)}`);
+  assert.equal(maximizedLayout.refreshPartsSeparated, true, `refresh glyph and value should not collide: ${JSON.stringify(maximizedLayout)}`);
   assert.ok(resizeState.appHtml > 1000, "dashboard should remain rendered after maximize");
   assert.equal(resizeState.bodyResizing, false, "resize class should settle after maximize");
   assert.ok(resizeState.perf.length >= 1, "resize perf session should be recorded");
@@ -576,6 +664,25 @@ async function main() {
   assert.equal(sessionPageState.scrollTop, 0, "session page change should reset table scroll");
   assert.ok(sessionPageState.rows <= 20, "session page should render only current page");
   assert.ok(sessionPageMs < 1800, `session page switch should stay responsive, got ${sessionPageMs}ms`);
+  const sessionPaginationGeometry = await evalIn(win, (kind) => {
+    const prefix = kind === 'sessions' ? 'session' : 'request';
+    const note = document.querySelector(`[data-table-limit="${kind}"]`);
+    const sizeField = note?.querySelector('.table-page-size');
+    const sizeSelect = note?.querySelector(`[data-${prefix}-page-size]`);
+    const jumpField = note?.querySelector('.table-page-jump');
+    const jumpInput = note?.querySelector(`[data-${prefix}-page-input]`);
+    const sizeUnits = sizeField ? [...sizeField.querySelectorAll('span')].map((node) => node.getBoundingClientRect()) : [];
+    const jumpUnits = jumpField ? [...jumpField.querySelectorAll('span')].map((node) => node.getBoundingClientRect()) : [];
+    const selectRect = sizeSelect?.getBoundingClientRect();
+    const inputRect = jumpInput?.getBoundingClientRect();
+    return {
+      present: Boolean(note && sizeField && sizeSelect && jumpField && jumpInput),
+      controlsSameHeight: Boolean(sizeField && jumpField && Math.round(sizeField.getBoundingClientRect().height) === Math.round(jumpField.getBoundingClientRect().height)),
+      sizeSeparated: Boolean(selectRect && sizeUnits.length === 2 && sizeUnits[0].right <= selectRect.left && selectRect.right <= sizeUnits[1].left),
+      jumpSeparated: Boolean(inputRect && jumpUnits.length === 2 && jumpUnits[0].right <= inputRect.left && inputRect.right <= jumpUnits[1].left),
+    };
+  }, 'sessions');
+  assert.deepEqual(sessionPaginationGeometry, { present: true, controlsSameHeight: true, sizeSeparated: true, jumpSeparated: true }, `session pagination controls should not overlap their labels: ${JSON.stringify(sessionPaginationGeometry)}`);
   assert.ok(ipcCalls.some((x) => x.channel === "dashboard:getSessionsPage" && x.payload?.source === "all" && x.payload?.limit === 20 && x.payload?.offset === 20), "session next page should request DB offset=20");
   await changeValue(win, "[data-session-page-input]", "999");
   await click(win, "[data-session-page-go]");

@@ -60,3 +60,77 @@ body.cache-building .refresh-state::before { content:""; display:inline-block; w
 @media (prefers-reduced-motion: reduce) {
   .summary-skeleton::after, body.cache-building .refresh-state::before { animation:none; }
 }
+
+/* 1.16.24 advanced analytics disclosure hierarchy */
+.analytics-advanced-shell {
+  margin-bottom:18px;
+  overflow:hidden;
+}
+.analytics-advanced-shell.collapsed {
+  min-height:0;
+  padding:0;
+  border:1px solid var(--cb-border-soft);
+  background:rgba(255,255,255,.9);
+}
+.analytics-advanced-head {
+  min-height:68px;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:20px;
+  padding:14px 16px;
+  border-bottom:1px solid var(--cb-border-hairline);
+  background:linear-gradient(180deg,rgba(255,255,255,.96),rgba(248,250,253,.86));
+}
+.analytics-advanced-shell.collapsed .analytics-advanced-head { border-bottom:0; }
+.analytics-advanced-copy {
+  min-width:0;
+  display:grid;
+  gap:4px;
+}
+.analytics-advanced-copy b {
+  color:#101828;
+  font-size:14px;
+  line-height:1.25;
+  font-weight:850;
+}
+.analytics-advanced-copy span {
+  overflow:hidden;
+  color:#667085;
+  font-size:12px;
+  line-height:1.45;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.analytics-advanced-head > button {
+  flex:0 0 auto;
+  min-height:36px;
+  padding:0 14px;
+  border:1px solid rgba(10,132,255,.24);
+  border-radius:11px;
+  color:#176fc7;
+  background:#f2f8ff;
+  box-shadow:0 1px 0 rgba(255,255,255,.86) inset;
+  font-size:12px;
+  font-weight:820;
+}
+.analytics-advanced-head > button:hover {
+  color:#075bb5;
+  border-color:rgba(10,132,255,.38);
+  background:#eaf4ff;
+}
+.analytics-advanced-shell > :not(.analytics-advanced-head) { margin-inline:16px; }
+.analytics-advanced-shell > :last-child { margin-bottom:16px; }
+
+@media (max-width:680px) {
+  .analytics-advanced-head { align-items:flex-start; flex-direction:column; gap:12px; }
+  .analytics-advanced-copy span { white-space:normal; }
+  .analytics-advanced-head > button { width:100%; }
+}
+
+/* Collapsed disclosure must use its real height; deferred intrinsic sizing creates a 720px blank block in normal windows. */
+.analytics-advanced-shell.collapsed {
+  content-visibility:visible !important;
+  contain-intrinsic-size:none !important;
+  contain:layout paint style;
+}
