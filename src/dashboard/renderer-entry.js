@@ -57,7 +57,8 @@ let dateRangeError = '';
 let dateRangeFocus = 'start';
 let dateRangeMonth = Number(localStorage.getItem('dateRangeMonth') || 0) || 0;
 let tableTab = localStorage.getItem('statsTableTab') || 'requests';
-let workspaceMode = localStorage.getItem('workspaceMode') || 'analytics';
+let workspaceMode = 'analytics';
+try { localStorage.setItem('workspaceMode', workspaceMode); } catch {}
 let analyticsQuery = localStorage.getItem('statsAnalyticsQuery') || localStorage.getItem('statsQuery') || '';
 let sessionQuery = localStorage.getItem('statsSessionQuery') || '';
 let sessionStatusFilter = localStorage.getItem('sessionStatusFilter') || 'active';

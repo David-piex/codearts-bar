@@ -373,6 +373,27 @@ async function main() {
   assert.equal(collapsedAdvancedGeometry.withinViewport, true, `collapsed advanced analytics header should be scrollable into the normal viewport: ${JSON.stringify(collapsedAdvancedGeometry)}`);
   await evalIn(win, () => { const content = document.querySelector('.content'); if(content) content.scrollTop = 0; });
 
+  await click(win, '[data-date-range-toggle]');
+  const normalWindowDatePopover = await waitFor(win, () => {
+    const popover = document.querySelector('.date-range-popover');
+    const filters = document.querySelector('.analytics-page-head .filters');
+    if(!popover || !filters) return null;
+    const rect = popover.getBoundingClientRect();
+    const probeX = Math.max(1, Math.min(window.innerWidth - 2, Math.round(rect.left + rect.width / 2)));
+    const probeY = Math.max(1, Math.min(window.innerHeight - 2, Math.round(rect.top + 30)));
+    return {
+      rect: { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom, width: rect.width, height: rect.height },
+      overflow: getComputedStyle(filters).overflow,
+      hit: Boolean(document.elementFromPoint(probeX, probeY)?.closest('.date-range-popover')),
+      viewport: { width: window.innerWidth, height: window.innerHeight },
+    };
+  });
+  assert.equal(normalWindowDatePopover.overflow, 'visible', `normal-window date popover must escape the filter row: ${JSON.stringify(normalWindowDatePopover)}`);
+  assert.equal(normalWindowDatePopover.hit, true, `normal-window date popover should be visible and interactive: ${JSON.stringify(normalWindowDatePopover)}`);
+  assert.ok(normalWindowDatePopover.rect.width > 500 && normalWindowDatePopover.rect.height > 300, `normal-window date popover should render at usable size: ${JSON.stringify(normalWindowDatePopover)}`);
+  await click(win, '[data-date-range-toggle]');
+  await waitFor(win, () => !document.querySelector('.date-range-popover'));
+
   win.setSize(1040, 720, false);
   await delay(120);
   win.maximize();

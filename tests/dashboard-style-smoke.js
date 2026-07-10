@@ -103,6 +103,7 @@ assert.match(cssBundle, /\.analytics-page-head\{display:grid/);
 assert.match(cssBundle, /\.series-panel-lean \.series-chip\.active/);
 assert.match(cssBundle, /--series-color/);
 assert.match(cssBundle, /--filter-control-height:42px/);
+assert.match(cssBundle, /:has\(\.date-range-control\.open\) \.filters\{overflow:visible!important/);
 assert.match(cssBundle, /\.analytics-advanced-copy/);
 assert.match(cssBundle, /\.analytics-advanced-shell\.collapsed\{[^}]*content-visibility:visible!important/);
 assert.match(cssBundle, /\.table-page-field/);

@@ -154,3 +154,9 @@ body.view-switching :where(button, .icon-chip, .range button, .series-chip, .tab
   .analytics-page-head .select-model { width:140px; }
   .analytics-page-head .date-range-control { width:278px !important; min-width:278px !important; }
 }
+
+/* Keep the date popover outside the compact filter scroller while it is open. */
+.analytics-page-head:has(.date-range-control.open) .filters {
+  overflow:visible !important;
+  scroll-snap-type:none;
+}
