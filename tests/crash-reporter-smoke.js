@@ -49,9 +49,14 @@ try {
   assert.ok(logs.some((entry) => entry.level === "fatal" && entry.scope === "crash:uncaughtException"));
 
   reporter.recordRendererError("window_error", { message: "renderer boom", stack: "stack" }, { filename: "dashboard-renderer.js" });
+  reporter.install();
   state = reporter.getCrashState();
   assert.ok(state.issues.some((issue) => issue.code === "last_renderer_error"));
   assert.ok(logs.some((entry) => entry.level === "error" && entry.scope === "renderer:window_error"));
+
+  reporter.clearRendererError();
+  state = reporter.getCrashState();
+  assert.equal(state.issues.some((issue) => issue.code === "last_renderer_error"), false);
 
   const decorated = decorateWithRuntimeDiagnostics({ ok: true, diagnostics: { issues: [] } }, state);
   assert.ok(decorated.runtimeDiagnostics);

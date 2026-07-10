@@ -25,7 +25,7 @@
     }
     body::after { opacity:.28; filter:blur(10px); }
     .content {
-      max-width:1460px;
+      max-width:1760px;
       padding:22px 24px 18px;
     }
     .topbar { margin-bottom:12px; }

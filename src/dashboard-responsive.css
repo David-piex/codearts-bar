@@ -56,3 +56,10 @@ body:not(.view-switching) .content:not(.view-switching) .table-tabs button { tra
       }
       .page-head:not(.session-filter-head) .date-range-control { min-width:270px; }
     }
+
+/* 1.16.22 maximized workspace: use available desktop width without stretching compact controls. */
+@media (min-width:1600px) {
+  .content { max-width:none; padding-inline:32px; }
+  .page-head:not(.session-filter-head) { grid-template-columns:minmax(260px,.72fr) minmax(760px,1.28fr); }
+  .page-head:not(.session-filter-head) .date-range-control { width:clamp(286px,22vw,360px); }
+}

@@ -63,7 +63,7 @@ function createSettingsWindow({ appDir, appendLog, onClosed }) {
   return win;
 }
 
-function createDashboardWindow({ appDir, isQuitting, hideToTray, appendLog, recordCrash, recordRendererError, packageSmoke, onClosed }) {
+function createDashboardWindow({ appDir, isQuitting, hideToTray, appendLog, recordCrash, recordRendererError, clearRendererError, packageSmoke, onClosed }) {
   const nativeSurface = process.platform === 'darwin'
     ? { titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 14, y: 15 }, vibrancy: 'under-window', visualEffectState: 'active', transparent: true, roundedCorners: true }
     : {};
@@ -105,6 +105,7 @@ function createDashboardWindow({ appDir, isQuitting, hideToTray, appendLog, reco
     }
   });
   win.webContents.on('did-finish-load', () => {
+    clearRendererError?.();
     if (!packageSmoke?.resultPath) return;
     writePackageSmokeResult({ ...packageSmoke, appendLog }, {
       didFinishLoad: true,

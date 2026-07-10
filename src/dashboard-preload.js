@@ -10,6 +10,8 @@ const invokeChannels = new Set([
   'dashboard:getSessionRequestsPage',
   'dashboard:getSessionsPage',
   'dashboard:getAggregates',
+  'dashboard:refreshLight',
+  'dashboard:refreshFull',
   'dashboard:settings',
   'dashboard:setLayoutMode',
   'dashboard:setPinned',

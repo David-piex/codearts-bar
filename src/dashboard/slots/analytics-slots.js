@@ -28,7 +28,7 @@ function analyticsShellHtml(s, rows, opts = {}){
   const tableHtml = deferHeavy ? analyticsDeferredHtml(TXT.updatingDetails || '正在更新明细...') : analyticsTableHtml(rows, s);
   const advancedHtml = deferHeavy ? '' : analyticsAdvancedHtml(rows, s);
   const agentHtml = deferHeavy ? analyticsDeferredHtml(TXT.updatingAgentIdle || '正在更新 Agent idle...') : renderAgentRhythm(s);
-  return `${headerHtml(false)}<div id="analyticsFiltersSlot">${filtersHtml(s)}</div><div id="analyticsSummarySlot">${renderSummary(rows, s)}</div><div id="analyticsDiagnosticsSlot">${renderDiagnosticsNotice(s)}</div><div id="analyticsEmptySlot">${analyticsEmptyState(rows)}</div><div id="analyticsChartSlot">${renderChart(rows, s)}</div><div id="analyticsAgentSlot">${agentHtml}</div><div id="analyticsTableSlot">${tableHtml}</div><div id="analyticsAdvancedSlot">${advancedHtml}</div>`;
+  return `${headerHtml(false)}<div id="analyticsFiltersSlot">${filtersHtml(s)}</div><div id="analyticsSummarySlot">${renderSummary(rows, s)}</div><div id="analyticsEmptySlot">${analyticsEmptyState(rows)}</div><div id="analyticsChartSlot">${renderChart(rows, s)}</div><div id="analyticsAgentSlot">${agentHtml}</div><div id="analyticsTableSlot">${tableHtml}</div><div id="analyticsAdvancedSlot">${advancedHtml}</div><div id="analyticsDiagnosticsSlot">${renderDiagnosticsNotice(s)}</div>`;
 }
 function patchSubSlotHtml(cacheKey, el, html){
   if(!el) return false;

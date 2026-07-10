@@ -1,4 +1,4 @@
-﻿function syncFooter(){
+function syncFooter(){
   const btn = document.getElementById('layoutMode');
   if(btn) btn.textContent = layoutMode === 'compact' ? TXT.dashboardMode : TXT.menuCardMode;
   document.body?.classList?.toggle?.('compact-layout', layoutMode === 'compact');
@@ -232,7 +232,7 @@ function renderInitialSkeleton(){
   snapshot = s;
   const summary = `<section class="summary-card usage-summary summary-skeleton" aria-label="${esc(TXT.loading || '\u6b63\u5728\u52a0\u8f7d\u6458\u8981')}"><div class="summary-skeleton-hero"><i></i><div><span></span><b></b></div><em></em></div><div class="summary-skeleton-grid">${Array.from({ length: 5 }, () => '<span></span>').join('')}</div></section>`;
   const details = `<div class="startup-deferred"><span>${esc(TXT.updatingDetails || '\u6b63\u5728\u540e\u53f0\u52a0\u8f7d\u8d8b\u52bf\u4e0e\u6a21\u578b\u7edf\u8ba1...')}</span></div>`;
-  commitAppHtml(app, `${headerHtml(false)}<div id="analyticsFiltersSlot">${filtersHtml(s)}</div><div id="analyticsSummarySlot">${summary}</div><div id="analyticsDiagnosticsSlot"></div><div id="analyticsEmptySlot"></div><div id="analyticsChartSlot">${details}</div><div id="analyticsAgentSlot"></div><div id="analyticsTableSlot"></div><div id="analyticsAdvancedSlot"></div>`);
+  commitAppHtml(app, `${headerHtml(false)}<div id="analyticsFiltersSlot">${filtersHtml(s)}</div><div id="analyticsSummarySlot">${summary}</div><div id="analyticsEmptySlot"></div><div id="analyticsChartSlot">${details}</div><div id="analyticsAgentSlot"></div><div id="analyticsTableSlot"></div><div id="analyticsAdvancedSlot"></div><div id="analyticsDiagnosticsSlot"></div>`);
   syncFooter();
   applyWindowLayout();
 }

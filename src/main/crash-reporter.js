@@ -176,6 +176,19 @@ function createCrashReporter({
     return { ...current, ok: merged.length === 0, issues: merged, startup: startupState };
   }
 
+  function clearRendererError() {
+    try { fs.rmSync(paths().rendererError, { force: true }); } catch {}
+    if (startupState?.issues) {
+      startupState = {
+        ...startupState,
+        issues: startupState.issues.filter((issue) => issue?.code !== 'last_renderer_error'),
+        rendererError: null,
+      };
+      startupState.ok = startupState.issues.length === 0;
+    }
+    return true;
+  }
+
   function markCleanExit() {
     if (heartbeatTimer) {
       try { clearIntervalFn(heartbeatTimer); } catch {}
@@ -239,6 +252,7 @@ function createCrashReporter({
     markCleanExit,
     recordCrash,
     recordRendererError,
+    clearRendererError,
     getCrashState,
   };
 }

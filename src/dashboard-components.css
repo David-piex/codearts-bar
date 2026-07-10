@@ -396,8 +396,8 @@ tr:hover td,
 .commercial-error-state em { color: #8a93a3; font-style: normal; }
 
 .diagnostics-notice {
-  width: min(1180px, calc(100vw - 50px));
-  margin: 0 auto 14px;
+  width: 100%;
+  margin: 18px 0 14px;
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
   gap: 14px;

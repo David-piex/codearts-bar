@@ -287,6 +287,7 @@ function openDashboardWindow() {
     appendLog,
     recordCrash: crashReporter.recordCrash,
     recordRendererError: crashReporter.recordRendererError,
+    clearRendererError: crashReporter.clearRendererError,
     packageSmoke: process.env.CODEARTS_BAR_PACKAGE_SMOKE === '1' && packageSmokeResultPath ? {
       resultPath: packageSmokeResultPath,
       startedAt: packageSmokeStartedAt,
@@ -344,6 +345,7 @@ registerDashboardIpc({
   logPath,
   getCrashState: crashReporter.getCrashState,
   recordRendererError: crashReporter.recordRendererError,
+    clearRendererError: crashReporter.clearRendererError,
   getLastSnapshot: () => lastSnapshot,
   getLastDashboardSnapshot: () => lastDashboardSnapshot,
   buildInitialSummarySnapshot,

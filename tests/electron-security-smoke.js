@@ -23,6 +23,8 @@ assert.match(windowSource, /settings-preload\.js/);
 assert.match(windowSource, /setWindowOpenHandler/);
 assert.match(windowSource, /will-navigate/);
 assert.match(dashboardPreload, /contextBridge\.exposeInMainWorld/);
+assert.match(dashboardPreload, /dashboard:refreshLight/);
+assert.match(dashboardPreload, /dashboard:refreshFull/);
 assert.match(settingsPreload, /contextBridge\.exposeInMainWorld/);
 assert.doesNotMatch(dashboardEntry, /require\(['"]electron['"]\)/);
 assert.doesNotMatch(settingsRenderer, /require\(['"]electron['"]\)/);

@@ -327,6 +327,23 @@ async function main() {
     appHtml: document.getElementById("app")?.innerHTML?.length || 0,
   }));
   assert.equal(resizeState.isMaxViewport, true);
+  const maximizedLayout = await evalIn(win, () => {
+    const content = document.querySelector('.content')?.getBoundingClientRect();
+    const summary = document.querySelector('#analyticsSummarySlot')?.getBoundingClientRect();
+    const diagnostics = document.querySelector('#analyticsDiagnosticsSlot')?.getBoundingClientRect();
+    const advanced = document.querySelector('#analyticsAdvancedSlot')?.getBoundingClientRect();
+    return {
+      viewport: window.innerWidth,
+      contentWidth: content?.width || 0,
+      summaryWidth: summary?.width || 0,
+      diagnosticsWidth: diagnostics?.width || 0,
+      diagnosticsAfterAdvanced: Boolean(diagnostics && advanced && diagnostics.top >= advanced.bottom),
+    };
+  });
+  assert.ok(maximizedLayout.contentWidth >= Math.min(maximizedLayout.viewport - 100, 1400), "maximized dashboard should use the available desktop width");
+  assert.ok(maximizedLayout.summaryWidth >= maximizedLayout.contentWidth - 80, `summary should align to the maximized content width: ${JSON.stringify(maximizedLayout)}`);
+  assert.ok(maximizedLayout.diagnosticsWidth >= maximizedLayout.contentWidth - 80, `diagnostics should align to the content width: ${JSON.stringify(maximizedLayout)}`);
+  assert.equal(maximizedLayout.diagnosticsAfterAdvanced, true, "diagnostics center should render after the analytics content");
   assert.ok(resizeState.appHtml > 1000, "dashboard should remain rendered after maximize");
   assert.equal(resizeState.bodyResizing, false, "resize class should settle after maximize");
   assert.ok(resizeState.perf.length >= 1, "resize perf session should be recorded");
