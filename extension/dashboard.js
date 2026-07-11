@@ -23,7 +23,7 @@ class DashboardHost {
       ],
     };
     webview.html = dashboardHtml(webview, this.context.extensionUri, mode);
-    const target = { webview, mode };
+    const target = { webview, mode, visible: true };
     this.targets.add(target);
     webview.onDidReceiveMessage((message) =>
       this.handleMessage(message, target),
@@ -34,7 +34,8 @@ class DashboardHost {
   async handleMessage(message, target) {
     if (message?.type === "ready") {
       this.postSnapshot(target);
-      return this.loadDetails?.({ reason: "webview-ready", target });
+      if (target.visible) return this.loadDetails?.({ reason: "webview-ready", target });
+      return undefined;
     }
     if (message?.type === "refresh") return this.refreshSnapshot({ details: true, reason: "webview-refresh" });
     if (message?.type === "openDashboard") return this.openPanel();
@@ -49,6 +50,14 @@ class DashboardHost {
   remove(target) {
     this.targets.delete(target);
   }
+  setVisible(target, visible, reason = "visibility") {
+    if (!target) return;
+    const becameVisible = !target.visible && Boolean(visible);
+    target.visible = Boolean(visible);
+    if (!becameVisible) return;
+    this.postSnapshot(target);
+    this.loadDetails?.({ reason, target });
+  }
   postSnapshot(target) {
     const snapshot = this.getSnapshot();
     if (snapshot)
@@ -59,16 +68,22 @@ class DashboardHost {
   }
   broadcast(snapshot) {
     const payload = viewModel(snapshot);
-    for (const target of this.targets) target.webview.postMessage({ type: "snapshot", payload });
+    for (const target of this.targets) {
+      if (target.visible) target.webview.postMessage({ type: "snapshot", payload });
+    }
   }
   broadcastDetails(snapshot) {
     const payload = viewModel(snapshot);
-    for (const target of this.targets) target.webview.postMessage({ type: "details", payload });
+    for (const target of this.targets) {
+      if (target.visible) target.webview.postMessage({ type: "details", payload });
+    }
   }
-  hasTargets() { return this.targets.size > 0; }
+  hasTargets() { return [...this.targets].some((target) => target.visible); }
   setRefreshing(value) {
-    for (const target of this.targets)
-      target.webview.postMessage({ type: "refreshing", value: Boolean(value) });
+    for (const target of this.targets) {
+      if (target.visible)
+        target.webview.postMessage({ type: "refreshing", value: Boolean(value) });
+    }
   }
 
   openPanel() {
@@ -91,6 +106,10 @@ class DashboardHost {
       "codearts.svg",
     );
     panel.__target = this.attach(panel.webview, "dashboard");
+    panel.__target.visible = panel.visible;
+    panel.onDidChangeViewState((event) =>
+      this.setVisible(panel.__target, event.webviewPanel.visible, "panel-visible"),
+    );
     panel.onDidDispose(() => {
       this.remove(panel.__target);
       this.panel = null;
@@ -106,6 +125,10 @@ class OverviewViewProvider {
   }
   resolveWebviewView(view) {
     this.target = this.host.attach(view.webview, "sidebar");
+    this.target.visible = view.visible;
+    view.onDidChangeVisibility(() =>
+      this.host.setVisible(this.target, view.visible, "sidebar-visible"),
+    );
     view.onDidDispose(() => this.host.remove(this.target));
   }
 }

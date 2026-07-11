@@ -60,6 +60,13 @@ function iconFor(level) {
   return "$(pulse)";
 }
 
+function formatCacheRate(usage = {}) {
+  const rate = Number(usage.cacheHitRate);
+  return usage.cacheHitRate === null || usage.cacheHitRate === undefined || !Number.isFinite(rate)
+    ? T.noData
+    : `${rate.toFixed(1)}%`;
+}
+
 function markdownDetails(snapshot) {
   if (!snapshot || !snapshot.ok)
     return new vscode.MarkdownString(
@@ -70,21 +77,21 @@ function markdownDetails(snapshot) {
   md.appendMarkdown(`**${T.app} - ${T.today} ${snapshot.status.label}**\n\n`);
   md.appendMarkdown(`${T.updated}: ${snapshot.updatedAt}\n\n`);
   md.appendMarkdown(
-    `| ${T.window} | token | ${T.reply} | ${T.error} |\n|---|---:|---:|---:|\n`,
+    `| ${T.window} | token | ${T.reply} | ${T.error} | \u7f13\u5b58\u547d\u4e2d |\n|---|---:|---:|---:|---:|\n`,
   );
   md.appendMarkdown(
-    `| ${T.today} | ${fmtInt(snapshot.usage.today.total)} | ${snapshot.usage.today.messages} | ${snapshot.usage.today.errors} |\n`,
+    `| ${T.today} | ${fmtInt(snapshot.usage.today.total)} | ${snapshot.usage.today.messages} | ${snapshot.usage.today.errors} | ${formatCacheRate(snapshot.usage.today)} |\n`,
   );
   md.appendMarkdown(
-    `| ${snapshot.config.windowHours}h | ${fmtInt(snapshot.usage.window.total)} | ${snapshot.usage.window.messages} | ${snapshot.usage.window.errors} |\n`,
+    `| ${snapshot.config.windowHours}h | ${fmtInt(snapshot.usage.window.total)} | ${snapshot.usage.window.messages} | ${snapshot.usage.window.errors} | ${formatCacheRate(snapshot.usage.window)} |\n`,
   );
   md.appendMarkdown(
-    `| 7d | ${fmtInt(snapshot.usage.week.total)} | ${snapshot.usage.week.messages} | ${snapshot.usage.week.errors} |\n`,
+    `| 7d | ${fmtInt(snapshot.usage.week.total)} | ${snapshot.usage.week.messages} | ${snapshot.usage.week.errors} | ${formatCacheRate(snapshot.usage.week)} |\n`,
   );
   md.appendMarkdown(
-    `| ${T.total} | ${fmtInt(snapshot.usage.all.total)} | ${snapshot.usage.all.messages} | ${snapshot.usage.all.errors} |\n\n`,
+    `| ${T.total} | ${fmtInt(snapshot.usage.all.total)} | ${snapshot.usage.all.messages} | ${snapshot.usage.all.errors} | ${formatCacheRate(snapshot.usage.all)} |\n\n`,
   );
-  if (snapshot.performance && snapshot.performance.window) {
+  if (snapshot.capabilities?.performance !== false && snapshot.performance?.window) {
     const p = snapshot.performance.window;
     md.appendMarkdown(`**${T.perf}**\n\n`);
     md.appendMarkdown(
@@ -103,7 +110,7 @@ function markdownDetails(snapshot) {
       `- ${T.errorRate}: \`${(p.errorRate * 100).toFixed(1)}%\`\n\n`,
     );
   }
-  if (snapshot.queue && snapshot.queue.window) {
+  if (snapshot.capabilities?.queue !== false && snapshot.queue?.window) {
     const q = snapshot.queue.window;
     md.appendMarkdown(`**${T.queue}**\n\n`);
     md.appendMarkdown(
