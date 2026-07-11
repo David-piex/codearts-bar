@@ -7,10 +7,11 @@
   const number = (value) =>
     Number.isFinite(Number(value)) ? Number(value) : 0;
   const token = (value) => compact.format(number(value));
-  const percent = (value) =>
-    Number.isFinite(Number(value))
-      ? `${Number(value).toFixed(Number(value) >= 10 ? 0 : 1)}%`
-      : "\u2014";
+  const percent = (value) => {
+    if (value === null || value === undefined || value === "") return "\u2014";
+    const n = Number(value);
+    return Number.isFinite(n) ? `${n.toFixed(n >= 10 ? 0 : 1)}%` : "\u2014";
+  };
   const milliseconds = (value) => {
     const n = Number(value);
     if (!Number.isFinite(n)) return "\u2014";

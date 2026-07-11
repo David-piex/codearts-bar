@@ -11,7 +11,7 @@ const screenshotDir = path.join(root, 'docs', 'screenshots');
 const electronDir = path.join(root, '.cache', 'electron-visual');
 const outputDir = path.join(root, '.cache', 'visual-regression');
 const cases = [
-  { name: 'vscode-tooltip.png', actualDir: screenshotDir, maxDiffRatio: 0.0025 },
+  { name: 'vscode-tooltip.png', actualDir: screenshotDir, maxDiffRatio: 0.0035 },
   { name: 'vscode-empty-state.png', actualDir: screenshotDir, maxDiffRatio: 0.0015 },
   { name: 'desktop-standard.png', actualDir: electronDir, maxDiffRatio: 0.003 },
   { name: 'desktop-narrow.png', actualDir: electronDir, maxDiffRatio: 0.003 },

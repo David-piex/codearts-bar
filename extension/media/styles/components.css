@@ -116,6 +116,9 @@
 .chart-legend .output {
   background: var(--cyan);
 }
+.chart-legend .cache {
+  background: var(--cache);
+}
 .empty-state {
   position: absolute;
   inset: 0;
@@ -473,6 +476,7 @@
 .chart-tooltip b { color: var(--text); font-variant-numeric: tabular-nums; }
 .chart-tooltip i { width: 6px; height: 6px; border-radius: 999px; background: var(--accent); }
 .chart-tooltip i.output { background: var(--cyan); }
+.chart-tooltip i.cache { background: var(--cache); }
 .empty-state { pointer-events: none; }
 .empty-state.zero-state {
   inset: 50% auto auto 50%;

@@ -76,16 +76,16 @@
     return state;
   }
 
-  function showTooltip(state, row, index, hourly, px, totalY, outputY) {
+  function showTooltip(state, row, index, hourly, px, totalY, outputY, cacheY) {
     const tooltip = state.tooltip;
     if (!tooltip) return;
-    tooltip.innerHTML = `<strong>${tooltipTime(row, hourly)}</strong><span><i class="total"></i>总量 <b>${fullValue(row.total)}</b></span><span><i class="output"></i>输出 <b>${fullValue(row.output)}</b></span>`;
+    tooltip.innerHTML = `<strong>${tooltipTime(row, hourly)}</strong><span><i class="total"></i>总量 <b>${fullValue(row.total)}</b></span><span><i class="output"></i>输出 <b>${fullValue(row.output)}</b></span><span><i class="cache"></i>缓存读取 <b>${fullValue(row.cacheRead)}</b></span>`;
     tooltip.hidden = false;
     const canvasRect = state.canvas.getBoundingClientRect();
     const areaRect = state.canvas.parentElement?.getBoundingClientRect() || canvasRect;
     const tooltipWidth = Math.max(126, tooltip.offsetWidth || 126);
     const localX = canvasRect.left - areaRect.left + px;
-    const anchorY = canvasRect.top - areaRect.top + Math.min(totalY, outputY);
+    const anchorY = canvasRect.top - areaRect.top + Math.min(totalY, outputY, cacheY);
     const left = localX + tooltipWidth + 22 > areaRect.width ? localX - tooltipWidth - 12 : localX + 12;
     tooltip.style.left = `${Math.max(4, left)}px`;
     tooltip.style.top = `${Math.max(4, Math.min(areaRect.height - (tooltip.offsetHeight || 78) - 4, anchorY - 30))}px`;
@@ -97,7 +97,7 @@
     state.frame = requestAnimationFrame(() => {
       const { canvas, empty, rows } = state;
       const hasRows = rows.length > 0;
-      const hasValues = rows.some((row) => Number(row.total) > 0 || Number(row.output) > 0);
+      const hasValues = rows.some((row) => Number(row.total) > 0 || Number(row.output) > 0 || Number(row.cacheRead) > 0);
       empty.hidden = hasRows && hasValues;
       empty.classList.toggle("zero-state", hasRows && !hasValues);
       empty.textContent = hasRows ? "当前范围暂无 Token 使用" : "当前范围暂无趋势数据";
@@ -117,7 +117,7 @@
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       const width = rect.width, height = rect.height;
       const pad = { left: width < 360 ? 40 : 48, right: 10, top: 22, bottom: 24 };
-      const rawMax = Math.max(0, ...rows.map((item) => Number(item.total) || 0), ...rows.map((item) => Number(item.output) || 0));
+      const rawMax = Math.max(0, ...rows.map((item) => Number(item.total) || 0), ...rows.map((item) => Number(item.output) || 0), ...rows.map((item) => Number(item.cacheRead) || 0));
       const scale = niceChartScale(rawMax);
       const plotWidth = Math.max(1, width - pad.left - pad.right);
       const plotHeight = Math.max(1, height - pad.top - pad.bottom);
@@ -128,6 +128,7 @@
       const line = style.getPropertyValue("--line-strong").trim();
       const accent = style.getPropertyValue("--accent").trim();
       const cyan = style.getPropertyValue("--cyan").trim();
+      const cache = style.getPropertyValue("--cache").trim();
       const muted = style.getPropertyValue("--muted").trim();
       ctx.clearRect(0, 0, width, height);
       ctx.font = "10px -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', sans-serif";
@@ -178,6 +179,12 @@
         ctx.strokeStyle = cyan;
         ctx.lineWidth = 1.35;
         ctx.stroke();
+        path("cacheRead");
+        ctx.strokeStyle = cache;
+        ctx.lineWidth = 1.35;
+        ctx.setLineDash([5, 4]);
+        ctx.stroke();
+        ctx.setLineDash([]);
       }
 
       const hourly = rows.length > 2 && Number(rows.at(-1)?.start || 0) - Number(rows[0]?.start || 0) <= 48 * 3600000;
@@ -192,14 +199,14 @@
       if (hasValues && state.hover >= 0 && rows[state.hover]) {
         const index = Math.min(rows.length - 1, state.hover);
         const row = rows[index];
-        const px = x(index), totalY = y(row.total), outputY = y(row.output);
+        const px = x(index), totalY = y(row.total), outputY = y(row.output), cacheY = y(row.cacheRead);
         ctx.strokeStyle = line;
         ctx.lineWidth = 1;
         ctx.beginPath();
         ctx.moveTo(px, pad.top);
         ctx.lineTo(px, pad.top + plotHeight);
         ctx.stroke();
-        for (const [py, color] of [[totalY, accent], [outputY, cyan]]) {
+        for (const [py, color] of [[totalY, accent], [outputY, cyan], [cacheY, cache]]) {
           ctx.fillStyle = color;
           ctx.beginPath();
           ctx.arc(px, py, 3.5, 0, Math.PI * 2);
@@ -208,7 +215,7 @@
           ctx.lineWidth = 2;
           ctx.stroke();
         }
-        showTooltip(state, row, index, hourly, px, totalY, outputY);
+        showTooltip(state, row, index, hourly, px, totalY, outputY, cacheY);
       } else if (state.tooltip) {
         state.tooltip.hidden = true;
       }

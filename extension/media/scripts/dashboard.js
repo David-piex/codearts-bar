@@ -5,10 +5,25 @@
   let range = saved.range || "today";
   const element = (selector) => document.querySelector(selector),
     all = (selector) => [...document.querySelectorAll(selector)];
+  function zeroTrendRows() {
+    const end = Number(snapshot?.timestamp) || Date.now();
+    const hourly = range === "today" || range === "window";
+    const count = hourly ? 24 : 14;
+    const bucketMs = hourly ? 3600000 : 86400000;
+    const alignedEnd = Math.floor(end / bucketMs) * bucketMs;
+    return Array.from({ length: count }, (_, index) => ({
+      start: alignedEnd - (count - 1 - index) * bucketMs,
+      total: 0,
+      input: 0,
+      output: 0,
+      cacheRead: 0,
+    }));
+  }
   function trendRows() {
-    return range === "today" || range === "window"
+    const rows = range === "today" || range === "window"
       ? snapshot.trends.hourly24h
       : snapshot.trends.daily14d;
+    return Array.isArray(rows) && rows.length ? rows : zeroTrendRows();
   }
   function render() {
     if (!snapshot?.ok) return;

@@ -15,15 +15,27 @@
     element("#metricMessages").textContent = f.exact.format(
       f.number(usage.messages),
     );
-    element("#metricCache").textContent = f.percent(usage.cacheHitRate);
-    element("#metricCacheTokens").textContent =
-      `${f.token(usage.cacheRead)} cache token`;
-    const rate = usage.messages
+    const cacheRate = usage.cacheHitRate;
+    const cacheHasData = cacheRate !== null && cacheRate !== undefined;
+    element("#metricCache").textContent = f.percent(cacheRate);
+    if (cacheHasData) {
+      element("#metricCacheTokens").textContent = `${f.token(usage.cacheRead)} token \u547d\u4e2d`;
+    } else {
+      const fallback = snapshot.usage.week || snapshot.usage.all || {};
+      const fallbackRate = fallback.cacheHitRate;
+      element("#metricCacheTokens").textContent =
+        fallbackRate !== null && fallbackRate !== undefined
+          ? `\u5f53\u524d\u8303\u56f4\u65e0\u8bf7\u6c42 \u00b7 \u8fd1 7 \u5929 ${f.percent(fallbackRate)}`
+          : "\u5f53\u524d\u8303\u56f4\u6682\u65e0\u7f13\u5b58\u6570\u636e";
+    }
+    const hasRequests = f.number(usage.messages) > 0;
+    const rate = hasRequests
       ? (f.number(usage.errors) / f.number(usage.messages)) * 100
-      : 0;
+      : null;
     element("#metricErrors").textContent = f.percent(rate);
-    element("#metricErrorCount").textContent =
-      `${f.exact.format(f.number(usage.errors))} \u4e2a\u9519\u8bef`;
+    element("#metricErrorCount").textContent = hasRequests
+      ? `${f.exact.format(f.number(usage.errors))} \u4e2a\u9519\u8bef`
+      : "\u5f53\u524d\u8303\u56f4\u65e0\u8bf7\u6c42";
   }
   function models(snapshot) {
     const rows = snapshot.models || [],
@@ -32,7 +44,7 @@
       ? rows
           .map(
             (item) =>
-              `<div class="rank-row"><span class="rank-name" title="${f.html(item.provider)}">${f.html(item.name)}</span><progress class="rank-track" max="100" value="${Math.max(2, (f.number(item.total) / max) * 100)}"></progress><span class="rank-value">${f.token(item.total)}</span></div>`,
+              `<div class="rank-row"><span class="rank-name" title="${f.html([item.name, item.provider].filter(Boolean).join(" ? "))}">${f.html(item.name)}</span><progress class="rank-track" max="100" value="${Math.max(2, (f.number(item.total) / max) * 100)}"></progress><span class="rank-value">${f.token(item.total)}</span></div>`,
           )
           .join("")
       : '<p class="empty-copy">\u6682\u65e0\u6a21\u578b\u8c03\u7528\u8bb0\u5f55</p>';
@@ -53,13 +65,18 @@
           .join("")
       : '<p class="empty-copy">\u672a\u53d1\u73b0\u6570\u636e\u6e90</p>';
   }
+  function compactDirectory(value) {
+    const directory = String(value || "");
+    const parts = directory.split(/[\\/]+/).filter(Boolean);
+    return parts.length > 2 ? `\u2026\\${parts.slice(-2).join("\\")}` : directory;
+  }
   function sessions(snapshot) {
     const rows = snapshot.sessions || [];
     element("#sessions").innerHTML = rows.length
       ? rows
           .map(
             (item) =>
-              `<div class="session-row"><div class="session-main"><b>${f.html(item.title)}</b><span>${f.html(item.directory || item.sourceLabel || "\u672c\u5730\u4f1a\u8bdd")}</span></div><span class="session-meta">${f.html(item.model || item.sourceLabel)}</span><span class="session-total">${f.token(item.total)} \u00b7 ${f.age(item.age)}</span></div>`,
+              `<div class="session-row"><div class="session-main"><b>${f.html(item.title)}</b><span title="${f.html(item.directory || "")}">${f.html(compactDirectory(item.directory) || item.sourceLabel || "\u672c\u5730\u4f1a\u8bdd")}</span></div><span class="session-meta">${f.html(item.model || item.sourceLabel)}</span><span class="session-total">${f.token(item.total)} \u00b7 ${f.age(item.age)}</span></div>`,
           )
           .join("")
       : '<p class="empty-copy">\u6682\u65e0\u6700\u8fd1\u4f1a\u8bdd</p>';

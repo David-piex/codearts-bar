@@ -141,13 +141,19 @@ assert.match(chartSource, /data-chart-tooltip|chart-tooltip/);
 assert.match(chartSource, /zeroState/);
 assert.match(chartSource, /compactAxisValue/);
 assert.match(chartSource, /Token/);
+assert.match(chartSource, /path\("cacheRead"\)/, "trend chart must draw cache-read tokens");
+assert.match(chartSource, /\u7f13\u5b58\u8bfb\u53d6/, "trend tooltip must disclose cache-read tokens");
+assert.match(htmlSource, /\\u7f13\\u5b58\\u8bfb\\u53d6/, "trend legend must include cache read");
 assert.match(viewsSource, /CodeArtsViews/);
 assert.doesNotMatch(
   clientSource,
   /innerHTML\s*=\s*[^;]*snapshot\./,
   "snapshot values must be escaped before HTML insertion",
 );
-assert.match(tokenCss, /--vscode-/);
+assert.doesNotMatch(tokenCss, /--vscode-/, "webview palette must stay aligned with Desktop instead of inheriting the editor theme");
+assert.match(tokenCss, /color-scheme:\s*light/);
+assert.match(tokenCss, /--page:\s*#f7f8fb/);
+assert.match(tokenCss, /--accent:\s*#1687f5/);
 assert.match(tokenCss, /SF Pro/);
 assert.match(
   foundationCss,
@@ -158,7 +164,13 @@ assert.match(componentCss, /backdrop-filter/);
 assert.match(responsiveCss, /prefers-reduced-motion/);
 assert.match(responsiveCss, /body\[data-mode="sidebar"\]/);
 assert.match(htmlSource, /data-performance-only/);
+assert.match(htmlSource, /MODEL MIX \/ 14D/, "model ranking must disclose its fixed aggregate range");
+assert.match(htmlSource, /LOCAL SOURCES \/ 14D/, "source distribution must disclose its fixed aggregate range");
 assert.match(viewsSource, /capabilities\?\.performance !== false/);
+assert.match(viewsSource, /\\u5f53\\u524d\\u8303\\u56f4\\u65e0\\u8bf7\\u6c42/, "empty current range must disclose the seven-day cache fallback");
+assert.match(viewsSource, /cacheRate !== null && cacheRate !== undefined/, "zero and missing cache rates must remain distinct");
+assert.match(clientSource, /function zeroTrendRows\(\)/, "empty real ranges must synthesize zero buckets so axes remain visible");
+assert.match(clientSource, /rows\.length \? rows : zeroTrendRows\(\)/, "empty trend ranges must use the zero-axis fallback");
 assert.match(componentCss, /performance-unavailable/);
 
 const fakeVscode = {
@@ -209,6 +221,10 @@ const view = viewModel({
 assert.equal(view.ok, true);
 assert.equal(view.capabilities.performance, false);
 assert.equal(view.usage.today.total, 1234);
+assert.equal(view.usage.today.cacheHitRate, 50);
+const missingCacheView = viewModel({ ok:true, usage:{ today:{ cacheHitRate:null }, window:{}, week:{ cacheHitRate:45.7 }, all:{} }, trends:{}, models:[], sourceStats:[], sessions:[], capabilities:{}, performance:{window:{}}, queue:{window:{}} });
+assert.equal(missingCacheView.usage.today.cacheHitRate, null, "missing cache rate must not collapse to zero");
+assert.equal(missingCacheView.usage.week.cacheHitRate, 45.7);
 assert.equal(view.models[0].name, "GLM");
 assert.equal(view.sources[0].label, "桌面端");
 assert.equal(view.sessions.length, 1);

@@ -4,6 +4,16 @@ const { buildQuota } = require('./quota');
 const { buildHealth } = require('./health');
 const localProvider = require('./providers/codeartsLocal');
 const { fmtTime } = require('./core/format');
+const fs = require('fs');
+
+
+function sourceBytes(sources = []) {
+  return sources.reduce((sum, source) => {
+    const declared = Number(source.size || 0);
+    if (declared > 0) return sum + declared;
+    try { return sum + fs.statSync(source.dbPath).size; } catch { return sum; }
+  }, 0);
+}
 
 function extensionConfig(options = {}) {
   return {
@@ -56,7 +66,7 @@ async function getExtensionSummary(options = {}) {
     performance: emptyPerformance(),
     queue: { window: {} },
     tools: { window: { byName: [] } },
-    dbSize: (summary.sources || []).reduce((sum, source) => sum + Number(source.size || 0), 0),
+    dbSize: sourceBytes(summary.sources),
     summaryOnly: true,
     aggregatePending: true,
     freshness: { stale: false, source: 'summary', ageMs: 0 },
@@ -105,7 +115,7 @@ async function getExtensionDetails(options = {}) {
     performance: emptyPerformance(),
     queue: { window: {} },
     tools: { window: { byName: [] } },
-    dbSize: (primary.sources || []).reduce((sum, source) => sum + Number(source.size || 0), 0),
+    dbSize: sourceBytes(primary.sources),
     summaryOnly: false,
     aggregatePending: false,
     freshness: { stale: false, source: 'aggregates', ageMs: 0 },

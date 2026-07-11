@@ -48,6 +48,11 @@ body[data-mode="sidebar"] .metric-card {
   padding: 13px;
   border-radius: 11px;
 }
+body[data-mode="sidebar"] .metric-card small {
+  display: block;
+  line-height: 1.35;
+  text-wrap: balance;
+}
 body[data-mode="sidebar"] .metric-card strong,
 body[data-mode="sidebar"] .metric-primary strong {
   font-size: 21px;
@@ -132,7 +137,11 @@ body[data-mode="sidebar"] .privacy-footer {
     padding: 0 4px;
   }
   .chart-legend {
-    display: none;
+    gap: 8px;
+    font-size: 9px;
+  }
+  .chart-legend i {
+    width: 10px;
   }
   .source-layout {
     grid-template-columns: 96px minmax(0, 1fr);
