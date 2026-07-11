@@ -11,7 +11,7 @@ const { runTests } = require('@vscode/test-electron');
   try {
     await runTests({
       version: process.env.CODEARTS_BAR_VSCODE_VERSION || 'stable',
-      extensionDevelopmentPath: path.join(root, 'extension'),
+      extensionDevelopmentPath: path.join(root, '.cache', 'extension-staging'),
       extensionTestsPath: path.join(root, 'tests', 'vscode-extension-host', 'index.js'),
       launchArgs: ['--disable-extensions', '--skip-welcome', '--skip-release-notes', path.join(root, '.cache', 'vscode-host-workspace')],
       extensionTestsEnv: { ...process.env, CODEARTS_BAR_EXTENSION_HOST_RESULT: resultFile },

@@ -16,6 +16,7 @@ stages:
           - npm ci
           - npm audit
           - npm test
+          - npm run metrics:check
           - npm run stress:dashboard
           - npm run stress:pagination
           - npm run stress:aggregation
@@ -28,6 +29,9 @@ stages:
             path:
               - ./release/codearts-bar-status.vsix
               - ./release/codearts-bar-*.tgz
+              - ./.cache/quality-metrics.json
+              - ./.cache/quality-trend.json
+              - ./quality-baseline.json
         strategy:
           retry: '0'
 triggers:

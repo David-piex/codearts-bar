@@ -4,6 +4,7 @@ const crypto = require('node:crypto');
 const path = require('node:path');
 const nativeSql = require('./aggregation-sql');
 const { readRollupCache, writeRollupCache } = require('./rollup-cache');
+const { recordBestEffortFailure } = require('../../core/best-effort');
 const { validateTables } = require('./sources');
 const {
   openNativeDbReadonly,
@@ -46,6 +47,8 @@ const rollupStats = {
   buildCompleted: 0,
   buildFailed: 0,
   buildRuns: 0,
+  incrementalBuilds: 0,
+  incrementalRows: 0,
   buildMsTotal: 0,
   buildMsMax: 0,
 };
@@ -130,8 +133,8 @@ function canUseSessionSummaryRollup(payload = {}) {
   return true;
 }
 
-function buildUsageRollupForSource(args) {
-  const rows = normalizeTokenRows(nativeSql.messageTokenRowsForSourceSql(args));
+function buildUsageRollupForSource(args, payload = {}) {
+  const rows = normalizeTokenRows(nativeSql.messageTokenRowsForSourceSql({ ...args, payload }));
   return {
     source: { id: args.source.id, label: args.source.label, dbPath: args.source.dbPath },
     rows,
@@ -149,7 +152,7 @@ function buildSessionSummaryRollupForSource(args) {
 
 function readUsageRollupForSource(source, options = {}) {
   const kind = options.kind || MESSAGE_TOKEN_CACHE_KIND;
-  const cached = readRollupCache(source.dbPath, { kind, clonePayload: false });
+  const cached = readRollupCache(source.dbPath, { kind, clonePayload: false, allowFingerprintMismatch: options.allowStale === true });
   if (!cached.ok || !Array.isArray(cached.payload?.rows)) {
     recordRollupRead(cached);
     return {
@@ -168,6 +171,7 @@ function readUsageRollupForSource(source, options = {}) {
       status: 'hit',
       path: cached.path,
       generatedAt: cached.meta?.generatedAt || null,
+      stale: Boolean(cached.meta?.stale),
       rowCount: cached.meta?.rowCount ?? cached.payload.rows.length,
     },
   };
@@ -304,23 +308,45 @@ function readOrBuildUsageRollup(args, options = {}) {
   if (cached.ok) {
     const compact = readCompactUsageRollupForSource(args.source);
     if (!compact.ok) {
-      try { writeCompactUsageRollup(args.source, cached.rows); } catch {}
+      try { writeCompactUsageRollup(args.source, cached.rows); } catch (error) { recordBestEffortFailure('rollup.compact-refresh', error, { sourceId: args.source.id }); }
     }
     return cached;
   }
-  const built = buildUsageRollupForSource(args);
+  const stale = readUsageRollupForSource(args.source, { kind, allowStale: true });
+  let built;
+  let incremental = false;
+  if (stale.ok && stale.usageRollup?.stale && stale.rows.length) {
+    // Cursor on update time catches edits to old messages; the overlap tolerates coarse
+    // timestamps and transactions that become visible around the cache boundary.
+    const maxUpdatedTime = stale.rows.reduce((max, row) => Math.max(
+      max,
+      Number(row.timeUpdated || row.timeCreated || 0),
+    ), 0);
+    const updatedSince = Math.max(0, maxUpdatedTime - HOUR_MS);
+    const changed = buildUsageRollupForSource(args, { updatedSince }).rows;
+    const merged = new Map(stale.rows.map((row) => [row.id, row]));
+    for (const row of changed) merged.set(row.id, row);
+    built = { source: stale.source, rows: [...merged.values()].sort((a, b) => Number(a.timeCreated || 0) - Number(b.timeCreated || 0)) };
+    incremental = true;
+    rollupStats.incrementalBuilds += 1;
+    rollupStats.incrementalRows += changed.length;
+  } else {
+    built = buildUsageRollupForSource(args);
+  }
   try {
     const written = writeRollupCache(args.source.dbPath, built, {
       kind,
       rowCount: built.rows.length,
     });
     let compactMeta = null;
-    try { compactMeta = writeCompactUsageRollup(args.source, built.rows).usageRollup; } catch {}
+    try { compactMeta = writeCompactUsageRollup(args.source, built.rows).usageRollup; } catch (error) { recordBestEffortFailure('rollup.compact-write', error, { sourceId: args.source.id }); }
     rollupStats.rebuilt += 1;
     return {
       ...built,
       usageRollup: {
-        status: cached.reason === 'missing' ? 'miss' : 'rebuilt',
+        status: incremental ? 'incremental-rebuilt' : (cached.reason === 'missing' ? 'miss' : 'rebuilt'),
+        incremental,
+        incrementalCursor: incremental ? 'timeUpdated' : null,
         previousReason: cached.reason || null,
         path: written.path,
         generatedAt: written.meta?.generatedAt || null,
@@ -354,7 +380,7 @@ async function buildAndWriteUsageRollupForSource(source, options = {}) {
       const tables = sqlJsAll(db, "select name from sqlite_master where type='table'").map((r) => r.name);
       validateTables(tables);
       result = readOrBuildUsageRollup({ source, db, tables, queryAll: sqlJsAllParams }, { kind });
-      try { result.usageRollup.session = readOrBuildSessionSummaryRollup({ source, db, tables, queryAll: sqlJsAllParams }).usageRollup; } catch {}
+      try { result.usageRollup.session = readOrBuildSessionSummaryRollup({ source, db, tables, queryAll: sqlJsAllParams }).usageRollup; } catch (error) { recordBestEffortFailure('rollup.session-sqljs', error, { sourceId: source.id }); }
       recordRollupBuild(source, { ...options, adapter, kind }, result, nowMs() - started, null);
       return result;
     }
@@ -362,7 +388,7 @@ async function buildAndWriteUsageRollupForSource(source, options = {}) {
     const tables = nativeAll(db, "select name from sqlite_master where type='table'").map((r) => r.name);
     validateTables(tables);
     result = readOrBuildUsageRollup({ source, db, tables, queryAll: nativeAllParams }, { kind });
-    try { result.usageRollup.session = readOrBuildSessionSummaryRollup({ source, db, tables, queryAll: nativeAllParams }).usageRollup; } catch {}
+    try { result.usageRollup.session = readOrBuildSessionSummaryRollup({ source, db, tables, queryAll: nativeAllParams }).usageRollup; } catch (error) { recordBestEffortFailure('rollup.session-native', error, { sourceId: source.id }); }
     recordRollupBuild(source, { ...options, adapter, kind }, result, nowMs() - started, null);
     return result;
   } catch (error) {

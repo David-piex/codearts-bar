@@ -7,6 +7,8 @@ const { getAuthStatus, authStatusToText } = require('./authStatus');
 const { officialStatsCacheStatus } = require('./officialStats');
 const { listProviders } = require('./providers');
 const { sqliteRuntimeStatus } = require('./providers/codearts/sqlite');
+const { jetbrainsPayload } = require('./jetbrains-payload');
+const { queryPayload } = require('./protocol/query');
 
 const cmd = process.argv[2] || 'snapshot';
 const rest = process.argv.slice(3);
@@ -31,6 +33,22 @@ async function run() {
     if (cmd === 'snapshot') {
       const snap = await getSnapshotWithCache();
       console.log(JSON.stringify(snap, null, 2));
+      return;
+    }
+    if (cmd === 'query') {
+      const resource = rest[0] || 'dashboard';
+      const optionArgs = rest.slice(1);
+      const readOption = (name, fallback = null) => { const index = optionArgs.indexOf(name); return index >= 0 ? optionArgs[index + 1] : fallback; };
+      const snap = await getSnapshotWithCache();
+      console.log(JSON.stringify(queryPayload(snap, resource, {
+        page: Number(readOption('--page', 1)), pageSize: Number(readOption('--page-size', 50)),
+        sessionId: readOption('--session-id'), requestId: readOption('--request-id'),
+      }), null, 2));
+      return;
+    }
+    if (cmd === 'jetbrains') {
+      const snap = await getSnapshotWithCache();
+      console.log(JSON.stringify(jetbrainsPayload(snap), null, 2));
       return;
     }
     if (cmd === 'stats') {

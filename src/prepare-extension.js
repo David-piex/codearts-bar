@@ -14,7 +14,10 @@ function asciiJson(obj) {
 const root = path.resolve(__dirname, "..");
 require(path.join(root, "src", "build-chart-axis.js")).buildChartAxisBrowser();
 const srcPkg = readJsonNoBom(path.join(root, "package.json"));
-const extDir = path.join(root, "extension");
+const sourceExtDir = path.join(root, "extension");
+const extDir = path.join(root, ".cache", "extension-staging");
+fs.rmSync(extDir, { recursive: true, force: true });
+fs.cpSync(sourceExtDir, extDir, { recursive: true, filter: (source) => !source.includes(`${path.sep}node_modules${path.sep}`) });
 const extPkgPath = path.join(extDir, "package.json");
 const extPkg = readJsonNoBom(extPkgPath);
 extPkg.version = srcPkg.version;
@@ -109,4 +112,4 @@ for (const file of ["sql-wasm.js", "sql-wasm.wasm"])
     path.join(root, "node_modules", "sql.js", "dist", file),
     path.join(wasmDir, file),
   );
-console.log(`Prepared extension ${extPkg.name}@${extPkg.version}`);
+console.log(`Prepared extension staging ${extPkg.name}@${extPkg.version} -> ${path.relative(root, extDir)}`);

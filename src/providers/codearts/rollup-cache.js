@@ -5,6 +5,7 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const { rollupCacheDir, rollupCachePath } = require('../../settings');
 const { sqliteFileFingerprint } = require('./sqlite');
+const { writeJsonAtomic } = require('../../core/atomic-file');
 
 const ROLLUP_CACHE_SCHEMA_VERSION = 1;
 const DEFAULT_KIND = 'usage-rollup';
@@ -59,7 +60,7 @@ function validateRollupEnvelope(envelope, dbPath, options = {}) {
   }
   if (envelope.kind !== expectedKind) return validationFailure('kind-mismatch', target, { kind: envelope.kind });
   if (envelope.dbPathHash !== dbPathHash(dbPath)) return validationFailure('db-path-mismatch', target);
-  if (envelope.fingerprint !== expectedFingerprint) {
+  if (envelope.fingerprint !== expectedFingerprint && !options.allowFingerprintMismatch) {
     return validationFailure('fingerprint-mismatch', target, {
       fingerprint: envelope.fingerprint,
       expectedFingerprint,
@@ -78,6 +79,7 @@ function validateRollupEnvelope(envelope, dbPath, options = {}) {
       fingerprint: envelope.fingerprint,
       generatedAt: envelope.generatedAt,
       rowCount: envelope.rowCount,
+      stale: envelope.fingerprint !== expectedFingerprint,
     },
   };
 }
@@ -99,9 +101,7 @@ function writeRollupCache(dbPath, payload, options = {}) {
   const kind = safeKind(options.kind);
   const target = rollupCachePath(dbPath, kind);
   const envelope = buildRollupEnvelope(dbPath, payload, { ...options, kind, clonePayload: options.clonePayload ?? false });
-  const tmp = `${target}.${process.pid}.${Date.now()}.tmp`;
-  fs.writeFileSync(tmp, JSON.stringify(envelope), 'utf8');
-  fs.renameSync(tmp, target);
+  writeJsonAtomic(target, envelope, { compact: true, newline: false });
   return validateRollupEnvelope(envelope, dbPath, { ...options, kind, clonePayload: options.clonePayload ?? false });
 }
 

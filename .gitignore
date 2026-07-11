@@ -21,3 +21,10 @@ upstream-CodexBar/
 
 # VS Code Extension Host test runtime
 .vscode-test/
+
+# JetBrains plugin build state
+jetbrains-plugin/.gradle/
+jetbrains-plugin/build/
+
+# JetBrains IntelliJ Platform local sandbox/cache
+jetbrains-plugin/.intellijPlatform/

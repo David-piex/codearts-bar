@@ -7,6 +7,7 @@ const { spawnSync } = require('node:child_process');
 const { getSnapshotWithCache } = require('./codeartsData');
 const { loadSettings, settingsPath, cachePath, officialStatsCachePath } = require('./settings');
 const { officialStatsCacheStatus } = require('./officialStats');
+const { buildUnifiedDiagnostics } = require('./diagnostics-report');
 
 function exists(p) { try { return fs.existsSync(p); } catch { return false; } }
 function stat(p) { try { return fs.statSync(p); } catch { return null; } }
@@ -65,6 +66,7 @@ async function diagnose() {
   if (!report.logs.firstTokenSignals.length) report.recommendations.push('未在日志中发现可关联 first-token 的字段；TTFT 仍使用 part 表近似值。');
   if (!report.codearts.cli.statsHelpOk) report.recommendations.push('CodeArts CLI stats 需要 CODEARTS_CLI_AK/CODEARTS_CLI_SK 才能查询官方统计。');
   if (report.snapshot?.officialUsage?.source === 'stale-cache') report.recommendations.push('官方统计当前使用旧缓存；检查 AK/SK 环境变量或 CodeArts CLI 网络状态。');
+  report.unified = buildUnifiedDiagnostics({ snapshot, database: report.db, runtime: { processes: report.processes }, performance: null, paths: { database: settings.dbPath, settings: settingsPath(), cache: cachePath(), logs: logRoot }, fs, path, version: process.env.npm_package_version || '' });
   return report;
 }
 function reportToText(r) {

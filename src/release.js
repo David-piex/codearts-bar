@@ -41,10 +41,14 @@ runNode(path.join(root, 'src', 'build-app-resources.js'), []);
 runNode(path.join(root, 'src', 'build-npm-package.js'), []);
 runNode(path.join(root, 'src', 'prepare-extension.js'), []);
 runNode(path.join(root, 'src', 'cli.js'), ['self-test']);
-runNode(path.join(root, 'node_modules', '@vscode', 'vsce', 'vsce'), ['package', '--out', path.join(releaseDir, 'codearts-bar-status.vsix')], { cwd: path.join(root, 'extension') });
+runNode(path.join(root, 'src', 'run-jetbrains-gradle.js'), ['test', 'buildPlugin']);
+runNode(path.join(root, 'node_modules', '@vscode', 'vsce', 'vsce'), ['package', '--out', path.join(releaseDir, 'codearts-bar-status.vsix')], { cwd: path.join(root, '.cache', 'extension-staging') });
 runNode(path.join(root, 'node_modules', 'electron-builder', 'cli.js'), ['--projectDir', path.join(root, '.cache', 'app-runtime'), '--config', path.join(root, 'electron-builder.runtime.js'), '--win', 'nsis', 'portable', '--x64', '--publish', 'never']);
 runNode(path.join(root, 'tests', 'package-resource-smoke.js'), []);
 runNode(path.join(root, 'tests', 'release-package-smoke.js'), []);
+const jetbrainsDist = path.join(root, 'jetbrains-plugin', 'build', 'distributions');
+const jetbrainsName = `codearts-bar-jetbrains-${pkg.version}.zip`;
+copyIfExists(path.join(jetbrainsDist, jetbrainsName), path.join(releaseDir, jetbrainsName));
 
 const distDir = path.join(root, 'dist');
 if (fs.existsSync(distDir)) {
@@ -90,6 +94,6 @@ runNode(path.join(path.dirname(process.execPath), 'node_modules', 'npm', 'bin', 
 writeReleaseManifest({
   releaseDir,
   version: pkg.version,
-  artifactNames: [`CodeArts-Bar-Setup-${pkg.version}-x64.exe`, `CodeArts-Bar-Portable-${pkg.version}-x64.exe`, 'codearts-bar-cli.zip', 'codearts-bar-cli-standalone.zip', `codearts-bar-${pkg.version}.tgz`, 'codearts-bar-status.vsix'],
+  artifactNames: [`CodeArts-Bar-Setup-${pkg.version}-x64.exe`, `CodeArts-Bar-Portable-${pkg.version}-x64.exe`, 'codearts-bar-cli.zip', 'codearts-bar-cli-standalone.zip', `codearts-bar-${pkg.version}.tgz`, 'codearts-bar-status.vsix', jetbrainsName],
 });
 console.log(`Release artifacts in ${releaseDir}`);

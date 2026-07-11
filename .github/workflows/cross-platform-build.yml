@@ -1,0 +1,35 @@
+name: Cross-platform Build Readiness
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            target: mac
+          - os: ubuntu-latest
+            target: linux
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 35
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: "false"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 24, cache: npm }
+      - run: npm ci
+      - run: npm run build:renderer
+      - run: npm run build:cli-resources
+      - run: npm run build:app-resources
+      - name: Build unsigned application
+        shell: bash
+        run: npx electron-builder --projectDir .cache/app-runtime --config ../../electron-builder.runtime.js --${{ matrix.target }} --publish never
+      - uses: actions/upload-artifact@v4
+        with:
+          name: codearts-bar-${{ matrix.target }}-${{ github.sha }}
+          path: dist/*
+          if-no-files-found: error

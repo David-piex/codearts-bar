@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const EventEmitter = require('node:events');
+const { writeJsonAtomic } = require('./core/atomic-file');
 
 function configDir() {
   if (process.env.CODEARTS_BAR_CONFIG_DIR) return path.resolve(process.env.CODEARTS_BAR_CONFIG_DIR);
@@ -77,7 +78,6 @@ function settingsFingerprint(file = settingsPath()) {
   catch { return 'missing'; }
 }
 function ensureDir() { fs.mkdirSync(configDir(), { recursive: true }); }
-
 function createSettingsStore({ file = settingsPath(), watch = true, env = process.env } = {}) {
   const events = new EventEmitter();
   let value = null;
@@ -98,9 +98,8 @@ function createSettingsStore({ file = settingsPath(), watch = true, env = proces
     return { ...value };
   }
   function save(next = {}) {
-    fs.mkdirSync(path.dirname(file), { recursive: true });
     value = normalizeSettings({ ...get(), ...next }, env);
-    fs.writeFileSync(file, JSON.stringify(value, null, 2), 'utf8');
+    writeJsonAtomic(file, value);
     fingerprint = settingsFingerprint(file);
     events.emit('change', { settings: { ...value }, reason: 'save' });
     return { ...value };
@@ -141,7 +140,7 @@ function saveSettings(next) { return getDefaultSettingsStore().save(next); }
 function watchSettings(listener) { return getDefaultSettingsStore().onDidChange(listener); }
 function closeSettingsStore() { defaultStore?.close(); defaultStore = null; }
 function writeCache(snapshot) {
-  try { ensureDir(); fs.writeFileSync(cachePath(), JSON.stringify({ savedAt: Date.now(), snapshot }, null, 2), 'utf8'); } catch {}
+  try { ensureDir(); writeJsonAtomic(cachePath(), { savedAt: Date.now(), snapshot }); } catch {}
 }
 function readCache() { return JSON.parse(fs.readFileSync(cachePath(), 'utf8').replace(/^\uFEFF/, '')); }
 

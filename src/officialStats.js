@@ -4,6 +4,7 @@ const { spawnSync } = require('node:child_process');
 const { spawn } = require('node:child_process');
 const fs = require('node:fs');
 const { configDir, officialStatsCachePath, loadSettings } = require('./settings');
+const { writeJsonAtomic, readJsonSafe } = require('./core/atomic-file');
 
 function stripAnsi(s) {
   return String(s || '').replace(/\x1b\[[0-9;]*m/g, '');
@@ -65,7 +66,7 @@ function parseStatsOutput(stdout) {
 }
 function readOfficialStatsCache() {
   try {
-    const data = JSON.parse(fs.readFileSync(officialStatsCachePath(), 'utf8').replace(/^\uFEFF/, ''));
+    const data = readJsonSafe(officialStatsCachePath());
     if (!data || !data.stats) return null;
     return data;
   } catch {
@@ -75,7 +76,7 @@ function readOfficialStatsCache() {
 function writeOfficialStatsCache(stats) {
   try {
     fs.mkdirSync(configDir(), { recursive: true });
-    fs.writeFileSync(officialStatsCachePath(), JSON.stringify({ savedAt: Date.now(), stats }, null, 2), 'utf8');
+    writeJsonAtomic(officialStatsCachePath(), { savedAt: Date.now(), stats });
   } catch {}
 }
 function markCacheMeta(stats, cache, source) {

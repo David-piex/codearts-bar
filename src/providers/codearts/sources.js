@@ -56,6 +56,11 @@ function assistantWhere(payload = {}) {
   const { start, end } = normalizeRange(payload.range);
   if (start) { where.push('time_created >= ?'); params.push(start); }
   if (end) { where.push('time_created <= ?'); params.push(end); }
+  const updatedSince = Number(payload.updatedSince || 0);
+  if (Number.isFinite(updatedSince) && updatedSince > 0) {
+    where.push('coalesce(time_updated, time_created) >= ?');
+    params.push(updatedSince);
+  }
   const sessionId = String(payload.sessionId || '').trim();
   if (sessionId) { where.push('session_id = ?'); params.push(sessionId); }
   const q = String(payload.query || '').trim();

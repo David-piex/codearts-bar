@@ -6,7 +6,7 @@ const path = require("node:path");
 const { execFileSync } = require("node:child_process");
 
 const root = path.join(__dirname, "..");
-const extensionDir = path.join(root, "extension");
+const extensionDir = path.join(root, ".cache", "extension-staging");
 const extensionPkg = JSON.parse(fs.readFileSync(path.join(extensionDir, "package.json"), "utf8").replace(/^\uFEFF/, ""));
 const providerDir = path.join(root, "src", "providers", "codearts");
 assert.ok(extensionPkg.files.includes("extension-data.js"), "extension package should include staged data loader");
@@ -18,7 +18,22 @@ const requiredProviderFiles = fs.readdirSync(providerDir)
 
 for (const file of requiredProviderFiles) {
   assert.ok(extensionPkg.files.includes(file), `extension files whitelist should include ${file}`);
-  assert.ok(fs.existsSync(path.join(extensionDir, file)), `prepared extension should contain ${file}`);
+  const stagedFile = path.join(extensionDir, file);
+  const sourceFile = path.join(root, 'src', file);
+  assert.ok(fs.existsSync(stagedFile), `prepared extension should contain ${file}`);
+  assert.equal(fs.readFileSync(stagedFile, 'utf8'), fs.readFileSync(sourceFile, 'utf8'), `prepared extension copy should match src/${file}`);
+}
+
+const sharedRuntimeFiles = [
+  'codeartsData.js', 'officialStats.js', 'authStatus.js', 'settings.js',
+  'quota.js', 'health.js', 'extension-data.js',
+];
+for (const file of sharedRuntimeFiles) {
+  assert.equal(
+    fs.readFileSync(path.join(extensionDir, file), 'utf8'),
+    fs.readFileSync(path.join(root, 'src', file), 'utf8'),
+    `prepared extension copy should match src/${file}`,
+  );
 }
 
 const vsix = path.join(root, "release", "codearts-bar-status.vsix");

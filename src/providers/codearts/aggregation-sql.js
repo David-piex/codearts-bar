@@ -417,8 +417,8 @@ function aggregateBundleForSourceSql(args) {
   };
 }
 
-function messageTokenRowsForSourceSql({ db, tables, queryAll }) {
-  const { where, params } = assistantWhere({});
+function messageTokenRowsForSourceSql({ db, tables, queryAll, payload = {} }) {
+  const { where, params } = assistantWhere(payload);
   const sql = `${assistantTokenCtes(tables, where, { materialized: true })}
     select
       id,

@@ -1,5 +1,8 @@
 'use strict';
 
+const { createSingleFlight } = require('./core/single-flight');
+const snapshotFlights = createSingleFlight();
+
 const { loadSettings, writeCache, readCache } = require('./settings');
 const { buildQuota } = require('./quota');
 const { buildHealth } = require('./health');
@@ -169,6 +172,8 @@ async function getSnapshotAsync(options = {}) {
 }
 
 async function getSnapshotWithCache(options = {}) {
+  const key = JSON.stringify({ dbPath: options.dbPath || '', dailyLimit: options.dailyLimit || '', windowHours: options.windowHours || '' });
+  return snapshotFlights.run(key, async () => {
   try {
     return await getSnapshotAsync(options);
   } catch (error) {
@@ -182,6 +187,7 @@ async function getSnapshotWithCache(options = {}) {
       throw error;
     }
   }
+  });
 }
 
 function snapshotToText(snapshot) {

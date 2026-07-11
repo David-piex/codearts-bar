@@ -1,0 +1,22 @@
+<idea-plugin>
+    <id>com.codearts.bar</id>
+    <name>CodeArts Bar - Usage Analytics</name>
+    <vendor email="support@local.invalid">CodeArts Bar</vendor>
+    <description><![CDATA[CodeArts Bar displays local CodeArts Agent token usage, request counts, cache metrics, models, and data-source health inside IntelliJ Platform IDEs.]]></description>
+    <depends>com.intellij.modules.platform</depends>
+    <extensions defaultExtensionNs="com.intellij">
+        <applicationService serviceImplementation="com.codearts.bar.settings.CodeArtsSettings"/>
+        <applicationService serviceImplementation="com.codearts.bar.service.CodeArtsDataService"/>
+        <statusBarWidgetFactory id="CodeArtsBarStatus" implementation="com.codearts.bar.statusbar.CodeArtsStatusBarWidgetFactory"/>
+        <toolWindow id="CodeArts Bar" anchor="right" factoryClass="com.codearts.bar.toolwindow.CodeArtsToolWindowFactory" icon="/icons/codearts.svg"/>
+        <applicationConfigurable id="com.codearts.bar.settings" displayName="CodeArts Bar" instance="com.codearts.bar.settings.CodeArtsConfigurable" parentId="tools"/>
+        <notificationGroup id="CodeArts Bar" displayType="BALLOON" isLogByDefault="true"/>
+    </extensions>
+    <actions>
+        <action id="CodeArtsBar.Refresh" class="com.codearts.bar.actions.RefreshAction" text="CodeArts Bar: Refresh Usage Data" description="Refresh local CodeArts Agent usage data" icon="/icons/codearts.svg">
+            <add-to-group group-id="ToolsMenu" anchor="last"/>
+        </action>
+        <action id="CodeArtsBar.OpenToolWindow" class="com.codearts.bar.actions.OpenToolWindowAction" text="CodeArts Bar: Open Usage Analytics" description="Open the CodeArts Bar usage analytics tool window"/>
+        <action id="CodeArtsBar.OpenDataFolder" class="com.codearts.bar.actions.OpenDataFolderAction" text="CodeArts Bar: Open Local Data Folder" description="Open the CodeArts Agent local data directory"/>
+    </actions>
+</idea-plugin>

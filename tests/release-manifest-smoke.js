@@ -19,6 +19,7 @@ try {
     "CodeArts-Bar-Portable-9.9.9-x64.exe": "portable-fixture",
     "codearts-bar-cli.zip": "cli-fixture",
     "codearts-bar-status.vsix": "vsix-fixture",
+    "codearts-bar-jetbrains-9.9.9.zip": "jetbrains-fixture",
   };
   for (const [name, content] of Object.entries(files)) {
     fs.writeFileSync(path.join(tmpDir, name), content);
@@ -33,7 +34,7 @@ try {
 
   assert.equal(latest.version, "9.9.9");
   assert.equal(latest.generatedAt, "2026-07-09T00:00:00.000Z");
-  assert.equal(latest.artifacts.length, 4);
+  assert.equal(latest.artifacts.length, 5);
   assert.deepEqual(latest.artifacts.map((item) => item.name), Object.keys(files).sort((a, b) => a.localeCompare(b)));
 
   const latestJson = JSON.parse(fs.readFileSync(path.join(tmpDir, "latest.json"), "utf8"));
@@ -49,6 +50,7 @@ try {
   assert.match(notes, /开源版发布说明/);
   assert.match(notes, /SHA256SUMS\.txt/);
   assert.match(notes, /codearts-bar-status\.vsix/);
+  assert.match(notes, /codearts-bar-jetbrains-9\.9\.9\.zip/);
 
   console.log("ok - release manifest smoke");
 } finally {

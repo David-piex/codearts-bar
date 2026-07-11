@@ -9,6 +9,7 @@ const MANAGED_FILE_PATTERNS = [
   /^codearts-bar-cli(?:-standalone)?\.zip$/i,
   /^codearts-bar-.+\.tgz$/i,
   /^codearts-bar-status\.vsix$/i,
+  /^codearts-bar-jetbrains-.+\.zip$/i,
   /^(?:latest\.json|SHA256SUMS\.txt|RELEASE_NOTES\.md)$/i,
 ];
 const MANAGED_DIRECTORIES = new Set(['codearts-bar-cli', 'codearts-bar-cli-standalone']);

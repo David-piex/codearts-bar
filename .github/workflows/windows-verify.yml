@@ -1,74 +1,101 @@
 name: Windows Verify
-
 on:
   push:
     branches: [master, main, "codex/**"]
   pull_request:
   workflow_dispatch:
-
 concurrency:
   group: windows-verify-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  CI: "1"
+  CSC_IDENTITY_AUTO_DISCOVERY: "false"
+  ELECTRON_DISABLE_SECURITY_WARNINGS: "1"
+
 jobs:
-  verify:
+  core:
     runs-on: windows-latest
-    timeout-minutes: 45
-    env:
-      CI: "1"
-      CSC_IDENTITY_AUTO_DISCOVERY: "false"
-      ELECTRON_DISABLE_SECURITY_WARNINGS: "1"
-      CODEARTS_BAR_VSCODE_VERSION: "stable"
+    timeout-minutes: 25
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 24, cache: npm }
+      - run: npm ci
+      - run: npm audit
+      - run: npm test
+      - run: npm run metrics:check
+      - uses: actions/upload-artifact@v4
         with:
-          node-version: 24
-          cache: npm
+          name: quality-metrics
+          path: |
+            .cache/quality-metrics.json
+            .cache/quality-trend.json
+            quality-baseline.json
 
-      - name: Install dependencies
-        run: npm ci
+  vscode:
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 24, cache: npm }
+      - run: npm ci
+      - run: npm run prepare:extension
+      - run: npm run e2e:vscode
+      - run: npm run build:extension
+      - uses: actions/upload-artifact@v4
+        with: { name: vscode-extension, path: release/codearts-bar-status.vsix }
 
-      - name: Dependency audit
-        run: npm audit
+  jetbrains:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 24, cache: npm }
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: "21", cache: gradle }
+      - run: npm ci
+      - run: npm run verify:jetbrains
+      - uses: actions/upload-artifact@v4
+        with: { name: jetbrains-plugin, path: jetbrains-plugin/build/distributions/*.zip }
 
-      - name: Unit, smoke, E2E and visual verification
-        run: npm run verify:ci
+  stress:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 24, cache: npm }
+      - run: npm ci
+      - run: npm run stress:dashboard
+      - run: npm run stress:pagination
+      - run: npm run stress:aggregation
 
-      - name: Build VS Code extension
-        run: npm run build:extension
-
-      - name: Build Windows installer and portable app
-        run: npm run build:app:built
-
-      - name: Verify packaged application
-        run: |
-          npm run smoke:app-asar
-          npm run smoke:package-resources
-
-      - name: Build npm package
-        run: npm run pack:npm
-
-      - name: Upload visual differences
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: visual-regression-diff
-          path: .cache/visual-regression
-          if-no-files-found: ignore
-
-      - name: Upload release candidates
-        if: success()
-        uses: actions/upload-artifact@v4
+  package-windows:
+    needs: [core, vscode, jetbrains, stress]
+    runs-on: windows-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 24, cache: npm }
+      - run: npm ci
+      - run: npm run build:renderer
+      - run: npm run build:app:built
+      - run: npm run smoke:app-asar
+      - run: npm run smoke:package-resources
+      - run: npm run pack:npm
+      - run: npm run screenshot:electron:built
+      - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: codearts-bar-windows-${{ github.sha }}
           path: |
             dist/CodeArts-Bar-Setup-*-x64.exe
             dist/CodeArts-Bar-Portable-*-x64.exe
-            release/codearts-bar-status.vsix
             release/codearts-bar-*.tgz
-          if-no-files-found: error
+            .cache/visual-regression
+          if-no-files-found: warn
           retention-days: 7

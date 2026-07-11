@@ -1,0 +1,12 @@
+﻿{
+  "schemaVersion": 1,
+  "limits": {
+    "rendererBytesMax": 330000,
+    "cssBytesMax": 220000,
+    "jetbrainsZipBytesMax": 550000,
+    "snapshotMsMax": 1000,
+    "coverageLinesMin": 75,
+    "coverageFunctionsMin": 73,
+    "coverageBranchesMin": 55
+  }
+}

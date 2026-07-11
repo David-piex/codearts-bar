@@ -15,6 +15,7 @@ try {
     'codearts-bar-cli-standalone.zip',
     'codearts-bar-0.9.0.tgz',
     'codearts-bar-status.vsix',
+    'codearts-bar-jetbrains-0.9.0.zip',
     'latest.json',
     'SHA256SUMS.txt',
     'RELEASE_NOTES.md',

@@ -146,6 +146,9 @@ function testRollupSidecarCache() {
     const stale = rollupCache.readRollupCache(dbPath, { kind: 'unit-rollup' });
     assert.equal(stale.ok, false);
     assert.equal(stale.reason, 'fingerprint-mismatch');
+    const staleReadable = rollupCache.readRollupCache(dbPath, { kind: 'unit-rollup', allowFingerprintMismatch: true });
+    assert.equal(staleReadable.ok, true);
+    assert.equal(staleReadable.meta.stale, true);
 
     fs.writeFileSync(rollupCache.rollupCachePath(dbPath, 'unit-rollup'), '{not-json', 'utf8');
     const corrupt = rollupCache.readRollupCache(dbPath, { kind: 'unit-rollup' });

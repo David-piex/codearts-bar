@@ -1,5 +1,7 @@
 ﻿'use strict';
 
+const { recordBestEffortFailure } = require('../core/best-effort');
+
 function targetFingerprint(fs, targets) {
   return targets.map((target) => {
     try { const st = fs.statSync(target); return `${target}:${st.mtimeMs}:${st.size}`; }
@@ -26,7 +28,7 @@ function createDbWatchService({ fs, loadSettings, localProvider, dashboardWindow
     clearPollTimer();
     if (dbRefreshDebounce) clearTimeout(dbRefreshDebounce);
     dbRefreshDebounce = null;
-    for (const watcher of dbWatchers) { try { watcher.close(); } catch {} }
+    for (const watcher of dbWatchers) { try { watcher.close(); } catch (error) { recordBestEffortFailure('db-watch.close', error); } }
     dbWatchers = [];
   }
   function triggerRefreshSoon(reason = 'watch') {
@@ -57,7 +59,9 @@ function createDbWatchService({ fs, loadSettings, localProvider, dashboardWindow
       try {
         if (!fs.existsSync(target)) continue;
         dbWatchers.push(fs.watch(target, { persistent: false }, () => triggerRefreshSoon('fswatch')));
-      } catch {}
+      } catch (error) {
+        recordBestEffortFailure('db-watch.subscribe', error, { targetType: 'database' });
+      }
     }
     armPoll();
   }

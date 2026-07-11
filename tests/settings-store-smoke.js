@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { createSettingsStore, normalizeSettings } = require('../src/settings');
+const { writeJsonAtomic } = require('../src/core/atomic-file');
 const { resolvePollInterval } = require('../src/main/db-watch-service');
 
 const normalized = normalizeSettings({ dbWatchVisiblePollMs: 500, dbWatchHiddenPollMs: 800 }, {});
@@ -15,11 +16,14 @@ assert.equal(resolvePollInterval({ dbWatchVisiblePollMs: 3500, dbWatchHiddenPoll
 (async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'codearts-settings-store-'));
   const file = path.join(dir, 'settings.json');
+  writeJsonAtomic(file, { dailyLimit: 123000 });
+  assert.equal(JSON.parse(fs.readFileSync(file, 'utf8')).dailyLimit, 123000);
+  assert.deepEqual(fs.readdirSync(dir).filter((name) => name.endsWith('.tmp')), [], 'atomic writes should not leave temp files');
   const store = createSettingsStore({ file, env: {} });
   const events = [];
   const stop = store.onDidChange((event) => events.push(event));
   try {
-    assert.equal(store.get().dbWatchVisiblePollMs, 4000);
+    assert.equal(store.get().dailyLimit, 123000);
     const saved = store.save({ dailyLimit: 321000, dbWatchVisiblePollMs: 3000, dbWatchHiddenPollMs: 22000 });
     assert.equal(saved.dailyLimit, 321000);
     assert.equal(events.at(-1).reason, 'save');

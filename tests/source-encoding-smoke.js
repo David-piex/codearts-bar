@@ -5,7 +5,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 const root = path.join(__dirname, "..");
-const scanRoots = [path.join(root, "src"), path.join(root, "extension"), path.join(root, "tests")];
+const scanRoots = [path.join(root, "src"), path.join(root, "extension"), path.join(root, "tests"), path.join(root, "jetbrains-plugin", "src")];
 const testPatternFixtures = new Set([
   path.join(root, "tests", "dashboard-preview-screenshot.js"),
   path.join(root, "tests", "dashboard-preview-smoke.js"),
@@ -18,7 +18,7 @@ const generated = new Set([
   path.join(root, "src", "dashboard-bundle.css"),
   path.join(root, "extension", "media", "scripts", "chart-axis.js"),
 ]);
-const extensions = new Set([".js", ".html", ".css", ".json", ".md"]);
+const extensions = new Set([".js", ".java", ".kts", ".xml", ".properties", ".html", ".css", ".json", ".md"]);
 const issues = [];
 function walk(dir) {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
