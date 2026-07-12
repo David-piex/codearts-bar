@@ -38,6 +38,7 @@ class DashboardHost {
       return undefined;
     }
     if (message?.type === "refresh") return this.refreshSnapshot({ details: true, reason: "webview-refresh" });
+    if (message?.type === "range") return this.loadDetails?.({ reason: "webview-range", rangePreset: message.preset, range: message.range, target });
     if (message?.type === "openDashboard") return this.openPanel();
     if (message?.type === "openData") return this.openDataFolder();
     if (message?.type === "settings")

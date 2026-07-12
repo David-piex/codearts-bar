@@ -56,12 +56,15 @@ function viewModel(snapshot) {
       window: usage(snapshot.usage?.window),
       week: usage(snapshot.usage?.week),
       all: usage(snapshot.usage?.all),
+      range: usage(snapshot.usage?.range),
     },
     config: { windowHours: finite(snapshot.config?.windowHours) || 24 },
     trends: {
       hourly24h: trend(snapshot.trends?.hourly24h, 48),
       daily14d: trend(snapshot.trends?.daily14d, 31),
+      range: trend(snapshot.trends?.range, 400),
     },
+    selectedRange: snapshot.selectedRange || null,
     models: (snapshot.models || []).slice(0, 8).map((item) => ({
       name: item.model || item.name || "\u672a\u77e5\u6a21\u578b",
       provider: item.provider || "",

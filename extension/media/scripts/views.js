@@ -1,11 +1,13 @@
 (() => {
   const f = window.CodeArtsFormat;
   const element = (selector) => document.querySelector(selector);
-  function metrics(snapshot, range) {
-    const usage = snapshot.usage[range] || snapshot.usage.today;
+  function metrics(snapshot, range, rangeLabel) {
+    const usage = snapshot.selectedRange ? snapshot.usage.range : snapshot.usage[range] || snapshot.usage.today;
     element("#metricTotal").textContent = f.token(usage.total);
     element("#metricDelta").textContent =
-      range === "window"
+      snapshot.selectedRange
+        ? `${rangeLabel} · 本地统计`
+        : range === "window"
         ? `${snapshot.config.windowHours} \u5c0f\u65f6\u6eda\u52a8\u7a97\u53e3`
         : range === "week"
           ? "\u6700\u8fd1 7 \u5929"
@@ -21,12 +23,16 @@
     if (cacheHasData) {
       element("#metricCacheTokens").textContent = `${f.token(usage.cacheRead)} token \u547d\u4e2d`;
     } else {
+      if (snapshot.selectedRange) {
+        element("#metricCacheTokens").textContent = "当前范围暂无缓存数据";
+      } else {
       const fallback = snapshot.usage.week || snapshot.usage.all || {};
       const fallbackRate = fallback.cacheHitRate;
       element("#metricCacheTokens").textContent =
         fallbackRate !== null && fallbackRate !== undefined
           ? `\u5f53\u524d\u8303\u56f4\u65e0\u8bf7\u6c42 \u00b7 \u8fd1 7 \u5929 ${f.percent(fallbackRate)}`
           : "\u5f53\u524d\u8303\u56f4\u6682\u65e0\u7f13\u5b58\u6570\u636e";
+      }
     }
     const hasRequests = f.number(usage.messages) > 0;
     const rate = hasRequests

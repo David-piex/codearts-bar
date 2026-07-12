@@ -5,6 +5,32 @@ const { buildHealth } = require('./health');
 const localProvider = require('./providers/codeartsLocal');
 const { fmtTime } = require('./core/format');
 const fs = require('fs');
+const cacheMetrics = require('./core/cacheMetrics');
+
+const HOUR_MS = 3600000;
+const DAY_MS = 24 * HOUR_MS;
+
+function extensionRange(options = {}, timestamp = Date.now()) {
+  const preset = String(options.rangePreset || options.range?.preset || 'week');
+  const dayStart = new Date(timestamp); dayStart.setHours(0, 0, 0, 0);
+  const starts = { today: dayStart.getTime(), window: timestamp - DAY_MS, week: timestamp - 7 * DAY_MS, '14d': timestamp - 14 * DAY_MS, '30d': timestamp - 30 * DAY_MS, all: 0 };
+  const start = preset === 'custom' ? Number(options.range?.start) : starts[preset];
+  const end = preset === 'custom' ? Number(options.range?.end) : timestamp;
+  if (!Number.isFinite(start) || !Number.isFinite(end) || start < 0 || end <= start) throw new Error('请选择有效的开始和结束时间');
+  if (end > timestamp + 60000) throw new Error('结束时间不能晚于当前时间');
+  if (preset === 'custom' && end - start > 366 * DAY_MS) throw new Error('时间范围最多支持 366 天');
+  const bucketMs = end - start <= 48 * HOUR_MS ? HOUR_MS : DAY_MS;
+  return { preset, start, end, bucketMs };
+}
+
+function scopedUsage(items = []) {
+  const usage = items.reduce((sum, item) => {
+    for (const key of ['total', 'input', 'output', 'reasoning', 'cacheRead', 'cacheWrite', 'errors']) sum[key] += Number(item[key] || 0);
+    sum.messages += Number(item.messages ?? item.requests ?? 0);
+    return sum;
+  }, { total: 0, input: 0, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0, messages: 0, errors: 0 });
+  return cacheMetrics.withCacheHitMetrics(usage);
+}
 
 
 function sourceBytes(sources = []) {
@@ -90,37 +116,36 @@ function sessionView(item = {}, timestamp = Date.now()) {
 async function getExtensionDetails(options = {}) {
   const config = extensionConfig(options);
   const timestamp = Date.now();
-  const hourStart = timestamp - 24 * 3600000;
-  const dayStart = timestamp - 14 * 86400000;
-  const [hourly, daily, sessionsPage] = await Promise.all([
-    localProvider.getDashboardAggregates({ ...config, timestamp, range: { start: hourStart, end: timestamp }, bucketMs: 3600000 }),
-    localProvider.getDashboardAggregates({ ...config, timestamp, range: { start: dayStart, end: timestamp }, bucketMs: 86400000 }),
-    localProvider.getSessionsPage({ ...config, limit: 8, offset: 0, source: 'all', status: 'active' }),
+  const selectedRange = extensionRange(options, timestamp);
+  const [aggregates, sessionsPage] = await Promise.all([
+    localProvider.getDashboardAggregates({ ...config, timestamp, range: { start: selectedRange.start, end: selectedRange.end }, bucketMs: selectedRange.bucketMs }),
+    localProvider.getSessionsPage({ ...config, limit: 8, offset: 0, source: 'all', status: 'active', range: { start: selectedRange.start, end: selectedRange.end } }),
   ]);
-  const primary = daily?.ok ? daily : hourly;
-  if (!primary?.ok) throw new Error(primary?.error || hourly?.error || '无法读取 CodeArts 聚合数据');
+  if (!aggregates?.ok) throw new Error(aggregates?.error || '无法读取 CodeArts 聚合数据');
+  const rangeUsage = scopedUsage(aggregates.sourceStats || []);
   return applyDerived({
     ok: true,
     timestamp,
     updatedAt: fmtTime(timestamp),
-    adapter: primary.perf?.aggregate?.adapter || '',
+    adapter: aggregates.perf?.aggregate?.adapter || '',
     dbPath: localProvider.resolveDbPath(config),
-    sources: primary.sources || [],
-    sourceStats: primary.sourceStats || [],
-    usage: primary.usage || hourly.usage || {},
-    trends: { hourly24h: hourly?.buckets || [], daily14d: daily?.buckets || [] },
-    models: (primary.modelStats || []).slice(0, 12),
+    sources: aggregates.sources || [],
+    sourceStats: aggregates.sourceStats || [],
+    usage: { ...(aggregates.usage || {}), range: rangeUsage },
+    trends: { hourly24h: selectedRange.bucketMs === HOUR_MS ? aggregates.buckets || [] : [], daily14d: selectedRange.bucketMs === DAY_MS ? aggregates.buckets || [] : [], range: aggregates.buckets || [] },
+    models: (aggregates.modelStats || []).slice(0, 12),
     sessions: (sessionsPage?.items || []).map((item) => sessionView(item, timestamp)),
     capabilities: extensionCapabilities(),
     performance: emptyPerformance(),
     queue: { window: {} },
     tools: { window: { byName: [] } },
-    dbSize: sourceBytes(primary.sources),
+    dbSize: sourceBytes(aggregates.sources),
     summaryOnly: false,
     aggregatePending: false,
     freshness: { stale: false, source: 'aggregates', ageMs: 0 },
-    perf: { hourly: hourly?.perf || {}, daily: daily?.perf || {} },
+    selectedRange,
+    perf: { range: aggregates.perf || {} },
   }, config);
 }
 
-module.exports = { extensionConfig, getExtensionSummary, getExtensionDetails, sessionView };
+module.exports = { extensionConfig, extensionRange, getExtensionSummary, getExtensionDetails, scopedUsage, sessionView };

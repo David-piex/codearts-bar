@@ -14,6 +14,7 @@ let lastSnapshot;
 let refreshPromise;
 let detailsPromise;
 let dashboardHost;
+let dashboardRange = { rangePreset: "today" };
 
 const T = {
   app: "\u7801\u9053 Bar",
@@ -174,12 +175,16 @@ function updateStatus(snapshot) {
 }
 
 async function loadDashboardDetails(options = {}) {
-  if (detailsPromise) return detailsPromise;
+  if (options.rangePreset) dashboardRange = { rangePreset: options.rangePreset, range: options.range };
+  if (detailsPromise) {
+    const current = await detailsPromise;
+    return options.rangePreset ? loadDashboardDetails({ reason: "range-followup" }) : current;
+  }
   if (!dashboardHost?.hasTargets()) return lastSnapshot;
   const c = config();
   detailsPromise = (async () => {
     try {
-      const details = await getExtensionDetails(c);
+      const details = await getExtensionDetails({ ...c, ...dashboardRange });
       lastSnapshot = details;
       updateStatus(lastSnapshot);
       dashboardHost?.broadcastDetails(lastSnapshot);
@@ -302,6 +307,7 @@ async function deactivate() {
   await localProvider.closeSqlJsWorker?.();
   closeSettingsStore?.();
   dashboardHost = null;
+  dashboardRange = { rangePreset: "today" };
   lastSnapshot = null;
 }
 

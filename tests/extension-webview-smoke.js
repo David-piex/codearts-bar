@@ -128,6 +128,7 @@ assert.match(htmlSource, /Content-Security-Policy/);
 assert.match(dashboardSource, /retainContextWhenHidden/);
 assert.match(dashboardSource, /broadcastDetails/);
 assert.match(dashboardSource, /webview-ready/);
+assert.match(dashboardSource, /message\?\.type === "range"/);
 assert.match(dashboardSource, /onDidChangeVisibility/, "sidebar visibility must control heavy detail aggregation");
 assert.match(dashboardSource, /onDidChangeViewState/, "panel visibility must control heavy detail aggregation");
 assert.match(dashboardSource, /some\(\(target\) => target\.visible\)/, "hidden retained webviews must not keep detail refresh active");
@@ -172,8 +173,14 @@ assert.match(componentCss, /backdrop-filter/);
 assert.match(responsiveCss, /prefers-reduced-motion/);
 assert.match(responsiveCss, /body\[data-mode="sidebar"\]/);
 assert.match(htmlSource, /data-performance-only/);
-assert.match(htmlSource, /MODEL MIX \/ 14D/, "model ranking must disclose its fixed aggregate range");
-assert.match(htmlSource, /LOCAL SOURCES \/ 14D/, "source distribution must disclose its fixed aggregate range");
+assert.match(htmlSource, /MODEL MIX \/ FILTERED/, "model ranking must follow the selected range");
+assert.match(htmlSource, /LOCAL SOURCES \/ FILTERED/, "source distribution must follow the selected range");
+for (const range of ["today", "window", "week", "14d", "30d", "all", "custom"]) assert.match(htmlSource, new RegExp(`data-range="${range}"`), `missing range option ${range}`);
+assert.match(htmlSource, /type="datetime-local"/);
+assert.match(clientSource, /type: "range"/);
+assert.match(clientSource, /rangeEnd/);
+assert.match(clientSource, /366 \* 86400000/);
+assert.match(responsiveCss, /\.range-select \{ display: block/);
 assert.match(viewsSource, /capabilities\?\.performance !== false/);
 assert.match(viewsSource, /\\u5f53\\u524d\\u8303\\u56f4\\u65e0\\u8bf7\\u6c42/, "empty current range must disclose the seven-day cache fallback");
 assert.match(viewsSource, /cacheRate !== null && cacheRate !== undefined/, "zero and missing cache rates must remain distinct");
@@ -215,8 +222,10 @@ const view = viewModel({
     window: {},
     week: {},
     all: {},
+    range: { total: 1234, messages: 2, cacheHitRate: 50 },
   },
   trends: { hourly24h: [{ start: 1, total: 1234 }], daily14d: [] },
+  selectedRange: { preset: "week", start: 1, end: 2, bucketMs: 86400000 },
   models: [{ model: "GLM", total: 1234 }],
   sourceStats: [{ source: "desktop", sourceLabel: "桌面端", total: 1234 }],
   sessions: [
@@ -230,6 +239,8 @@ assert.equal(view.ok, true);
 assert.equal(view.capabilities.performance, false);
 assert.equal(view.usage.today.total, 1234);
 assert.equal(view.usage.today.cacheHitRate, 50);
+assert.equal(view.usage.range.total, 1234);
+assert.equal(view.selectedRange.preset, "week");
 const missingCacheView = viewModel({ ok:true, usage:{ today:{ cacheHitRate:null }, window:{}, week:{ cacheHitRate:45.7 }, all:{} }, trends:{}, models:[], sourceStats:[], sessions:[], capabilities:{}, performance:{window:{}}, queue:{window:{}} });
 assert.equal(missingCacheView.usage.today.cacheHitRate, null, "missing cache rate must not collapse to zero");
 assert.equal(missingCacheView.usage.week.cacheHitRate, 45.7);

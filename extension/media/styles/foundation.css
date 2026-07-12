@@ -217,6 +217,35 @@ body.refreshing .refresh-glyph {
   background: var(--surface-soft);
   box-shadow: inset 0 1px rgba(255, 255, 255, 0.32);
 }
+.range-filter {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-bottom: 12px;
+}
+.range-filter .segmented-control { margin-bottom: 0; }
+.range-select { display: none; min-height: 36px; }
+.range-label {
+  color: var(--muted);
+  font-size: 10px;
+  white-space: nowrap;
+}
+.custom-range {
+  display: flex;
+  align-items: end;
+  gap: 9px;
+  margin: -3px 0 12px;
+  padding: 11px;
+  border: 1px solid var(--accent-border);
+  border-radius: 12px;
+  background: var(--surface-solid);
+  box-shadow: var(--shadow-sm);
+}
+.custom-range label { display: grid; flex: 1; gap: 5px; color: var(--muted); font-size: 9px; }
+.custom-range input { width: 100%; min-height: 34px; }
+.custom-range > div { display: flex; gap: 7px; }
+.custom-range > p { align-self: center; margin: 0; color: var(--danger); font-size: 10px; }
+.range-arrow { align-self: center; color: var(--faint); }
 .segmented-control button {
   min-height: 30px;
   border: 0;

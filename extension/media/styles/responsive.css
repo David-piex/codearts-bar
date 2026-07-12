@@ -30,16 +30,13 @@ body[data-mode="sidebar"] .app-kicker {
 body[data-mode="sidebar"] .header-actions .accent-button {
   display: none;
 }
-body[data-mode="sidebar"] .segmented-control {
-  display: flex;
-  width: 100%;
-}
-body[data-mode="sidebar"] .segmented-control button {
-  flex: 1;
-  min-width: 0;
-  padding: 0 4px;
-  font-size: 10px;
-}
+body[data-mode="sidebar"] .range-filter .segmented-control { display: none; }
+body[data-mode="sidebar"] .range-filter { align-items: stretch; flex-direction: column; }
+body[data-mode="sidebar"] .range-select { display: block; width: 100%; }
+body[data-mode="sidebar"] .range-label { display: none; }
+body[data-mode="sidebar"] .custom-range { align-items: stretch; flex-direction: column; }
+body[data-mode="sidebar"] .custom-range .range-arrow { display: none; }
+body[data-mode="sidebar"] .custom-range > div { justify-content: flex-end; }
 body[data-mode="sidebar"] .metric-grid {
   grid-template-columns: 1fr 1fr;
 }
@@ -118,6 +115,10 @@ body[data-mode="sidebar"] .privacy-footer {
   .session-meta {
     display: none;
   }
+  .range-filter .segmented-control { display: none; }
+  .range-select { display: block; min-width: 150px; }
+  .custom-range { align-items: stretch; flex-direction: column; }
+  .custom-range .range-arrow { display: none; }
 }
 @media (max-width: 430px) {
   .metric-card {

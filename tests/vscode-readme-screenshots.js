@@ -5,6 +5,7 @@ const vm = require('node:vm');
 const puppeteer = require('puppeteer-core');
 const root = path.resolve(__dirname, '..');
 const outDir = path.join(root, 'docs', 'screenshots');
+const visualDir = path.join(root, '.cache', 'vscode-webview-visual');
 const { dashboardHtml } = loadHtmlModule();
 const STEP_TIMEOUT_MS = 15000;
 
@@ -40,6 +41,7 @@ function snapshot(zero=false) {
 }
 (async()=>{
   fs.mkdirSync(outDir,{recursive:true});
+  fs.mkdirSync(visualDir,{recursive:true});
   const file=path.join(root,'.cache','vscode-webview-preview.html'); fs.mkdirSync(path.dirname(file),{recursive:true}); fs.writeFileSync(file,previewHtml(),'utf8');
   const chrome=['C:/Program Files/Google/Chrome/Application/chrome.exe','C:/Program Files/Microsoft/Edge/Application/msedge.exe'].find(fs.existsSync);
   if(!chrome) throw new Error('Chrome or Edge not found');
@@ -67,6 +69,30 @@ function snapshot(zero=false) {
       return tooltip && !tooltip.hidden && tooltip.dataset.index !== undefined;
     }));
     await withTimeout('capture VS Code tooltip',()=>page.screenshot({path:path.join(outDir,'vscode-tooltip.png'),fullPage:true}));
+    await page.click('[data-range="custom"]');
+    await withTimeout('show custom range',()=>page.waitForFunction(()=>{
+      const panel=document.querySelector('#customRange');
+      const start=document.querySelector('#rangeStart');
+      const end=document.querySelector('#rangeEnd');
+      const apply=document.querySelector('[data-range-apply]');
+      return panel&&!panel.hidden&&start?.value&&end?.value&&apply?.getBoundingClientRect().width>0;
+    }));
+    const customGeometry=await page.evaluate(()=>{
+      const panel=document.querySelector('#customRange').getBoundingClientRect();
+      return {left:panel.left,right:panel.right,width:innerWidth};
+    });
+    if(customGeometry.left<0||customGeometry.right>customGeometry.width) throw new Error('custom range overflows the wide viewport');
+    await withTimeout('capture custom range',()=>page.screenshot({path:path.join(visualDir,'custom-range-wide.png'),fullPage:true}));
+    await page.setViewport({width:360,height:900,deviceScaleFactor:1});
+    const narrowGeometry=await page.evaluate(()=>{
+      const segmented=getComputedStyle(document.querySelector('.range-filter .segmented-control')).display;
+      const select=document.querySelector('#rangeSelect');
+      const panel=document.querySelector('#customRange').getBoundingClientRect();
+      return {segmented,select:getComputedStyle(select).display,left:panel.left,right:panel.right,width:innerWidth};
+    });
+    if(narrowGeometry.segmented!=='none'||narrowGeometry.select==='none'||narrowGeometry.left<0||narrowGeometry.right>narrowGeometry.width) throw new Error('narrow range controls are not responsive: '+JSON.stringify(narrowGeometry));
+    await withTimeout('capture narrow range',()=>page.screenshot({path:path.join(visualDir,'custom-range-narrow.png'),fullPage:true}));
+    await page.setViewport({width:1120,height:900,deviceScaleFactor:1});
     await page.evaluate((data)=>window.dispatchEvent(new MessageEvent('message',{data:{type:'details',payload:data}})),{...snapshot(true),trends:{hourly24h:[],daily14d:[]}});
     await new Promise(r=>setTimeout(r,300));
     await withTimeout('capture VS Code empty state',()=>page.screenshot({path:path.join(outDir,'vscode-empty-state.png'),fullPage:true}));
