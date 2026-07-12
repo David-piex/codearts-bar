@@ -61,7 +61,7 @@ function snapshot(zero=false) {
     await withTimeout('load VS Code preview',()=>page.goto('file:///'+file.replace(/\\/g,'/'),{waitUntil:'domcontentloaded'}));
     await page.evaluate(()=>document.body.classList.add('vscode-dark'));
     const palette=await page.evaluate(()=>({page:getComputedStyle(document.documentElement).getPropertyValue('--page').trim(),accent:getComputedStyle(document.documentElement).getPropertyValue('--accent').trim()}));
-    if(palette.page!=='#f7f8fb'||palette.accent!=='#1687f5') throw new Error('VS Code theme leaked into fixed Desktop palette: '+JSON.stringify(palette));
+    if(palette.page!=='#f5f6f8'||palette.accent!=='#0a84ff') throw new Error('VS Code theme leaked into fixed Desktop palette: '+JSON.stringify(palette));
     await page.evaluate((data)=>window.dispatchEvent(new MessageEvent('message',{data:{type:'details',payload:data}})),snapshot(false));
     await new Promise(r=>setTimeout(r,400));
     const canvas=await page.$('#trendChart');
@@ -94,17 +94,27 @@ function snapshot(zero=false) {
     await page.setViewport({width:360,height:900,deviceScaleFactor:1});
     const narrowGeometry=await page.evaluate(()=>{
       const segmented=getComputedStyle(document.querySelector('.range-filter .segmented-control')).display;
-      const select=document.querySelector('#rangeSelect');
+      const menu=document.querySelector('.range-menu-control');
       const panel=document.querySelector('#customRange').getBoundingClientRect();
-      return {segmented,select:getComputedStyle(select).display,left:panel.left,right:panel.right,width:innerWidth};
+      return {segmented,menu:getComputedStyle(menu).display,left:panel.left,right:panel.right,width:innerWidth};
     });
-    if(narrowGeometry.segmented!=='none'||narrowGeometry.select==='none'||narrowGeometry.left<0||narrowGeometry.right>narrowGeometry.width) throw new Error('narrow range controls are not responsive: '+JSON.stringify(narrowGeometry));
+    if(narrowGeometry.segmented!=='none'||narrowGeometry.menu==='none'||narrowGeometry.left<0||narrowGeometry.right>narrowGeometry.width) throw new Error('narrow range controls are not responsive: '+JSON.stringify(narrowGeometry));
     await withTimeout('capture narrow range',()=>page.screenshot({path:path.join(visualDir,'custom-range-narrow.png'),fullPage:true}));
     const sidebarFile=path.join(root,'.cache','vscode-webview-sidebar-preview.html'); fs.writeFileSync(sidebarFile,previewHtml('sidebar'),'utf8');
     await page.goto('file:///'+sidebarFile.replace(/\\/g,'/'),{waitUntil:'domcontentloaded'});
     await page.evaluate((data)=>window.dispatchEvent(new MessageEvent('message',{data:{type:'details',payload:data}})),snapshot(false));
     const sidebarState=await page.evaluate(()=>({scope:getComputedStyle(document.querySelector('.scope-filter')).display,token:getComputedStyle(document.querySelector('.token-strip')).display,requests:getComputedStyle(document.querySelector('.request-surface')).display}));
     if(sidebarState.scope!=='none'||sidebarState.token!=='none'||sidebarState.requests!=='none') throw new Error('sidebar leaked full-analysis workbench: '+JSON.stringify(sidebarState));
+    await page.click('#rangeMenuButton');
+    const menuGeometry=await page.evaluate(()=>{
+      const trigger=document.querySelector('#rangeMenuButton').getBoundingClientRect();
+      const menu=document.querySelector('#rangeMenu').getBoundingClientRect();
+      return {hidden:document.querySelector('#rangeMenu').hidden,expanded:document.querySelector('#rangeMenuButton').getAttribute('aria-expanded'),triggerWidth:trigger.width,left:menu.left,right:menu.right,width:menu.width,viewport:innerWidth};
+    });
+    if(menuGeometry.hidden||menuGeometry.expanded!=='true'||menuGeometry.left<0||menuGeometry.right>menuGeometry.viewport||menuGeometry.width>280||menuGeometry.width<menuGeometry.triggerWidth) throw new Error('controlled range menu geometry is invalid: '+JSON.stringify(menuGeometry));
+    await page.screenshot({path:path.join(visualDir,'sidebar-range-menu.png'),fullPage:true});
+    await page.keyboard.press('Escape');
+    await page.evaluate(()=>document.activeElement?.blur());
     await page.screenshot({path:path.join(visualDir,'sidebar-overview.png'),fullPage:true});
     await page.goto('file:///'+file.replace(/\\/g,'/'),{waitUntil:'domcontentloaded'});
     await page.setViewport({width:1120,height:900,deviceScaleFactor:1});

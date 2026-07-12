@@ -161,8 +161,8 @@ assert.doesNotMatch(
 );
 assert.doesNotMatch(tokenCss, /--vscode-/, "webview palette must stay aligned with Desktop instead of inheriting the editor theme");
 assert.match(tokenCss, /color-scheme:\s*light/);
-assert.match(tokenCss, /--page:\s*#f7f8fb/);
-assert.match(tokenCss, /--accent:\s*#1687f5/);
+assert.match(tokenCss, /--page:\s*#f5f6f8/);
+assert.match(tokenCss, /--accent:\s*#0a84ff/);
 assert.match(tokenCss, /SF Pro/);
 assert.match(
   foundationCss,
@@ -176,6 +176,7 @@ assert.match(
 );
 assert.match(responsiveCss, /prefers-reduced-motion/);
 assert.match(responsiveCss, /body\[data-mode="sidebar"\]/);
+assert.match(componentCss, /\.performance-surface\.performance-unavailable \.performance-grid \{ grid-template-columns: repeat\(5/, "local data status must stay a compact strip when performance metrics are unavailable");
 for (const id of ["dataAdapter", "dataSources", "dataRequests", "dataSessions", "dbSize"]) assert.match(htmlSource, new RegExp(`id="${id}"`), `missing data status field ${id}`);
 assert.ok((htmlSource.match(/\\u5f53\\u524d\\u8303\\u56f4/g) || []).length >= 2, "model, source and request sections must disclose the selected scope");
 for (const id of ["sourceFilter", "modelFilter", "metricInput", "metricOutput", "metricCacheWrite", "metricCacheRead", "requests"]) assert.match(htmlSource, new RegExp(`id="${id}"`), `missing full-analysis control ${id}`);
@@ -183,11 +184,16 @@ assert.match(clientSource, /type: "filter"/);
 assert.match(viewsSource, /function requests\(snapshot\)/);
 assert.match(responsiveCss, /\.request-surface \{ display:none; \}/, "sidebar must not render the full request workbench");
 for (const range of ["today", "window", "week", "14d", "30d", "all", "custom"]) assert.match(htmlSource, new RegExp(`data-range="${range}"`), `missing range option ${range}`);
+assert.doesNotMatch(htmlSource, /<select/, "native selects must not leak platform menus into the macOS-style workbench");
+for (const menu of ["range", "source", "model"]) assert.match(htmlSource, new RegExp(`data-menu-toggle="${menu}"`), `missing controlled ${menu} menu`);
+assert.match(clientSource, /function setMenuOpen\(name, next\)/);
+assert.match(clientSource, /event\.key === "Escape"/);
+assert.match(foundationCss, /\.control-menu\s*\{[\s\S]*?position:\s*absolute/, "controlled menus must overlay instead of resizing the workbench");
 assert.match(htmlSource, /type="datetime-local"/);
 assert.match(clientSource, /type: "range"/);
 assert.match(clientSource, /rangeEnd/);
 assert.match(clientSource, /366 \* 86400000/);
-assert.match(responsiveCss, /\.range-select \{ display: block/);
+assert.match(responsiveCss, /\.range-menu-control \{ display: block/);
 assert.match(viewsSource, /\\u5f53\\u524d\\u8303\\u56f4\\u65e0\\u8bf7\\u6c42/, "empty current range must disclose the seven-day cache fallback");
 assert.match(viewsSource, /cacheRate !== null && cacheRate !== undefined/, "zero and missing cache rates must remain distinct");
 assert.match(clientSource, /function zeroTrendRows\(\)/, "empty real ranges must synthesize zero buckets so axes remain visible");

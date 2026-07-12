@@ -9,6 +9,7 @@
   let modelFilter = saved.modelFilter || "all";
   const knownSources = new Map();
   const knownModels = new Set();
+  let openMenu = "";
   const element = (selector) => document.querySelector(selector),
     all = (selector) => [...document.querySelectorAll(selector)];
   function zeroTrendRows() {
@@ -44,7 +45,12 @@
   }
   function syncRangeChrome() {
     all("[data-range]").forEach((button) => button.classList.toggle("active", button.dataset.range === range));
-    element("#rangeSelect").value = range;
+    element("#rangeMenuValue").textContent = labels[range] || labels.today;
+    all('[data-menu-option="range"]').forEach((button) => {
+      const selected = button.dataset.value === range;
+      button.classList.toggle("selected", selected);
+      button.setAttribute("aria-selected", String(selected));
+    });
     if (range === "custom") {
       if (!customStart) customStart = Date.now() - 7 * 86400000;
       if (!customEnd) customEnd = Date.now();
@@ -55,20 +61,31 @@
     element("#rangeLabel").hidden = range !== "custom";
     element("#customRange").hidden = range !== "custom";
   }
+  function setMenuOpen(name, next) {
+    for (const menuName of ["range", "source", "model"]) {
+      const expanded = menuName === name && next;
+      element(`#${menuName}Menu`).hidden = !expanded;
+      element(menuName === "range" ? "#rangeMenuButton" : `#${menuName}Filter`).setAttribute("aria-expanded", String(expanded));
+    }
+    openMenu = next ? name : "";
+  }
   function requestRange() {
     document.body.classList.add("refreshing");
     vscode.postMessage({ type: "range", preset: range, range: range === "custom" ? { start: customStart, end: customEnd } : undefined });
   }
-  function optionHtml(value, label, selected) { return `<option value="${window.CodeArtsFormat.html(value)}" ${selected ? "selected" : ""}>${window.CodeArtsFormat.html(label)}</option>`; }
+  function menuOptionHtml(kind, value, label, selected) { return `<button data-menu-option="${kind}" data-value="${window.CodeArtsFormat.html(value)}" role="option" aria-selected="${selected}" class="${selected ? "selected" : ""}">${window.CodeArtsFormat.html(label)}</button>`; }
   function syncScopeChrome() {
     for (const item of snapshot?.sources || []) knownSources.set(item.id, item.label);
     for (const item of snapshot?.models || []) knownModels.add(item.name);
     const sources = [...knownSources].map(([id, label]) => ({ id, label }));
     const models = [...knownModels].map((name) => ({ name }));
-    element("#sourceFilter").innerHTML = optionHtml("all", "全部来源", sourceFilter === "all") + sources.map((item) => optionHtml(item.id, item.label, sourceFilter === item.id)).join("");
-    element("#modelFilter").innerHTML = optionHtml("all", "全部模型", modelFilter === "all") + models.map((item) => optionHtml(item.name, item.name, modelFilter === item.name)).join("");
     const sourceLabel = sourceFilter === "all" ? "全部来源" : sources.find((item) => item.id === sourceFilter)?.label || sourceFilter;
-    element("#filterContext").textContent = `${rangeText()} · ${sourceLabel} · ${modelFilter === "all" ? "全部模型" : modelFilter}`;
+    const modelLabel = modelFilter === "all" ? "全部模型" : modelFilter;
+    element("#sourceMenu").innerHTML = menuOptionHtml("source", "all", "全部来源", sourceFilter === "all") + sources.map((item) => menuOptionHtml("source", item.id, item.label, sourceFilter === item.id)).join("");
+    element("#modelMenu").innerHTML = menuOptionHtml("model", "all", "全部模型", modelFilter === "all") + models.map((item) => menuOptionHtml("model", item.name, item.name, modelFilter === item.name)).join("");
+    element("#sourceFilterValue").textContent = sourceLabel;
+    element("#modelFilterValue").textContent = modelLabel;
+    element("#filterContext").textContent = `${rangeText()} · ${sourceLabel} · ${modelLabel}`;
   }
   function requestScope() {
     document.body.classList.add("refreshing");
@@ -115,6 +132,22 @@
     render();
   }
   document.addEventListener("click", (event) => {
+    const menuToggle = event.target.closest("[data-menu-toggle]");
+    if (menuToggle) {
+      const name = menuToggle.dataset.menuToggle;
+      setMenuOpen(name, openMenu !== name);
+      return;
+    }
+    const menuOption = event.target.closest("[data-menu-option]");
+    if (menuOption) {
+      const kind = menuOption.dataset.menuOption;
+      const value = menuOption.dataset.value;
+      setMenuOpen(kind, false);
+      if (kind === "range") selectRange(value);
+      if (kind === "source") { sourceFilter = value; syncScopeChrome(); requestScope(); }
+      if (kind === "model") { modelFilter = value; syncScopeChrome(); requestScope(); }
+      return;
+    }
     const rangeButton = event.target.closest("[data-range]");
     if (rangeButton) {
       selectRange(rangeButton.dataset.range);
@@ -131,10 +164,32 @@
     }
     const action = event.target.closest("[data-action]")?.dataset.action;
     if (action) vscode.postMessage({ type: action });
+    if (openMenu && !event.target.closest(".menu-control")) setMenuOpen(openMenu, false);
   });
-  element("#rangeSelect").addEventListener("change", (event) => selectRange(event.target.value));
-  element("#sourceFilter").addEventListener("change", (event) => { sourceFilter = event.target.value; requestScope(); });
-  element("#modelFilter").addEventListener("change", (event) => { modelFilter = event.target.value; requestScope(); });
+  document.addEventListener("keydown", (event) => {
+    const toggle = event.target.closest("[data-menu-toggle]");
+    if (toggle && event.key === "ArrowDown") {
+      event.preventDefault();
+      const name = toggle.dataset.menuToggle;
+      setMenuOpen(name, true);
+      element(`#${name}Menu`).querySelector(".selected, button")?.focus();
+      return;
+    }
+    const option = event.target.closest("[data-menu-option]");
+    if (option && ["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
+      event.preventDefault();
+      const options = [...option.parentElement.querySelectorAll("button")];
+      const index = options.indexOf(option);
+      const next = event.key === "Home" ? 0 : event.key === "End" ? options.length - 1 : (index + (event.key === "ArrowDown" ? 1 : -1) + options.length) % options.length;
+      options[next]?.focus();
+      return;
+    }
+    if (event.key === "Escape" && openMenu) {
+      const trigger = openMenu === "range" ? element("#rangeMenuButton") : element(`#${openMenu}Filter`);
+      setMenuOpen(openMenu, false);
+      trigger.focus();
+    }
+  });
   window.addEventListener("message", (event) => {
     const message = event.data || {};
     if (message.type === "snapshot" || message.type === "details") {
