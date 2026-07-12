@@ -43,9 +43,13 @@ CodeArts Bar 在本机读取 CodeArts Agent 生成的 SQLite 数据，提供 **W
 | --- | --- |
 | ![VS Code 趋势 Hover Tooltip](docs/screenshots/vscode-tooltip.png) | ![VS Code 全零数据空态](docs/screenshots/vscode-empty-state.png) |
 
-| JetBrains Token 时间筛选 |
-| --- |
-| ![JetBrains 使用分析与时间筛选](docs/screenshots/jetbrains-2025.3-token-filter-dark.png) |
+| JetBrains 使用分析 | JetBrains Token 时间筛选 |
+| --- | --- |
+| ![JetBrains 使用分析总览](docs/screenshots/jetbrains-usage-overview.png) | ![JetBrains Token 时间范围下拉](docs/screenshots/jetbrains-token-time-range.png) |
+
+| JetBrains 自定义时间范围 | JetBrains 会话管理 |
+| --- | --- |
+| ![JetBrains 自定义 Token 时间范围](docs/screenshots/jetbrains-token-custom-range.png) | ![JetBrains 会话管理](docs/screenshots/jetbrains-session-management.png) |
 
 更多回归截图：[`docs/screenshots`](docs/screenshots)。
 
