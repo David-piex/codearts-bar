@@ -288,12 +288,16 @@ async function load(){
 async function refreshNow(opts = {}){
   const requested = opts && typeof opts === 'object' && !opts.type ? opts : {};
   if(refreshInFlight) return refreshInFlight;
+  // Capture the user's position before IPC can give the browser a chance to
+  // anchor the scroll container around an asynchronously changing shell.
+  const capturedScrollTop = Number(document.getElementById('app')?.scrollTop || 0);
   const renderOpts = {
     windowLayout: false,
     instantChart: true,
     partial: true,
     preserveFilters: true,
     preserveRefreshState: true,
+    preserveScrollTop: Number.isFinite(Number(requested.preserveScrollTop)) ? Number(requested.preserveScrollTop) : capturedScrollTop,
     ...requested,
   };
   refreshInFlight = (async () => {

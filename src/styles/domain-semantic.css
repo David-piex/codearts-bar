@@ -11,6 +11,7 @@
 .content {
   padding-inline: var(--density-pad-x, var(--cb-page-pad-x));
   padding-block: var(--density-pad-y, var(--cb-page-pad-y)) 24px;
+  overflow-anchor: none;
 }
 
 :where(.page-head, .topbar, .table-toolbar, .session-primary-filters) {

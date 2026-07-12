@@ -59,7 +59,7 @@
 /* merged source: dashboard-layout.css */
 /* 1.19.0 local rendering layout pass */
 .content {
-  scroll-behavior:smooth;
+  scroll-behavior:auto;
   contain:layout style;
 }
 .view-switching .table-card,

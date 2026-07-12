@@ -16,6 +16,7 @@ const mainWindow = require('./main/window');
 const { createLogger } = require('./main/logger');
 const { createCrashReporter } = require('./main/crash-reporter');
 const { createDbWatchService } = require('./main/db-watch-service');
+const { createLatestTaskQueue } = require('./main/latest-task-queue');
 const lifecycle = require('./main/lifecycle');
 const { registerDashboardIpc } = require('./main/ipc-dashboard');
 const { registerSettingsIpc } = require('./main/ipc-settings');
@@ -46,6 +47,7 @@ let trayHintShown = false;
 let fullRefreshInFlight = null;
 let lightRefreshInFlight = null;
 let stopSettingsWatch = null;
+let dashboardLightQueue;
 
 const trayAssetsDir = path.join(__dirname, '..', 'assets');
 const packageSmokeStartedAt = Date.now();
@@ -337,14 +339,22 @@ async function refreshOfficialInBackground() {
 registerSettingsIpc({ ipcMain, loadSettings, saveSettings, diagnose, refreshLight, scheduleRefresh, scheduleDbWatch });
 
 async function buildDashboardLightSnapshot(payload = {}) {
-  if (!lastSnapshot || !lastSnapshot.ok) {
-    await refreshLight(payload);
-    return lastDashboardSnapshot || lastSnapshot;
+  if (!dashboardLightQueue) {
+    dashboardLightQueue = createLatestTaskQueue(async (nextPayload, isSuperseded) => {
+      if (!lastSnapshot || !lastSnapshot.ok) {
+        await refreshLight(nextPayload);
+        return lastDashboardSnapshot || lastSnapshot;
+      }
+      const { fullSnap, dashboardSnap } = await buildDashboardLightPair(lastSnapshot, nextPayload);
+      // A newer watcher/UI request arrived while SQLite was being read. Do not let
+      // this older result overwrite the newer snapshot when it resolves later.
+      if (isSuperseded()) return lastDashboardSnapshot || dashboardSnap;
+      lastSnapshot = fullSnap;
+      lastDashboardSnapshot = dashboardSnap;
+      return dashboardSnap;
+    });
   }
-  const { fullSnap, dashboardSnap } = await buildDashboardLightPair(lastSnapshot, payload);
-  lastSnapshot = fullSnap;
-  lastDashboardSnapshot = dashboardSnap;
-  return dashboardSnap;
+  return dashboardLightQueue.enqueue(payload);
 }
 
 registerDashboardIpc({

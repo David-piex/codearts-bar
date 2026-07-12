@@ -1,6 +1,6 @@
 {
   "name": "codearts-bar",
-  "version": "1.16.27",
+  "version": "1.16.28",
   "description": "CodeArts Bar: desktop tray app, VS Code/CodeArts status extension, and CLI for local CodeArts Agent usage.",
   "main": "src/main.js",
   "type": "commonjs",
@@ -12,7 +12,7 @@
     "stats": "node src/cli.js stats",
     "e2e:electron": "npm run build:renderer && node tests/electron-dashboard-e2e.js",
     "screenshot:dashboard": "npm run build:renderer && node tests/dashboard-preview-screenshot.js",
-    "test": "npm run build:renderer && node tests/run-tests.js && node tests/dashboard-renderer-smoke.js && node tests/chart-axis-smoke.js && node tests/cli-bin-smoke.js && node tests/cli-self-test-fixture.js && node tests/jetbrains-payload-smoke.js && node tests/single-flight-smoke.js && node tests/best-effort-smoke.js && npm run build:npm-package && node tests/npm-package-smoke.js && node tests/source-encoding-smoke.js && node tests/gitee-pipeline-smoke.js && node tests/date-range-state-smoke.js && node tests/electron-security-smoke.js && npm run prepare:extension && node tests/extension-package-smoke.js && node tests/extension-webview-smoke.js && node tests/extension-refresh-smoke.js && node tests/dashboard-style-smoke.js && node tests/dashboard-css-budget-smoke.js && node tests/settings-store-smoke.js && node tests/db-watch-service-smoke.js && node tests/app-runtime-smoke.js && node tests/i18n-smoke.js && node tests/dashboard-preview-smoke.js && node tests/database-diagnostics-smoke.js && node tests/crash-reporter-smoke.js && node tests/release-manifest-smoke.js && node tests/release-artifacts-smoke.js",
+    "test": "npm run build:renderer && node tests/run-tests.js && node tests/dashboard-renderer-smoke.js && node tests/chart-axis-smoke.js && node tests/cli-bin-smoke.js && node tests/cli-self-test-fixture.js && node tests/jetbrains-payload-smoke.js && node tests/single-flight-smoke.js && node tests/latest-task-queue-smoke.js && node tests/best-effort-smoke.js && npm run build:npm-package && node tests/npm-package-smoke.js && node tests/source-encoding-smoke.js && node tests/gitee-pipeline-smoke.js && node tests/date-range-state-smoke.js && node tests/electron-security-smoke.js && npm run prepare:extension && node tests/extension-package-smoke.js && node tests/extension-webview-smoke.js && node tests/extension-refresh-smoke.js && node tests/dashboard-style-smoke.js && node tests/dashboard-css-budget-smoke.js && node tests/settings-store-smoke.js && node tests/db-watch-service-smoke.js && node tests/app-runtime-smoke.js && node tests/i18n-smoke.js && node tests/dashboard-preview-smoke.js && node tests/database-diagnostics-smoke.js && node tests/crash-reporter-smoke.js && node tests/release-manifest-smoke.js && node tests/release-artifacts-smoke.js",
     "prepare:extension": "node src/prepare-extension.js",
     "build:extension": "node src/build-extension.js",
     "build:app": "npm run build:renderer && npm run build:cli-resources && npm run build:app-resources && electron-builder --projectDir .cache/app-runtime --config ../../electron-builder.runtime.js --win nsis portable --x64",

@@ -283,6 +283,15 @@ function render(s, opts = {}){
   renderScheduleFrame = requestAnimationFrame(flush);
   renderScheduleTimer = setTimeout(flush, 48);
 }
+function preserveAppScroll(app, scrollTop){
+  if(!app || !Number.isFinite(scrollTop)) return;
+  const restore = () => {
+    if(Math.abs(Number(app.scrollTop || 0) - scrollTop) > 0.5) app.scrollTop = scrollTop;
+  };
+  restore();
+  try { requestAnimationFrame(restore); } catch {}
+  setTimeout(restore, 0);
+}
 function schedulePostCommit(fn, timeout = 48){
   let done = false;
   const run = () => {
@@ -301,6 +310,10 @@ function renderImmediate(s, opts = {}){
   sessionTableItems = [];
   if(opts.preserveRefreshState !== true) setRefreshState('');
   const app = document.getElementById('app');
+  const requestedScrollTop = Number(opts.preserveScrollTop);
+  const previousScrollTop = opts.preserveScroll !== false
+    ? (Number.isFinite(requestedScrollTop) ? requestedScrollTop : Number(app?.scrollTop || 0))
+    : NaN;
   const modeKey = viewModeKey();
   const modeChanged = lastRenderMode && lastRenderMode !== modeKey;
   lastRenderMode = modeKey;
@@ -325,6 +338,7 @@ function renderImmediate(s, opts = {}){
     const rows = rowsForRender();
     commitAppHtml(app, `${headerHtml(true)}${filtersHtml(s)}${renderCompactMenu(s, rows)}`);
     syncFooter();
+    preserveAppScroll(app, previousScrollTop);
     if(opts.windowLayout !== false) applyWindowLayout();
     markRenderCost(renderStartedAt, 'compact', rows.length);
     schedulePostCommit(() => {
@@ -341,6 +355,7 @@ function renderImmediate(s, opts = {}){
     if(!patched) commitAppHtml(app, `${headerHtml(false)}${filtersHtml(s)}${renderSessionWorkspace(s, { deferRows })}`);
     markPerfStage('domCommitMs', perfNow() - domStartedAt);
     syncFooter();
+    preserveAppScroll(app, previousScrollTop);
     if(opts.windowLayout !== false) applyWindowLayout();
     markRenderCost(renderStartedAt, patched ? 'sessions:partial' : 'sessions', sessionTableItems.length);
     schedulePostCommit(() => {
@@ -359,6 +374,7 @@ function renderImmediate(s, opts = {}){
   if(!patched) commitAppHtml(app, analyticsShellHtml(s, rows, opts));
   markPerfStage('domCommitMs', perfNow() - domStartedAt);
   syncFooter();
+  preserveAppScroll(app, previousScrollTop);
   if(opts.windowLayout !== false) applyWindowLayout();
   markRenderCost(renderStartedAt, patched ? 'analytics:partial' : 'analytics', rows.length);
   const instant = opts.instantChart === true || modeChanged || suppressChartIntro || patched;
