@@ -17,6 +17,11 @@
     element("#metricMessages").textContent = f.exact.format(
       f.number(usage.messages),
     );
+    element("#metricInput").textContent = f.token(usage.input);
+    element("#metricOutput").textContent = f.token(usage.output);
+    element("#metricCacheWrite").textContent = f.token(usage.cacheWrite);
+    element("#metricCacheRead").textContent = f.token(usage.cacheRead);
+    element("#metricReusable").textContent = f.token(f.number(usage.input) + f.number(usage.cacheRead));
     const cacheRate = usage.cacheHitRate;
     const cacheHasData = cacheRate !== null && cacheRate !== undefined;
     element("#metricCache").textContent = f.percent(cacheRate);
@@ -87,29 +92,32 @@
           .join("")
       : '<p class="empty-copy">\u6682\u65e0\u6700\u8fd1\u4f1a\u8bdd</p>';
   }
+  function requests(snapshot) {
+    const rows = snapshot.requests || [];
+    element("#requestCount").textContent = `${f.exact.format(rows.length)} 条`;
+    element("#requests").innerHTML = rows.length ? rows.map((item) => {
+      const when = item.time ? new Date(item.time).toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false }) : "—";
+      const latency = Number.isFinite(Number(item.latencyMs)) ? f.milliseconds(item.latencyMs) : "—";
+      return `<tr><td>${f.html(when)}</td><td>${f.html(item.sourceLabel || item.source || "—")}</td><td><b>${f.html(item.model || "—")}</b><small>${f.html(item.provider || "")}</small></td><td>${f.token(item.input)}</td><td>${f.token(item.output)}</td><td>${f.token(item.cacheWrite)}</td><td>${f.token(item.cacheRead)}</td><td><b>${f.token(item.total)}</b></td><td>${latency}</td><td><span class="request-status ${item.ok ? "ok" : "bad"}">${f.html(String(item.status || (item.ok ? 200 : "错误")))}</span></td><td class="request-session" title="${f.html(item.sessionTitle)}">${f.html(item.sessionTitle)}</td></tr>`;
+    }).join("") : '<tr><td colspan="11" class="empty-copy">当前筛选范围暂无请求</td></tr>';
+  }
   function performance(snapshot) {
-    const available = snapshot.capabilities?.performance !== false;
     const surface = element(".performance-surface");
-    surface.classList.toggle("performance-unavailable", !available);
-    document.querySelectorAll("[data-performance-only]").forEach((item) => { item.hidden = !available; });
-    element("#performanceKicker").textContent = available ? "RESPONSE HEALTH" : "LOCAL STORAGE";
-    element("#performanceTitle").textContent = available ? "\u54cd\u5e94\u6027\u80fd" : "\u672c\u5730\u6570\u636e";
+    surface.classList.add("performance-unavailable");
+    element("#dataAdapter").textContent = snapshot.adapter || "\u672a\u77e5";
+    element("#dataSources").textContent = f.exact.format((snapshot.sources || []).length);
+    element("#dataRequests").textContent = f.exact.format((snapshot.requests || []).length);
+    element("#dataSessions").textContent = f.exact.format((snapshot.sessions || []).length);
     element("#dbSize").textContent = f.bytes(snapshot.dbSize);
-    if (!available) return;
-    const p = snapshot.performance || {};
-    element("#perfLatency").textContent = f.milliseconds(p.latencyAvg);
-    element("#perfP95").textContent = f.milliseconds(p.latencyP95);
-    element("#perfFirst").textContent = f.milliseconds(p.firstContentAvg);
-    element("#perfSpeed").textContent = Number.isFinite(Number(p.outputSpeed))
-      ? `${Number(p.outputSpeed).toFixed(1)} t/s`
-      : "\u2014";
-    element("#perfQueue").textContent = f.milliseconds(p.queueAvg);
+    const errors = snapshot.sourceErrors || [];
+    element("#dataHealth").textContent = errors.length ? `${errors.length} \u4e2a\u6570\u636e\u6e90\u5f02\u5e38` : "\u8bfb\u53d6\u6b63\u5e38";
   }
   window.CodeArtsViews = Object.freeze({
     metrics,
     models,
     sources,
     sessions,
+    requests,
     performance,
   });
 })();

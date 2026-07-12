@@ -25,19 +25,24 @@ function loadHtmlModule() {
   vm.runInNewContext(source, { module, exports: module.exports, require, Math }, { filename: file });
   return module.exports;
 }
-function previewHtml() {
+function previewHtml(mode='panel') {
   const webview = { cspSource: "'self'", asWebviewUri: (uri) => uri };
-  let html = dashboardHtml(webview, '', 'panel');
+  let html = dashboardHtml(webview, '', mode);
   html = html.replace(/<meta http-equiv="Content-Security-Policy"[^>]+>/, '');
   html = html.replace(/<link rel="stylesheet" href="([^"]+)">/g, (_m, rel) => `<style>${fs.readFileSync(path.join(root, 'extension', rel), 'utf8')}</style>`);
   html = html.replace(/<script nonce="[^"]+" src="([^"]+)"><\/script>/g, (_m, rel) => `<script>${fs.readFileSync(path.join(root, 'extension', rel), 'utf8')}</script>`);
-  html = html.replace('<body ', `<body><script>window.acquireVsCodeApi=()=>({postMessage(){},getState(){return{}},setState(){}});</script><div `).replace('<div data-mode=', '<main data-mode=');
+  html = html.replace(/<body data-mode="([^"]+)">/, `<body data-mode="$1"><script>window.acquireVsCodeApi=()=>({postMessage(){},getState(){return{}},setState(){}});</script>`);
   return html;
 }
 const base = Date.UTC(2026,6,10,8,0,0);
 function snapshot(zero=false) {
   const hourly = Array.from({length:24},(_,i)=>({start:base-(23-i)*3600000,total:zero?0:Math.round(5000+Math.sin(i/2)*2200+i*420),output:zero?0:Math.round(1200+Math.cos(i/3)*500+i*110),input:zero?0:1800+i*80,cacheRead:zero?0:2400+i*180}));
-  return {ok:true,timestamp:base,updatedAt:'刚刚更新',adapter:'sql.js-worker',capabilities:{performance:false,queue:false},status:{level:'normal',label:zero?'0%':'42%'},usage:{today:zero?{total:0,messages:0,errors:0,cacheHitRate:null,cacheRead:0}:{total:128420,messages:36,errors:1,cacheHitRate:71,cacheRead:81200},window:{total:238000,messages:68,errors:1,cacheHitRate:68,cacheRead:140000},week:{total:980000,messages:280,errors:3,cacheHitRate:45.7,cacheRead:448000},all:{total:4210000,messages:1220,errors:8,cacheHitRate:42.6,cacheRead:1793000}},config:{windowHours:24},trends:{hourly24h:hourly,daily14d:hourly.slice(0,14)},models:[{name:'GLM-5.1',provider:'CodeArts',total:78200,messages:20},{name:'GPT-5.5',provider:'CodeArts',total:36200,messages:10},{name:'DeepSeek V4 Flash',provider:'CodeArts',total:14020,messages:6}],sources:[{id:'desktop',label:'桌面端',total:88420,messages:24},{id:'cli',label:'CLI',total:40000,messages:12}],sessions:[{id:'1',title:'首次打开与趋势图优化',directory:'C:/projects/codearts-bar',sourceLabel:'桌面端',age:120000,total:42000,model:'GLM-5.1'},{id:'2',title:'VS Code Webview 性能回归',directory:'C:/projects/plugin',sourceLabel:'CLI',age:3600000,total:28200,model:'GPT-5.5'}],performance:{latencyAvg:1280,latencyP95:3100,firstContentAvg:420,outputSpeed:31.8,errorRate:.014,queueAvg:92,queueP95:180},dbSize:14800000,stale:false};
+  const usage=zero?{total:0,input:0,output:0,cacheWrite:0,cacheRead:0,messages:0,errors:0,cacheHitRate:null}:{total:128420,input:31200,output:11820,cacheWrite:4420,cacheRead:80980,messages:36,errors:1,cacheHitRate:72.2};
+  const requests=zero?[]:Array.from({length:18},(_,i)=>({id:String(i),time:base-i*1900000,sessionTitle:i===0?'调用接口 access_key: [redacted], secret_key: [redacted]':i%2?'趋势图与缓存统计核查':'扩展筛选数据对齐',source:i%3?'desktop':'cli',sourceLabel:i%3?'桌面端':'CLI',provider:'CodeArts',model:i%2?'GLM-5.1':'GPT-5.5',status:i===4?500:200,ok:i!==4,total:3200+i*240,input:900+i*40,output:420+i*18,cacheWrite:i%4?0:120,cacheRead:1800+i*160,latencyMs:820+i*75}));
+  const models=zero?[]:[{name:'GLM-5.1',provider:'CodeArts',total:78200,messages:20},{name:'GPT-5.5',provider:'CodeArts',total:36200,messages:10},{name:'DeepSeek V4 Flash',provider:'CodeArts',total:14020,messages:6}];
+  const sources=zero?[{id:'desktop',label:'桌面端',total:0,messages:0},{id:'cli',label:'CLI',total:0,messages:0}]:[{id:'desktop',label:'桌面端',total:88420,messages:24},{id:'cli',label:'CLI',total:40000,messages:12}];
+  const sessions=zero?[]:[{id:'1',title:'调用接口 access_key: [redacted], secret_key: [redacted]',directory:'C:/projects/codearts-bar',sourceLabel:'桌面端',age:120000,total:42000,model:'GLM-5.1'},{id:'2',title:'VS Code Webview 性能回归',directory:'C:/projects/plugin',sourceLabel:'CLI',age:3600000,total:28200,model:'GPT-5.5'}];
+  return {ok:true,timestamp:base,updatedAt:'刚刚更新',adapter:'node:sqlite',capabilities:{performance:false,queue:false},status:{level:'normal',label:zero?'0%':'42%'},usage:{today:usage,range:usage,window:{...usage,total:238000},week:{...usage,total:980000},all:{...usage,total:4210000}},selectedRange:{preset:'today',start:base-8*3600000,end:base,bucketMs:3600000},selectedScope:{source:'all',model:'all'},config:{windowHours:24},trends:{range:hourly,hourly24h:hourly,daily14d:hourly.slice(0,14)},models,sources,sessions,requests,performance:{latencyAvg:1280,latencyP95:3100,firstContentAvg:420,outputSpeed:31.8,errorRate:.014,queueAvg:92,queueP95:180},dbSize:14800000,stale:false};
 }
 (async()=>{
   fs.mkdirSync(outDir,{recursive:true});
@@ -63,11 +68,14 @@ function snapshot(zero=false) {
     if(!canvas) throw new Error('trend chart was not rendered');
     const box=await canvas.boundingBox();
     if(!box || box.width <= 0 || box.height <= 0) throw new Error('trend chart has no visible geometry');
-    await page.mouse.move(box.x + box.width * .72, box.y + box.height * .45);
+    await withTimeout('paint trend chart',()=>page.waitForFunction(()=>document.querySelector('#trendChart')?.dataset.yAxisTicks));
+    await page.mouse.move(box.x+box.width*.72,box.y+box.height*.45);
     await withTimeout('show chart tooltip',()=>page.waitForFunction(()=>{
       const tooltip=document.querySelector('[data-chart-tooltip]');
       return tooltip && !tooltip.hidden && tooltip.dataset.index !== undefined;
     }));
+    const privacy=await page.evaluate(()=>document.body.innerText);
+    if(/HPUAGK|JKcewe/.test(privacy)||!privacy.includes('[redacted]')) throw new Error('sensitive session text was not redacted');
     await withTimeout('capture VS Code tooltip',()=>page.screenshot({path:path.join(outDir,'vscode-tooltip.png'),fullPage:true}));
     await page.click('[data-range="custom"]');
     await withTimeout('show custom range',()=>page.waitForFunction(()=>{
@@ -92,6 +100,13 @@ function snapshot(zero=false) {
     });
     if(narrowGeometry.segmented!=='none'||narrowGeometry.select==='none'||narrowGeometry.left<0||narrowGeometry.right>narrowGeometry.width) throw new Error('narrow range controls are not responsive: '+JSON.stringify(narrowGeometry));
     await withTimeout('capture narrow range',()=>page.screenshot({path:path.join(visualDir,'custom-range-narrow.png'),fullPage:true}));
+    const sidebarFile=path.join(root,'.cache','vscode-webview-sidebar-preview.html'); fs.writeFileSync(sidebarFile,previewHtml('sidebar'),'utf8');
+    await page.goto('file:///'+sidebarFile.replace(/\\/g,'/'),{waitUntil:'domcontentloaded'});
+    await page.evaluate((data)=>window.dispatchEvent(new MessageEvent('message',{data:{type:'details',payload:data}})),snapshot(false));
+    const sidebarState=await page.evaluate(()=>({scope:getComputedStyle(document.querySelector('.scope-filter')).display,token:getComputedStyle(document.querySelector('.token-strip')).display,requests:getComputedStyle(document.querySelector('.request-surface')).display}));
+    if(sidebarState.scope!=='none'||sidebarState.token!=='none'||sidebarState.requests!=='none') throw new Error('sidebar leaked full-analysis workbench: '+JSON.stringify(sidebarState));
+    await page.screenshot({path:path.join(visualDir,'sidebar-overview.png'),fullPage:true});
+    await page.goto('file:///'+file.replace(/\\/g,'/'),{waitUntil:'domcontentloaded'});
     await page.setViewport({width:1120,height:900,deviceScaleFactor:1});
     await page.evaluate((data)=>window.dispatchEvent(new MessageEvent('message',{data:{type:'details',payload:data}})),{...snapshot(true),trends:{hourly24h:[],daily14d:[]}});
     await new Promise(r=>setTimeout(r,300));

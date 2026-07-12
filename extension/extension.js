@@ -14,7 +14,7 @@ let lastSnapshot;
 let refreshPromise;
 let detailsPromise;
 let dashboardHost;
-let dashboardRange = { rangePreset: "today" };
+let dashboardRange = { rangePreset: "today", source: "all", model: "all" };
 
 const T = {
   app: "\u7801\u9053 Bar",
@@ -175,10 +175,12 @@ function updateStatus(snapshot) {
 }
 
 async function loadDashboardDetails(options = {}) {
-  if (options.rangePreset) dashboardRange = { rangePreset: options.rangePreset, range: options.range };
+  const filterChanged = Boolean(options.rangePreset || options.source || options.model);
+  if (options.rangePreset) dashboardRange = { ...dashboardRange, rangePreset: options.rangePreset, range: options.range };
+  if (options.source || options.model) dashboardRange = { ...dashboardRange, source: options.source || dashboardRange.source || "all", model: options.model || dashboardRange.model || "all" };
   if (detailsPromise) {
     const current = await detailsPromise;
-    return options.rangePreset ? loadDashboardDetails({ reason: "range-followup" }) : current;
+    return filterChanged ? loadDashboardDetails({ reason: "filter-followup" }) : current;
   }
   if (!dashboardHost?.hasTargets()) return lastSnapshot;
   const c = config();
@@ -307,7 +309,7 @@ async function deactivate() {
   await localProvider.closeSqlJsWorker?.();
   closeSettingsStore?.();
   dashboardHost = null;
-  dashboardRange = { rangePreset: "today" };
+  dashboardRange = { rangePreset: "today", source: "all", model: "all" };
   lastSnapshot = null;
 }
 

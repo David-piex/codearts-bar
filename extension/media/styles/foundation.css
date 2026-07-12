@@ -14,25 +14,12 @@ html {
 body {
   margin: 0;
   color: var(--text);
-  background: linear-gradient(180deg, #ffffff 0, #f7f8fb 18%, #f5f7fb 100%);
+  background: var(--page);
   font: 13px/1.48 var(--font-ui);
   overflow-x: hidden;
   -webkit-font-smoothing: antialiased;
 }
-body::before {
-  content: "";
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  opacity: 0.72;
-  background:
-    radial-gradient(circle at 8% -5%, var(--accent-soft), transparent 35%),
-    radial-gradient(
-      circle at 98% 44%,
-      color-mix(in srgb, var(--cyan) 7%, transparent),
-      transparent 28%
-    );
-}
+body::before { content: none; }
 button {
   min-height: var(--control-h);
   border: 1px solid var(--line-strong);
@@ -246,6 +233,10 @@ body.refreshing .refresh-glyph {
 .custom-range > div { display: flex; gap: 7px; }
 .custom-range > p { align-self: center; margin: 0; color: var(--danger); font-size: 10px; }
 .range-arrow { align-self: center; color: var(--faint); }
+.scope-filter { display:flex; align-items:end; gap:8px; margin-bottom:12px; padding-bottom:12px; border-bottom:1px solid var(--line); }
+.scope-filter label { display:grid; gap:4px; min-width:150px; color:var(--muted); font-size:9px; }
+.scope-filter select { min-height:34px; }
+.scope-filter p { margin:0 0 7px auto; color:var(--muted); font-size:10px; }
 .segmented-control button {
   min-height: 30px;
   border: 0;

@@ -37,6 +37,9 @@ body[data-mode="sidebar"] .range-label { display: none; }
 body[data-mode="sidebar"] .custom-range { align-items: stretch; flex-direction: column; }
 body[data-mode="sidebar"] .custom-range .range-arrow { display: none; }
 body[data-mode="sidebar"] .custom-range > div { justify-content: flex-end; }
+body[data-mode="sidebar"] .scope-filter,
+body[data-mode="sidebar"] .token-strip,
+body[data-mode="sidebar"] .request-surface { display:none; }
 body[data-mode="sidebar"] .metric-grid {
   grid-template-columns: 1fr 1fr;
 }
@@ -86,6 +89,7 @@ body[data-mode="sidebar"] .session-row {
 body[data-mode="sidebar"] .session-meta {
   display: none;
 }
+body:not([data-mode="sidebar"]) .session-full-link { display:none; }
 body[data-mode="sidebar"] .privacy-footer {
   align-items: flex-start;
   flex-direction: column;
@@ -119,6 +123,11 @@ body[data-mode="sidebar"] .privacy-footer {
   .range-select { display: block; min-width: 150px; }
   .custom-range { align-items: stretch; flex-direction: column; }
   .custom-range .range-arrow { display: none; }
+  .scope-filter { align-items:stretch; flex-direction:column; }
+  .scope-filter label { width:100%; }
+  .scope-filter p { margin:0; }
+  .token-strip { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .token-strip div { border-bottom:1px solid var(--line); }
 }
 @media (max-width: 430px) {
   .metric-card {

@@ -65,6 +65,8 @@ function viewModel(snapshot) {
       range: trend(snapshot.trends?.range, 400),
     },
     selectedRange: snapshot.selectedRange || null,
+    selectedScope: snapshot.selectedScope || { source: "all", model: "all" },
+    sourceErrors: (snapshot.sourceErrors || []).slice(0, 8).map((item) => ({ source: item.source || "", message: item.message || "\u6570\u636e\u6e90\u8bfb\u53d6\u5931\u8d25" })),
     models: (snapshot.models || []).slice(0, 8).map((item) => ({
       name: item.model || item.name || "\u672a\u77e5\u6a21\u578b",
       provider: item.provider || "",
@@ -98,6 +100,12 @@ function viewModel(snapshot) {
         total: finite(item.usage?.total) || 0,
         model: item.usage?.topModel?.model || "",
       })),
+    requests: (snapshot.requests || []).slice(0, 40).map((item) => ({
+      id: item.id || "", time: finite(item.time), sessionTitle: item.sessionTitle || "\u672a\u547d\u540d\u4f1a\u8bdd",
+      source: item.source || "", sourceLabel: item.sourceLabel || item.source || "", provider: item.provider || "", model: item.model || "",
+      status: item.status ?? "", ok: item.ok !== false, total: finite(item.total) || 0, input: finite(item.input) || 0,
+      output: finite(item.output) || 0, cacheRead: finite(item.cacheRead) || 0, cacheWrite: finite(item.cacheWrite) || 0, latencyMs: finite(item.latencyMs),
+    })),
     performance: {
       latencyAvg: finite(performance.latency?.avg),
       latencyP95: finite(performance.latency?.p95),

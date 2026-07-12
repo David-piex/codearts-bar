@@ -169,24 +169,30 @@ assert.match(
   /\[hidden\]\s*\{\s*display:\s*none\s*!important/,
   "hidden webview states must override component display rules",
 );
-assert.match(componentCss, /backdrop-filter/);
+assert.match(
+  componentCss,
+  /\.surface,\s*\r?\n\.metric-card,\s*\r?\n\.state-card\s*\{[\s\S]*?background:\s*var\(--surface-solid\)/,
+  "full analysis should use quiet opaque work surfaces",
+);
 assert.match(responsiveCss, /prefers-reduced-motion/);
 assert.match(responsiveCss, /body\[data-mode="sidebar"\]/);
-assert.match(htmlSource, /data-performance-only/);
-assert.match(htmlSource, /MODEL MIX \/ FILTERED/, "model ranking must follow the selected range");
-assert.match(htmlSource, /LOCAL SOURCES \/ FILTERED/, "source distribution must follow the selected range");
+for (const id of ["dataAdapter", "dataSources", "dataRequests", "dataSessions", "dbSize"]) assert.match(htmlSource, new RegExp(`id="${id}"`), `missing data status field ${id}`);
+assert.ok((htmlSource.match(/\\u5f53\\u524d\\u8303\\u56f4/g) || []).length >= 2, "model, source and request sections must disclose the selected scope");
+for (const id of ["sourceFilter", "modelFilter", "metricInput", "metricOutput", "metricCacheWrite", "metricCacheRead", "requests"]) assert.match(htmlSource, new RegExp(`id="${id}"`), `missing full-analysis control ${id}`);
+assert.match(clientSource, /type: "filter"/);
+assert.match(viewsSource, /function requests\(snapshot\)/);
+assert.match(responsiveCss, /\.request-surface \{ display:none; \}/, "sidebar must not render the full request workbench");
 for (const range of ["today", "window", "week", "14d", "30d", "all", "custom"]) assert.match(htmlSource, new RegExp(`data-range="${range}"`), `missing range option ${range}`);
 assert.match(htmlSource, /type="datetime-local"/);
 assert.match(clientSource, /type: "range"/);
 assert.match(clientSource, /rangeEnd/);
 assert.match(clientSource, /366 \* 86400000/);
 assert.match(responsiveCss, /\.range-select \{ display: block/);
-assert.match(viewsSource, /capabilities\?\.performance !== false/);
 assert.match(viewsSource, /\\u5f53\\u524d\\u8303\\u56f4\\u65e0\\u8bf7\\u6c42/, "empty current range must disclose the seven-day cache fallback");
 assert.match(viewsSource, /cacheRate !== null && cacheRate !== undefined/, "zero and missing cache rates must remain distinct");
 assert.match(clientSource, /function zeroTrendRows\(\)/, "empty real ranges must synthesize zero buckets so axes remain visible");
 assert.match(clientSource, /rows\.length \? rows : zeroTrendRows\(\)/, "empty trend ranges must use the zero-axis fallback");
-assert.match(componentCss, /performance-unavailable/);
+assert.match(viewsSource, /sourceErrors/);
 
 const fakeVscode = {
   Uri: { joinPath: (...parts) => parts.map((part) => String(part)).join("/") },

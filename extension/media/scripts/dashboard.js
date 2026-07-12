@@ -5,6 +5,10 @@
   let range = saved.range || "today";
   let customStart = Number(saved.customStart || 0);
   let customEnd = Number(saved.customEnd || 0);
+  let sourceFilter = saved.sourceFilter || "all";
+  let modelFilter = saved.modelFilter || "all";
+  const knownSources = new Map();
+  const knownModels = new Set();
   const element = (selector) => document.querySelector(selector),
     all = (selector) => [...document.querySelectorAll(selector)];
   function zeroTrendRows() {
@@ -31,7 +35,7 @@
     const date = new Date(Number(timestamp) - new Date(Number(timestamp)).getTimezoneOffset() * 60000);
     return date.toISOString().slice(0, 16);
   }
-  function rangeState() { return { range, customStart, customEnd }; }
+  function rangeState() { return { range, customStart, customEnd, sourceFilter, modelFilter }; }
   function rangeText() {
     if (range !== "custom") return labels[range] || labels.today;
     if (!customStart || !customEnd) return "自定义";
@@ -55,10 +59,27 @@
     document.body.classList.add("refreshing");
     vscode.postMessage({ type: "range", preset: range, range: range === "custom" ? { start: customStart, end: customEnd } : undefined });
   }
+  function optionHtml(value, label, selected) { return `<option value="${window.CodeArtsFormat.html(value)}" ${selected ? "selected" : ""}>${window.CodeArtsFormat.html(label)}</option>`; }
+  function syncScopeChrome() {
+    for (const item of snapshot?.sources || []) knownSources.set(item.id, item.label);
+    for (const item of snapshot?.models || []) knownModels.add(item.name);
+    const sources = [...knownSources].map(([id, label]) => ({ id, label }));
+    const models = [...knownModels].map((name) => ({ name }));
+    element("#sourceFilter").innerHTML = optionHtml("all", "全部来源", sourceFilter === "all") + sources.map((item) => optionHtml(item.id, item.label, sourceFilter === item.id)).join("");
+    element("#modelFilter").innerHTML = optionHtml("all", "全部模型", modelFilter === "all") + models.map((item) => optionHtml(item.name, item.name, modelFilter === item.name)).join("");
+    const sourceLabel = sourceFilter === "all" ? "全部来源" : sources.find((item) => item.id === sourceFilter)?.label || sourceFilter;
+    element("#filterContext").textContent = `${rangeText()} · ${sourceLabel} · ${modelFilter === "all" ? "全部模型" : modelFilter}`;
+  }
+  function requestScope() {
+    document.body.classList.add("refreshing");
+    vscode.setState(rangeState());
+    vscode.postMessage({ type: "filter", source: sourceFilter, model: modelFilter });
+  }
   function selectRange(next) {
     range = next;
     vscode.setState(rangeState());
     syncRangeChrome();
+    syncScopeChrome();
     if (range !== "custom") requestRange();
   }
   function render() {
@@ -71,6 +92,7 @@
     views.models(snapshot);
     views.sources(snapshot);
     views.sessions(snapshot);
+    views.requests(snapshot);
     views.performance(snapshot);
     window.CodeArtsChart.draw(
       element("#trendChart"),
@@ -111,6 +133,8 @@
     if (action) vscode.postMessage({ type: action });
   });
   element("#rangeSelect").addEventListener("change", (event) => selectRange(event.target.value));
+  element("#sourceFilter").addEventListener("change", (event) => { sourceFilter = event.target.value; requestScope(); });
+  element("#modelFilter").addEventListener("change", (event) => { modelFilter = event.target.value; requestScope(); });
   window.addEventListener("message", (event) => {
     const message = event.data || {};
     if (message.type === "snapshot" || message.type === "details") {
@@ -119,6 +143,10 @@
         customStart = Number(message.payload.selectedRange.start || customStart);
         customEnd = Number(message.payload.selectedRange.end || customEnd);
         vscode.setState(rangeState());
+      }
+      if (message.payload?.selectedScope) {
+        sourceFilter = message.payload.selectedScope.source || "all";
+        modelFilter = message.payload.selectedScope.model || "all";
       }
       receive(message.payload);
     }
