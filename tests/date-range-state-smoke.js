@@ -41,6 +41,8 @@ assert.match(bootstrapSource, /function applyCustomDateInputs\(\)/);
 assert.match(bootstrapSource, /rangeFilter = 'customTime'/);
 assert.match(bootstrapSource, /localStorage\.setItem\('statsRange', rangeFilter\)/);
 assert.match(eventsSource, /dateCancel[\s\S]*?dateRangeOpen = false[\s\S]*?dateRangeDraftStart = 0/);
+assert.match(dateRangeSource, /dateRangeFutureInvalid/);
+assert.match(dateRangeSource, /end > now \+ 60000/);
 const cancelBody = eventsSource.slice(eventsSource.indexOf('if(dateCancel){'), eventsSource.indexOf('if(dateConfirm){'));
 assert.doesNotMatch(cancelBody, /statsRange|rangeFilter\s*=/);
 

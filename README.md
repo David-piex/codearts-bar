@@ -2,7 +2,7 @@
 
 > 本地优先的 CodeArts Agent 用量分析与会话工作台。
 
-CodeArts Bar 在本机读取 CodeArts Agent 生成的 SQLite 数据，提供 **Windows 桌面端、VS Code / CodeArts 扩展和 CLI**。它用于查看 token 用量、缓存命中、模型与来源趋势、性能指标和最近会话；原始数据库、日志和 prompt 不会上传。
+CodeArts Bar 在本机读取 CodeArts Agent 生成的 SQLite 数据，提供 **Windows 桌面端、VS Code / CodeArts 扩展、JetBrains 插件和 CLI**。它用于查看 token 用量、缓存命中、模型与来源趋势、性能指标和最近会话；原始数据库、日志和 prompt 不会上传。
 
 [下载 Windows 版本](https://gitee.com/dtse01/codearts-bar/releases) · [安装 VS Code 扩展](#vs-code--codearts-扩展) · [使用 CLI](#cli) · [从源码运行](#从源码运行)
 
@@ -14,6 +14,7 @@ CodeArts Bar 在本机读取 CodeArts Agent 生成的 SQLite 数据，提供 **W
 | --- | --- | --- |
 | **Windows Desktop** | 完整分析和会话管理 | 托盘应用、使用分析、日期/来源/模型筛选、诊断中心、会话固定/重命名/归档 |
 | **VS Code / CodeArts 扩展** | 编码时快速查看 | 活动栏概览、趋势、模型排行、来源分布、最近会话、Hover Tooltip 和空数据状态 |
+| **JetBrains 插件** | 在 IDEA、PyCharm、WebStorm、GoLand 中查看 | 使用分析 / 会话管理 / 诊断三项主导航、数据库分页会话与请求、脱敏诊断 |
 | **CLI / npm 包** | 终端、脚本和诊断 | 文本统计、JSON 快照、运行时检查、数据源诊断和配置 |
 
 ## 主要能力
@@ -69,6 +70,17 @@ codeartsBar.dbPath
 ```
 
 扩展保持轻量：它先加载 Summary，面板可见后再补齐趋势、模型和会话聚合；完整会话管理仍由桌面端承担。
+
+### JetBrains 插件
+
+1. 从 Release 下载 `codearts-bar-jetbrains-<version>.zip`。
+2. 在 IntelliJ IDEA、PyCharm、WebStorm 或 GoLand 中打开 **Settings | Plugins**。
+3. 点击齿轮菜单，选择 **Install Plugin from Disk...**，然后选择下载的 ZIP。
+4. 安装并重启 IDE 后，打开右侧 **CodeArts Bar** 工具窗口。
+
+插件工具窗口使用 **使用分析 / 会话管理 / 诊断** 三项主导航。使用分析包含 Token、缓存、软上限、趋势和模型/来源视图；会话管理支持搜索、来源筛选、数据库分页，以及从会话列表进入请求列表和请求明细；诊断页支持重试、打开设置或数据目录，并复制脱敏报告。
+
+插件内置共享 CLI 运行时，但仍需要系统可执行的 Node.js 18 或更高版本。自动发现失败时，可在 **Settings | Tools | CodeArts Bar** 中配置 Node.js、CLI 或 `opencode.db` 路径。会话搜索和分页直接查询本地数据库，不受概览快照条数限制。
 
 ### CLI
 
@@ -174,6 +186,7 @@ npm run verify               # 完整本地验证，包含 Electron 与 VS Code 
 npm run verify:ci            # Windows CI：验证、压力测试和视觉回归
 npm run test:visual          # 七场景像素回归
 npm run build:extension      # 生成 release/codearts-bar-status.vsix
+npm run build:jetbrains      # 生成 JetBrains 插件 ZIP（需要 JDK 21）
 npm run build:app            # 生成 Windows 安装版与便携版
 npm run pack:npm             # 生成精简 npm 包
 ```
@@ -191,6 +204,7 @@ npm run update:readme-screenshots
 ```text
 src/                 Electron、CLI、聚合与共享业务源码
 extension/           VS Code / CodeArts 扩展运行时和 Webview
+jetbrains-plugin/    IntelliJ Platform 插件、工具窗口和状态栏组件
 tests/               单测、E2E、压力测试与视觉回归
 .workflow/           Gitee Go 流水线
 .github/workflows/   Windows CI

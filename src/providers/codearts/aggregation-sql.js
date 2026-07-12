@@ -37,11 +37,13 @@ function summaryForSourceSql({ source, db, tables, queryAll, payload, windows })
 
 function trendForSourceSql({ db, tables, queryAll, payload, trendRange }) {
   const bucketMs = Math.max(60000, safeNumber(trendRange.bucketMs, 3600000));
+  const bucketOffsetMs = safeNumber(trendRange.bucketOffsetMs, 0);
+  const bucketExpression = `cast((time_created + ${bucketOffsetMs}) / ${bucketMs} as integer) * ${bucketMs} - ${bucketOffsetMs}`;
   const { where, params } = assistantWhere({ ...payload, range: { start: trendRange.start, end: trendRange.end } });
   const sql = `${assistantTokenCtes(tables, where)},
     bucketed as (
       select
-        cast(time_created / ${bucketMs} as integer) * ${bucketMs} as bucket,
+        ${bucketExpression} as bucket,
         total, input, output, reasoning, cacheRead, cacheWrite, error,
         case when message_completed >= message_created and message_created > 0 then message_completed - message_created else null end as latency
       from assistant_tokens
@@ -217,6 +219,8 @@ function sessionRowsForSourceSql({ db, queryAll }) {
 
 function aggregateBundleRowsForSourceSql({ db, tables, queryAll, payload, windows, trendRange }) {
   const bucketMs = Math.max(60000, safeNumber(trendRange.bucketMs, 3600000));
+  const bucketOffsetMs = safeNumber(trendRange.bucketOffsetMs, 0);
+  const bucketExpression = `cast((time_created + ${bucketOffsetMs}) / ${bucketMs} as integer) * ${bucketMs} - ${bucketOffsetMs}`;
   const trendStart = safeNumber(trendRange.start);
   const trendEnd = safeNumber(trendRange.end);
   const { where, params } = assistantWhere(payload);
@@ -315,12 +319,12 @@ function aggregateBundleRowsForSourceSql({ db, tables, queryAll, payload, window
     union all
     select
       'trend' as kind,
-      cast(time_created / ${bucketMs} as integer) * ${bucketMs} as key,
+      ${bucketExpression} as key,
       null as label,
       null as provider,
       null as model,
-      cast(time_created / ${bucketMs} as integer) * ${bucketMs} as start,
-      cast(time_created / ${bucketMs} as integer) * ${bucketMs} + ${bucketMs} as end,
+      ${bucketExpression} as start,
+      ${bucketExpression} + ${bucketMs} as end,
       sum(total) as total,
       sum(input) as input,
       sum(output) as output,
@@ -336,7 +340,7 @@ function aggregateBundleRowsForSourceSql({ db, tables, queryAll, payload, window
       max(latency) as latencyP95
     from token_rows
     where time_created >= ${trendStart} and time_created <= ${trendEnd}
-    group by cast(time_created / ${bucketMs} as integer) * ${bucketMs}`;
+    group by ${bucketExpression}`;
   return queryAll(db, sql, params);
 }
 

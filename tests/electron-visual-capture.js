@@ -7,9 +7,16 @@ const { spawnSync } = require('node:child_process');
 
 const root = path.resolve(__dirname, '..');
 const outputDir = path.join(root, '.cache', 'electron-visual');
-let electronPath;
-try { electronPath = require('electron'); }
-catch (error) { throw new Error(`Electron visual capture requires electron: ${error.message}`); }
+const electronRoot = path.dirname(require.resolve('electron/package.json'));
+const electronPathFile = path.join(electronRoot, 'path.txt');
+const overrideDist = process.env.ELECTRON_OVERRIDE_DIST_PATH;
+const executableName = fs.existsSync(electronPathFile) ? fs.readFileSync(electronPathFile, 'utf8').trim() : '';
+const electronPath = overrideDist
+  ? path.join(overrideDist, executableName || (process.platform === 'win32' ? 'electron.exe' : 'electron'))
+  : executableName ? path.join(electronRoot, 'dist', executableName) : '';
+if (!electronPath || !fs.existsSync(electronPath)) {
+  throw new Error('Electron visual capture requires an installed Electron binary; run npm install with Electron download access before visual tests.');
+}
 fs.rmSync(outputDir, { recursive: true, force: true });
 const result = spawnSync(electronPath, [path.join(root, 'tests', 'electron-dashboard-e2e-runner.js')], {
   cwd: root,

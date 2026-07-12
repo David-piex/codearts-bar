@@ -3,6 +3,19 @@
 const fs = require('node:fs');
 const path = require('node:path');
 
+const RETRYABLE_RENAME_CODES = new Set(['EPERM', 'EBUSY', 'EACCES', 'UNKNOWN']);
+function sleepSync(milliseconds) { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, milliseconds); }
+function renameWithRetry(source, target, options = {}) {
+  const attempts = Math.max(1, Number(options.renameAttempts || 8));
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    try { fs.renameSync(source, target); return; }
+    catch (error) {
+      if (!RETRYABLE_RENAME_CODES.has(error?.code) || attempt + 1 >= attempts) throw error;
+      sleepSync(Math.min(150, 20 * (attempt + 1)));
+    }
+  }
+}
+
 function writeFileAtomic(file, content, options = {}) {
   const target = path.resolve(file);
   const dir = path.dirname(target);
@@ -16,7 +29,7 @@ function writeFileAtomic(file, content, options = {}) {
     if (options.fsync !== false) fs.fsyncSync(handle);
     fs.closeSync(handle);
     handle = null;
-    fs.renameSync(temp, target);
+    renameWithRetry(temp, target, options);
     return target;
   } catch (error) {
     if (handle !== null) { try { fs.closeSync(handle); } catch {} }
@@ -36,4 +49,4 @@ function readJsonSafe(file, fallback = null) {
   catch { return fallback; }
 }
 
-module.exports = { writeFileAtomic, writeJsonAtomic, readJsonSafe };
+module.exports = { writeFileAtomic, writeJsonAtomic, readJsonSafe, renameWithRetry };

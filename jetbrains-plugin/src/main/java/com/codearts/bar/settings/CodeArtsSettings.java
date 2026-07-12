@@ -19,6 +19,12 @@ public final class CodeArtsSettings implements PersistentStateComponent<CodeArts
         public int refreshSeconds = 60;
         public int timeoutSeconds = 30;
         public boolean showStatusBar = true;
+        public String analyticsRange = "today";
+        public long analyticsCustomStart;
+        public long analyticsCustomEnd;
+        public String sessionRange = "all";
+        public long sessionCustomStart;
+        public long sessionCustomEnd;
     }
 
     private State state = new State();

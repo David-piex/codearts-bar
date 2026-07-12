@@ -394,6 +394,7 @@ assert.match(renderer, /scrollPagedTableToTop/);
 assert.match(renderer, /dateRangeDraftValidation/);
 assert.match(renderer, /data-date-range-error/);
 assert.match(renderer, /dateRangeOrderInvalid/);
+assert.match(renderer, /dateRangeFutureInvalid/);
 assert.match(renderer, /data-date-range-confirm/);
 assert.match(renderer, /preserveDatePopover/);
 assert.match(renderer, /preserveFilters/);

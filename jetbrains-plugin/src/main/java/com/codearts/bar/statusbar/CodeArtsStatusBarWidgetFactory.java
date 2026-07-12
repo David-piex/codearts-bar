@@ -19,7 +19,8 @@ import java.text.DecimalFormat;
 public final class CodeArtsStatusBarWidgetFactory implements StatusBarWidgetFactory {
     @Override public @NotNull @NonNls String getId() { return "CodeArtsBarStatus"; }
     @Override public @NotNull @Nls String getDisplayName() { return "\u7801\u9053\u4f7f\u7528\u91cf"; }
-    @Override public boolean isAvailable(@NotNull Project project) { return CodeArtsSettings.getInstance().getState().showStatusBar; }
+    @Override public boolean isAvailable(@NotNull Project project) { return true; }
+    @Override public boolean isEnabledByDefault() { return CodeArtsSettings.getInstance().getState().showStatusBar; }
     @Override public @NotNull StatusBarWidget createWidget(@NotNull Project project) { return new Widget(project); }
     @Override public void disposeWidget(@NotNull StatusBarWidget widget) { widget.dispose(); }
     @Override public boolean canBeEnabledOn(@NotNull StatusBar statusBar) { return true; }

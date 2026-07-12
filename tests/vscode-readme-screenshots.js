@@ -6,6 +6,17 @@ const puppeteer = require('puppeteer-core');
 const root = path.resolve(__dirname, '..');
 const outDir = path.join(root, 'docs', 'screenshots');
 const { dashboardHtml } = loadHtmlModule();
+const STEP_TIMEOUT_MS = 15000;
+
+function withTimeout(label, operation, timeoutMs = STEP_TIMEOUT_MS) {
+  let timer;
+  return Promise.race([
+    Promise.resolve().then(operation),
+    new Promise((_, reject) => {
+      timer = setTimeout(() => reject(new Error(`${label} timed out after ${timeoutMs}ms`)), timeoutMs);
+    }),
+  ]).finally(() => clearTimeout(timer));
+}
 function loadHtmlModule() {
   const file = path.join(root, 'extension', 'webview', 'html.js');
   const source = fs.readFileSync(file, 'utf8').replace("const vscode = require(\"vscode\");", `const vscode = { Uri: { joinPath: (_base, ...parts) => parts.join('/') } };`);
@@ -30,10 +41,39 @@ function snapshot(zero=false) {
 (async()=>{
   fs.mkdirSync(outDir,{recursive:true});
   const file=path.join(root,'.cache','vscode-webview-preview.html'); fs.mkdirSync(path.dirname(file),{recursive:true}); fs.writeFileSync(file,previewHtml(),'utf8');
-  const chrome=['C:/Program Files/Google/Chrome/Application/chrome.exe','C:/Program Files/Microsoft/Edge/Application/msedge.exe'].find(fs.existsSync); if(!chrome) throw new Error('Chrome or Edge not found'); const browser=await puppeteer.launch({headless:true,executablePath:chrome,args:['--allow-file-access-from-files']}); const page=await browser.newPage(); await page.setViewport({width:1120,height:900,deviceScaleFactor:1});
-  await page.goto('file:///'+file.replace(/\\/g,'/')); await page.evaluate(()=>document.body.classList.add('vscode-dark')); const palette=await page.evaluate(()=>({page:getComputedStyle(document.documentElement).getPropertyValue('--page').trim(),accent:getComputedStyle(document.documentElement).getPropertyValue('--accent').trim()})); if(palette.page!=='#f7f8fb'||palette.accent!=='#1687f5') throw new Error('VS Code theme leaked into fixed Desktop palette: '+JSON.stringify(palette)); await page.evaluate((data)=>window.dispatchEvent(new MessageEvent('message',{data:{type:'details',payload:data}})),snapshot(false)); await new Promise(r=>setTimeout(r,400));
-  const canvas=await page.$('#trendChart'); const box=await canvas.boundingBox(); await page.evaluate(() => { const c=document.querySelector('#trendChart'); const r=c.getBoundingClientRect(); c.dispatchEvent(new PointerEvent('pointermove',{bubbles:true,clientX:r.left+r.width*.72,clientY:r.top+r.height*.45})); }); await new Promise(r=>setTimeout(r,200)); const tooltipVisible=await page.$eval('[data-chart-tooltip]',el=>!el.hidden); if(!tooltipVisible) throw new Error('tooltip did not become visible'); await page.screenshot({path:path.join(outDir,'vscode-tooltip.png'),fullPage:true});
-  await page.evaluate((data)=>window.dispatchEvent(new MessageEvent('message',{data:{type:'details',payload:data}})),{...snapshot(true),trends:{hourly24h:[],daily14d:[]}}); await new Promise(r=>setTimeout(r,300)); await page.screenshot({path:path.join(outDir,'vscode-empty-state.png'),fullPage:true});
-  await browser.close(); console.log('ok - vscode README screenshots');
+  const chrome=['C:/Program Files/Google/Chrome/Application/chrome.exe','C:/Program Files/Microsoft/Edge/Application/msedge.exe'].find(fs.existsSync);
+  if(!chrome) throw new Error('Chrome or Edge not found');
+  let browser;
+  let page;
+  try {
+    browser=await withTimeout('launch preview browser',()=>puppeteer.launch({headless:true,executablePath:chrome,args:['--allow-file-access-from-files','--disable-background-networking']}));
+    page=await withTimeout('create preview page',()=>browser.newPage());
+    page.setDefaultTimeout(STEP_TIMEOUT_MS);
+    page.setDefaultNavigationTimeout(STEP_TIMEOUT_MS);
+    await page.setViewport({width:1120,height:900,deviceScaleFactor:1});
+    await withTimeout('load VS Code preview',()=>page.goto('file:///'+file.replace(/\\/g,'/'),{waitUntil:'domcontentloaded'}));
+    await page.evaluate(()=>document.body.classList.add('vscode-dark'));
+    const palette=await page.evaluate(()=>({page:getComputedStyle(document.documentElement).getPropertyValue('--page').trim(),accent:getComputedStyle(document.documentElement).getPropertyValue('--accent').trim()}));
+    if(palette.page!=='#f7f8fb'||palette.accent!=='#1687f5') throw new Error('VS Code theme leaked into fixed Desktop palette: '+JSON.stringify(palette));
+    await page.evaluate((data)=>window.dispatchEvent(new MessageEvent('message',{data:{type:'details',payload:data}})),snapshot(false));
+    await new Promise(r=>setTimeout(r,400));
+    const canvas=await page.$('#trendChart');
+    if(!canvas) throw new Error('trend chart was not rendered');
+    const box=await canvas.boundingBox();
+    if(!box || box.width <= 0 || box.height <= 0) throw new Error('trend chart has no visible geometry');
+    await page.mouse.move(box.x + box.width * .72, box.y + box.height * .45);
+    await withTimeout('show chart tooltip',()=>page.waitForFunction(()=>{
+      const tooltip=document.querySelector('[data-chart-tooltip]');
+      return tooltip && !tooltip.hidden && tooltip.dataset.index !== undefined;
+    }));
+    await withTimeout('capture VS Code tooltip',()=>page.screenshot({path:path.join(outDir,'vscode-tooltip.png'),fullPage:true}));
+    await page.evaluate((data)=>window.dispatchEvent(new MessageEvent('message',{data:{type:'details',payload:data}})),{...snapshot(true),trends:{hourly24h:[],daily14d:[]}});
+    await new Promise(r=>setTimeout(r,300));
+    await withTimeout('capture VS Code empty state',()=>page.screenshot({path:path.join(outDir,'vscode-empty-state.png'),fullPage:true}));
+    console.log('ok - vscode README screenshots');
+  } finally {
+    if(page) await withTimeout('close preview page',()=>page.close()).catch(()=>{});
+    if(browser) await withTimeout('close preview browser',()=>browser.close(),5000).catch(()=>browser.process()?.kill());
+  }
 })().catch(e=>{console.error(e);process.exit(1)});
 

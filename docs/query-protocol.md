@@ -8,7 +8,7 @@ The CLI query protocol is the stable integration boundary shared by the desktop 
 codearts-bar query <resource> [options]
 ```
 
-Resources: `dashboard`, `summary`, `trend`, `models`, `sources`, `sessions`, `requests`, and `diagnostics`.
+Resources: `dashboard`, `summary`, `trend`, `analytics`, `models`, `sources`, `sessions`, `requests`, and `diagnostics`.
 
 Pagination options use one-based pages:
 
@@ -17,6 +17,10 @@ Pagination options use one-based pages:
 ```
 
 `requests` additionally accepts `--session-id <id>`.
+
+`sessions` accepts `--search <text>` and applies the search before pagination across session id, title, and directory. Both paged resources accept `--source <id>` when a consumer must keep desktop and CLI records separate.
+
+`analytics` accepts `--start <milliseconds>`, `--end <milliseconds>`, and `--bucket-ms <milliseconds>`. Clients may pass `--bucket-offset-ms <milliseconds>` to align daily buckets with the user's local midnight. When omitted, the CLI derives the offset from the runtime time zone at the range midpoint.
 
 ## Envelope
 
@@ -36,7 +40,7 @@ Every command writes one JSON object to stdout:
 }
 ```
 
-Failures retain the same envelope, set `ok` to `false`, and include a machine-readable error message. Consumers must ignore unknown fields and must check `protocolVersion` before interpreting `data`.
+Failures retain the same envelope, set `ok` to `false`, include a machine-readable error message, and exit with a non-zero status. Consumers must ignore unknown fields and must check `protocolVersion` before interpreting `data`.
 
 ## Pagination contract
 

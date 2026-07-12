@@ -31,6 +31,15 @@ function normalizeTimestamp(timestamp, bucketMs = DEFAULT_TIME_BUCKET_MS) {
   if (!Number.isFinite(ts) || ts <= 0) return 0;
   return Math.floor(ts / bucketMs) * bucketMs;
 }
+function effectiveBucketOffsetMs(payload = {}) {
+  const explicit = Number(payload.bucketOffsetMs);
+  if (Number.isFinite(explicit)) return explicit;
+  const range = payload.range || {};
+  const start = Number(payload.start ?? range.start ?? 0);
+  const end = Number(payload.end ?? range.end ?? payload.timestamp ?? Date.now());
+  const reference = start > 0 && end > start ? start + (end - start) / 2 : end;
+  return -new Date(reference).getTimezoneOffset() * 60 * 1000;
+}
 
 function sourceFingerprints(sources = []) {
   return sources.map((source) => ({
@@ -53,6 +62,7 @@ function aggregateCacheKey(label, adapter, payload = {}, sources = []) {
     project: payload.project || '',
     bucket: payload.bucket || '',
     bucketMs: payload.bucketMs || 0,
+    bucketOffsetMs: effectiveBucketOffsetMs(payload),
     windowHours: payload.windowHours || 24,
     range: payload.range || {},
     start: payload.start || 0,

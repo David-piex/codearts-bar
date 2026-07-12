@@ -10,6 +10,7 @@ const { listProviders } = require('./providers');
 const localProvider = require('./providers/codeartsLocal');
 const agg = require('./core/aggregator');
 const { clamp, fmtInt, fmtDuration, fmtTime, fmtMs } = require('./core/format');
+const path = require('node:path');
 
 const DEFAULT_DB_PATH = localProvider.DEFAULT_DB_PATH;
 const DEFAULT_DAILY_LIMIT = 200_000;
@@ -17,6 +18,21 @@ const DEFAULT_WINDOW_HOURS = 24;
 
 function nowMs() { return Date.now(); }
 function resolveDbPath(options = {}) { return localProvider.resolveDbPath(options); }
+function samePath(left, right) {
+  if (!left || !right) return false;
+  return path.resolve(String(left)).toLowerCase() === path.resolve(String(right)).toLowerCase();
+}
+function allowsSnapshotCacheFallback(options = {}) {
+  if (process.env.CODEARTS_BAR_DB) return false;
+  const selected = options.dbPath || loadSettings().dbPath;
+  return !selected || samePath(selected, DEFAULT_DB_PATH);
+}
+function isAutomaticSourceSnapshot(snapshot = {}) {
+  const automaticPaths = localProvider.SOURCE_DEFS.map((source) => source.dbPath);
+  const cachedPaths = (snapshot.sources || []).map((source) => source.dbPath).filter(Boolean);
+  if (!cachedPaths.length && snapshot.dbPath) cachedPaths.push(snapshot.dbPath);
+  return cachedPaths.length > 0 && cachedPaths.every((cachedPath) => automaticPaths.some((automaticPath) => samePath(cachedPath, automaticPath)));
+}
 function buildRequestRows(messages, sessions, partMap, ttftMap) {
   const sessionMap = new Map((sessions || []).map((s) => [`${s.source || ''}:${s.id || ''}`, s]));
   return (messages || [])
@@ -177,9 +193,11 @@ async function getSnapshotWithCache(options = {}) {
   try {
     return await getSnapshotAsync(options);
   } catch (error) {
+    if (!allowsSnapshotCacheFallback(options)) throw error;
     try {
       const cached = readCache();
       const snap = cached.snapshot;
+      if (!isAutomaticSourceSnapshot(snap)) throw error;
       snap.ok = true;
       snap.freshness = { stale: true, source: 'cache', ageMs: Date.now() - (cached.savedAt || snap.timestamp || 0), error: error.message };
       return snap;

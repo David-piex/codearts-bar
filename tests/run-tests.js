@@ -10,11 +10,14 @@ const { listProviders } = require('../src/providers');
 const localProvider = require('../src/providers/codeartsLocal');
 const agg = require('../src/core/aggregator');
 const cacheMetrics = require('../src/core/cacheMetrics');
-const { getSnapshotAsync } = require('../src/codeartsData');
+const { getSnapshotAsync, getSnapshotWithCache } = require('../src/codeartsData');
+const { writeCache, closeSettingsStore } = require('../src/settings');
 const rollupCache = require('../src/providers/codearts/rollup-cache');
 const dashboardUsageRollup = require('../src/providers/codearts/usage-rollup');
 const usageRollupCalc = require('../src/providers/codearts/usage-rollup-calc');
 const aggregationRuntime = require('../src/providers/codearts/aggregation-runtime');
+const aggregateCache = require('../src/providers/codearts/aggregate-cache');
+const atomicFile = require('../src/core/atomic-file');
 
 function testOfficialStatsParser() {
   const text = fs.readFileSync(path.join(__dirname, 'fixtures', 'codearts-stats.txt'), 'utf8');
@@ -25,6 +28,56 @@ function testOfficialStatsParser() {
   assert.equal(parsed.output, 10);
   assert.equal(parsed.models.length, 1);
   assert.equal(parsed.models[0].name, 'huaweicloud-maas/gpt-5.5');
+}
+function testAtomicRenameRetriesTransientWindowsLocks() {
+  const original = fs.renameSync;
+  let attempts = 0;
+  fs.renameSync = (source, target) => {
+    attempts += 1;
+    if (attempts === 1) throw Object.assign(new Error('transient lock'), { code: 'UNKNOWN' });
+    return original(source, target);
+  };
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'codearts-bar-atomic-'));
+  const source = path.join(tmp, 'source.tmp');
+  const target = path.join(tmp, 'target.txt');
+  try {
+    fs.writeFileSync(source, 'complete', 'utf8');
+    atomicFile.renameWithRetry(source, target, { renameAttempts: 2 });
+    assert.equal(attempts, 2);
+    assert.equal(fs.readFileSync(target, 'utf8'), 'complete');
+  } finally {
+    fs.renameSync = original;
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+}
+async function testExplicitMissingDatabaseDoesNotUseSnapshotCache() {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'codearts-bar-explicit-db-'));
+  const previousConfigDir = process.env.CODEARTS_BAR_CONFIG_DIR;
+  const previousDb = process.env.CODEARTS_BAR_DB;
+  process.env.CODEARTS_BAR_CONFIG_DIR = path.join(tmp, 'config');
+  delete process.env.CODEARTS_BAR_DB;
+  closeSettingsStore();
+  try {
+    writeCache({
+      ok: true,
+      timestamp: Date.now() - 60_000,
+      dbPath: path.join(tmp, 'old.db'),
+      usage: { all: { total: 123 } },
+      freshness: { stale: false, source: 'live', ageMs: 0 },
+    });
+    const missingDb = path.join(tmp, 'missing.db');
+    await assert.rejects(
+      () => getSnapshotWithCache({ dbPath: missingDb }),
+      (error) => /不存在|ENOENT|no such file/i.test(String(error?.message || error)),
+    );
+  } finally {
+    closeSettingsStore();
+    if (previousConfigDir == null) delete process.env.CODEARTS_BAR_CONFIG_DIR;
+    else process.env.CODEARTS_BAR_CONFIG_DIR = previousConfigDir;
+    if (previousDb == null) delete process.env.CODEARTS_BAR_DB;
+    else process.env.CODEARTS_BAR_DB = previousDb;
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
 }
 function testQuota() {
   const timestamp = new Date('2026-07-07T06:00:00Z').getTime();
@@ -114,6 +167,60 @@ function testCacheMetricPipelineConsistency() {
   assert.equal(modelCache.cacheHitDenominator, 842000 + 100 + 509000 + 100);
   assert.equal(Math.round(modelCache.cacheHitRate * 10) / 10, Math.round(((509000 + 100) / modelCache.cacheHitDenominator) * 1000) / 10);
   assert.notEqual(core.cacheHitRate, (core.cacheRead / Math.max(1, core.cacheRead + core.cacheWrite)) * 100, 'cache hit rate must not use cacheRead/(cacheRead+cacheWrite)');
+}
+function testLocalDayTrendBuckets() {
+  const day = 86_400_000;
+  const shanghaiOffset = 8 * 3_600_000;
+  const localMidnight = Date.parse('2026-07-11T16:00:00.000Z');
+  const rows = [
+    { timeCreated: Date.parse('2026-07-11T16:30:00.000Z'), total: 10, input: 6, output: 4, messages: 1 },
+    { timeCreated: Date.parse('2026-07-12T15:30:00.000Z'), total: 20, input: 12, output: 8, messages: 1 },
+    { timeCreated: Date.parse('2026-07-12T16:30:00.000Z'), total: 30, input: 18, output: 12, messages: 1 },
+  ];
+  const buckets = usageRollupCalc.trendBucketsFromRows(rows, {
+    start: rows[0].timeCreated,
+    end: rows[2].timeCreated,
+    bucketMs: day,
+    bucketOffsetMs: shanghaiOffset,
+  });
+  assert.equal(buckets.length, 2);
+  assert.equal(buckets[0].start, localMidnight);
+  assert.equal(buckets[0].total, 30);
+  assert.equal(buckets[1].start, localMidnight + day);
+  assert.equal(buckets[1].total, 30);
+
+  const normalized = aggregationRuntime.normalizeTrendRange({
+    start: rows[0].timeCreated,
+    end: rows[2].timeCreated,
+    bucketMs: day,
+    bucketOffsetMs: shanghaiOffset,
+  });
+  assert.equal(normalized.bucketOffsetMs, shanghaiOffset);
+  const cachePayload = { start: rows[0].timeCreated, end: rows[2].timeCreated, bucketMs: day };
+  const shanghaiKey = aggregateCache.aggregateCacheKey('trend', 'unit', { ...cachePayload, bucketOffsetMs: shanghaiOffset }, []);
+  const utcKey = aggregateCache.aggregateCacheKey('trend', 'unit', { ...cachePayload, bucketOffsetMs: 0 }, []);
+  assert.notEqual(shanghaiKey, utcKey);
+
+  const dense = aggregationRuntime.densifyBuckets([buckets[0], buckets[1]], {
+    start: localMidnight,
+    end: localMidnight + 4 * day - 1,
+    bucketMs: day,
+    bucketOffsetMs: shanghaiOffset,
+  });
+  assert.equal(dense.length, 4);
+  assert.equal(dense[0].total, 30);
+  assert.equal(dense[1].total, 30);
+  assert.equal(dense[2].total, 0);
+  assert.equal(dense[3].total, 0);
+  assert.equal(dense.reduce((sum, bucket) => sum + bucket.total, 0), 60);
+
+  const tooWide = aggregationRuntime.densifyBuckets(buckets, {
+    start: localMidnight,
+    end: localMidnight + 500 * day,
+    bucketMs: day,
+    bucketOffsetMs: shanghaiOffset,
+  });
+  assert.equal(tooWide, buckets);
 }
 function testRollupSidecarCache() {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'codearts-bar-rollup-'));
@@ -364,7 +471,6 @@ async function testProviderDbPagination() {
 async function testProviderDbAggregates() {
   const dbPath = path.join(__dirname, 'fixtures', 'opencode-fixture.db');
   const previous = process.env.CODEARTS_BAR_FORCE_SQLJS;
-  process.env.CODEARTS_BAR_FORCE_SQLJS = '1';
   try {
     const timestamp = Date.UTC(2026, 6, 8, 0, 0, 0);
     const summary = await localProvider.getSummary({ dbPath, timestamp, windowHours: 24 });
@@ -375,12 +481,18 @@ async function testProviderDbAggregates() {
     assert.equal(Math.round(summary.usage.all.cacheHitRate * 10) / 10, 7.8);
     assert.notEqual(summary.usage.all.cacheHitDenominator, summary.usage.all.cacheRead + summary.usage.all.cacheWrite);
 
-    const trend = await localProvider.getTrendBuckets({ dbPath, start: 0, end: Date.UTC(2030, 0, 1), bucketMs: 86400000 });
+    const trendPayload = { dbPath, start: 0, end: Date.UTC(2030, 0, 1), bucketMs: 86400000, bucketOffsetMs: 8 * 3600000, disableAggregateCache: true };
+    delete process.env.CODEARTS_BAR_FORCE_SQLJS;
+    const nativeTrend = await localProvider.getTrendBuckets(trendPayload);
+    process.env.CODEARTS_BAR_FORCE_SQLJS = '1';
+    const trend = await localProvider.getTrendBuckets(trendPayload);
     assert.equal(trend.ok, true);
     assert.equal(trend.buckets.length, 1);
+    assert.equal(trend.buckets[0].start, Date.UTC(2026, 6, 6, 16, 0, 0));
     assert.equal(trend.buckets[0].total, 220);
     assert.equal(trend.buckets[0].cacheHitDenominator, 141);
     assert.equal(Math.round(trend.buckets[0].cacheHitRate * 10) / 10, 7.8);
+    assert.deepEqual(nativeTrend.buckets.map(({ start, total }) => ({ start, total })), trend.buckets.map(({ start, total }) => ({ start, total })));
 
     const source = await localProvider.getSourceStats({ dbPath, range: { start: 0, end: Date.UTC(2030, 0, 1) } });
     assert.equal(source.items[0].total, 220);
@@ -442,6 +554,13 @@ async function testDashboardUsageRollupCache() {
     assert.equal(Object.prototype.hasOwnProperty.call(buildStats.recentBuilds[0], 'dbPath'), false);
     assert.ok(Number(buildStats.lastBuildMs) >= 0);
 
+    const compact = dashboardUsageRollup.readCompactUsageRollupForSource({ id: 'custom', label: 'Custom', dbPath });
+    const windows = aggregationRuntime.timeWindows(payload);
+    const shanghaiTrend = aggregationRuntime.normalizeTrendRange({ ...payload, bucketOffsetMs: 8 * 3600000 });
+    const indiaTrend = aggregationRuntime.normalizeTrendRange({ ...payload, bucketOffsetMs: 5.5 * 3600000 });
+    assert.equal(usageRollupCalc.compactRollupIsSafeForDashboard(compact, { payload, windows, trendRange: shanghaiTrend }), true);
+    assert.equal(usageRollupCalc.compactRollupIsSafeForDashboard(compact, { payload, windows, trendRange: indiaTrend }), false);
+
     const second = await localProvider.getDashboardAggregates(payload);
     assert.equal(second.ok, true);
     assert.equal(second.usage.all.total, first.usage.all.total);
@@ -487,12 +606,15 @@ async function testDashboardUsageRollupCache() {
 }
 
 (async () => {
+  testAtomicRenameRetriesTransientWindowsLocks();
+  await testExplicitMissingDatabaseDoesNotUseSnapshotCache();
   testOfficialStatsParser();
   testQuota();
   testProviders();
   testAggregator();
   testCacheMetricsFormula();
   testCacheMetricPipelineConsistency();
+  testLocalDayTrendBuckets();
   testRollupSidecarCache();
   testUsageRollupStats();
   testSlowAggregateStats();

@@ -280,7 +280,7 @@ function latestErrors(rows, limit = 8) {
   return out;
 }
 function inferBalance(errors) { for (const e of errors) if (Number.isFinite(e.balance)) return { value: e.balance, required: e.required, source: 'latest_error', time: e.time, message: e.message }; return null; }
-function bucketStart(ms, bucketMs) { return Math.floor(ms / bucketMs) * bucketMs; }
+function bucketStart(ms, bucketMs, bucketOffsetMs = 0) { return Math.floor((ms + bucketOffsetMs) / bucketMs) * bucketMs - bucketOffsetMs; }
 function queueTrendStats(events, since, bucketMs) {
   const buckets = new Map();
   for (const e of events || []) {
@@ -298,13 +298,13 @@ function queueTrendStats(events, since, bucketMs) {
   }
   return [...buckets.values()].sort((a, b) => a.start - b.start).map((b) => { const avgMs = b.samples ? b.totalMs / b.samples : null; return { ...b, avgMs, queue: avgMs || 0, label: new Date(b.start).toLocaleString('zh-CN', { hour12: false }) }; });
 }
-function trendStats(messages, partMap, since, bucketMs) {
+function trendStats(messages, partMap, since, bucketMs, bucketOffsetMs = 0) {
   const buckets = new Map();
   for (const row of messages) {
     if (row.time_created < since) continue;
     const data = parseJsonSafe(row.data, {});
     if (data.role !== 'assistant') continue;
-    const key = bucketStart(row.time_created, bucketMs);
+    const key = bucketStart(row.time_created, bucketMs, bucketOffsetMs);
     const b = buckets.get(key) || { start: key, end: key + bucketMs, total: 0, input: 0, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0, messages: 0, errors: 0, latencies: [] };
     const t = tokenForMessage(row, partMap);
     addToken(b, t); b.messages += 1;

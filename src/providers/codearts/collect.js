@@ -38,9 +38,12 @@ async function collectOneSqlJs(source) {
     };
   } finally { closeDb(db); }
 }
-function mergeCollections(collections, adapter = 'mixed') {
+function mergeCollections(collections, adapter = 'mixed', errors = []) {
   const existing = collections.filter(Boolean);
-  if (!existing.length) throw new Error('没有可读取的 CodeArts 数据源');
+  if (!existing.length) {
+    if (errors.length === 1) throw new Error(errors[0].error);
+    throw new Error('没有可读取的 CodeArts 数据源');
+  }
   const primary = existing[0];
   return {
     adapter,
@@ -140,7 +143,7 @@ function collectRowsNative(options = {}) {
     try { out.push(collectOneNative(source)); }
     catch (error) { errors.push({ source, error: error.message }); }
   }
-  const merged = mergeCollections(out, 'node:sqlite');
+  const merged = mergeCollections(out, 'node:sqlite', errors);
   if (errors.length) merged.sourceErrors = errors;
   return merged;
 }
@@ -152,7 +155,7 @@ async function collectRowsSqlJs(options = {}) {
     try { out.push(await collectOneSqlJs(source)); }
     catch (error) { errors.push({ source, error: error.message }); }
   }
-  const merged = mergeCollections(out, 'sql.js');
+  const merged = mergeCollections(out, 'sql.js', errors);
   if (errors.length) merged.sourceErrors = errors;
   return merged;
 }

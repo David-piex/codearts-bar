@@ -30,11 +30,13 @@ function composeDateTime(dateValue, timeValue, fallback){
   return base.getTime();
 }
 function normalizeCustomDateRange(s = snapshot){
-  const now = Number(s?.timestamp || Date.now());
+  const now = Date.now();
   let start = Number(customDateStart || 0);
   let end = Number(customDateEnd || 0);
   if(!Number.isFinite(end) || end <= 0) end = now;
+  end = Math.min(end, now);
   if(!Number.isFinite(start) || start <= 0) start = end - 86400000;
+  if(start >= end) start = end - 86400000;
   if(start > end) [start, end] = [end, start];
   const maxSpan = 366 * 86400000;
   if(end - start > maxSpan) start = end - maxSpan;
@@ -59,8 +61,10 @@ function dateRangeDraftValidation(){
   ensureDateRangeDraft();
   const start = Number(dateRangeDraftStart || 0);
   const end = Number(dateRangeDraftEnd || 0);
+  const now = Date.now();
   if(!Number.isFinite(start) || !Number.isFinite(end) || start <= 0 || end <= 0) return TXT.dateRangeInvalid || 'Invalid date range';
   if(end <= start) return TXT.dateRangeOrderInvalid || 'End time must be later than start time';
+  if(end > now + 60000) return TXT.dateRangeFutureInvalid || 'End time cannot be later than now';
   if(end - start > 366 * 86400000) return TXT.dateRangeTooLong || 'Date range is too long';
   return '';
 }

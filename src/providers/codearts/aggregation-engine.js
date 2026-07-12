@@ -18,6 +18,7 @@ const {
   sourceStatsFromDashboardBundle,
   modelStatsFromDashboardBundle,
   mergeBuckets,
+  densifyBuckets,
   mergeModelStats,
   mergeSessionSummaries,
   slowAggregateStats,
@@ -65,28 +66,29 @@ function getTrendBucketsNative(payload = {}) {
   return timeAggregateSync('trendBuckets', 'node:sqlite', payload, () => {
     const rollupBundle = dashboardBundleFromUsageRollups(payload, 'node:sqlite');
     if (rollupBundle) return trendFromDashboardBundle(rollupBundle, payload);
-    const { start, end, bucketMs, timestamp } = normalizeTrendRange(payload);
+    const { start, end, bucketMs, bucketOffsetMs, timestamp } = normalizeTrendRange(payload);
     const buckets = [];
-    const trendRange = { start, end, bucketMs, timestamp };
+    const trendRange = { start, end, bucketMs, bucketOffsetMs, timestamp };
     const result = runNativeAggregate(payload, (args) => nativeSql.trendForSourceSql({ ...args, payload, trendRange }));
     for (const arr of result.items) for (const b of arr) buckets.push(b);
-    const merged = mergeBuckets(buckets, bucketMs);
-    return { ok: true, timestamp, start, end, bucketMs, buckets: merged, sourceErrors: result.errors };
+    const merged = densifyBuckets(mergeBuckets(buckets, bucketMs), trendRange);
+    return { ok: true, timestamp, start, end, bucketMs, bucketOffsetMs, buckets: merged, sourceErrors: result.errors };
   });
 }
 async function getTrendBucketsSqlJs(payload = {}) {
   return timeAggregateAsync('trendBuckets', 'sql.js', payload, async () => {
     const rollupBundle = dashboardBundleFromUsageRollups(payload, 'sql.js');
     if (rollupBundle) return trendFromDashboardBundle(rollupBundle, payload);
-    const { start, end, bucketMs, timestamp } = normalizeTrendRange(payload);
+    const { start, end, bucketMs, bucketOffsetMs, timestamp } = normalizeTrendRange(payload);
     const buckets = [];
     const result = await runSqlJsAggregate(payload, ({ source, db, tables, queryAll }) => {
       const rows = queryAssistantRows(queryAll, db, source, payload, start, end);
       const { partMap } = tokenUsageForRows(queryAll, db, source, tables, rows);
-      return agg.trendStats(rows, partMap, start, bucketMs);
+      return agg.trendStats(rows, partMap, start, bucketMs, bucketOffsetMs);
     });
     for (const arr of result.items) for (const b of arr) buckets.push(b);
-    return { ok: true, timestamp, start, end, bucketMs, buckets: mergeBuckets(buckets, bucketMs), sourceErrors: result.errors };
+    const merged = densifyBuckets(mergeBuckets(buckets, bucketMs), { start, end, bucketMs, bucketOffsetMs });
+    return { ok: true, timestamp, start, end, bucketMs, bucketOffsetMs, buckets: merged, sourceErrors: result.errors };
   });
 }
 async function getTrendBuckets(payload = {}) {
@@ -169,7 +171,7 @@ function mergeDashboardAggregateBundle(items = [], payload = {}, errors = []) {
   const trendRange = normalizeTrendRange(payload);
   const summary = mergeSummaryParts(items.map((x) => x.summary), payload);
   const sessionSummary = mergeSessionSummaries(items.map((x) => x.sessionSummary).filter(Boolean), payload, errors);
-  const buckets = mergeBuckets(items.flatMap((x) => x.trendBuckets || []), trendRange.bucketMs);
+  const buckets = densifyBuckets(mergeBuckets(items.flatMap((x) => x.trendBuckets || []), trendRange.bucketMs), trendRange);
   const sourceStats = items.map((x) => x.sourceStat).filter(Boolean).sort((a, b) => b.total - a.total);
   const modelStats = mergeModelStats(items.map((x) => x.modelStats || []));
   const rollups = items.map((x) => x.usageRollup).filter(Boolean);
@@ -179,6 +181,7 @@ function mergeDashboardAggregateBundle(items = [], payload = {}, errors = []) {
     start: trendRange.start,
     end: trendRange.end,
     bucketMs: trendRange.bucketMs,
+    bucketOffsetMs: trendRange.bucketOffsetMs,
     usage: summary.usage,
     sources: summary.sources,
     buckets,

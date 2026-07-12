@@ -16,7 +16,9 @@
         <action id="CodeArtsBar.Refresh" class="com.codearts.bar.actions.RefreshAction" text="CodeArts Bar: Refresh Usage Data" description="Refresh local CodeArts Agent usage data" icon="/icons/codearts.svg">
             <add-to-group group-id="ToolsMenu" anchor="last"/>
         </action>
-        <action id="CodeArtsBar.OpenToolWindow" class="com.codearts.bar.actions.OpenToolWindowAction" text="CodeArts Bar: Open Usage Analytics" description="Open the CodeArts Bar usage analytics tool window"/>
+        <action id="CodeArtsBar.OpenToolWindow" class="com.codearts.bar.actions.OpenToolWindowAction" text="CodeArts Bar: Open Usage Analytics" description="Open the CodeArts Bar usage analytics tool window" icon="/icons/codearts.svg">
+            <add-to-group group-id="ToolsMenu" anchor="last"/>
+        </action>
         <action id="CodeArtsBar.OpenDataFolder" class="com.codearts.bar.actions.OpenDataFolderAction" text="CodeArts Bar: Open Local Data Folder" description="Open the CodeArts Agent local data directory"/>
     </actions>
 </idea-plugin>

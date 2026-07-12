@@ -2,6 +2,7 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
+const crypto = require('node:crypto');
 
 const root = path.resolve(__dirname, '..');
 const srcDir = path.join(root, 'src');
@@ -67,10 +68,28 @@ function copySqlRuntime() {
 }
 
 function writeManifest(files) {
+  const packagedFiles = [
+    ...files.map((file) => ({ rel: path.relative(root, file).replace(/\\/g, '/'), file })),
+    ...['sql-wasm.js', 'sql-wasm.wasm'].map((name) => ({
+      rel: `node_modules/sql.js/dist/${name}`,
+      file: path.join(outDir, 'node_modules', 'sql.js', 'dist', name),
+    })),
+  ].sort((left, right) => left.rel.localeCompare(right.rel));
+  const digest = crypto.createHash('sha256');
+  for (const item of packagedFiles) {
+    digest.update(item.rel, 'utf8');
+    digest.update('\0');
+    digest.update(fs.readFileSync(item.file));
+    digest.update('\0');
+  }
   const manifest = {
-    generatedAt: new Date().toISOString(),
+    contentHash: digest.digest('hex'),
     entry: 'src/bin.js',
     files: files.map((file) => path.relative(root, file).replace(/\\/g, '/')).sort(),
+    hashes: Object.fromEntries(packagedFiles.map((item) => [
+      item.rel,
+      crypto.createHash('sha256').update(fs.readFileSync(item.file)).digest('hex'),
+    ])),
   };
   fs.writeFileSync(path.join(outDir, 'CLI_RUNTIME_MANIFEST.json'), JSON.stringify(manifest, null, 2), 'utf8');
 }

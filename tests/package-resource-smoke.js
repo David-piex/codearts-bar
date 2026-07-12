@@ -35,6 +35,8 @@ if (fs.existsSync(generatedCliDir)) {
   assert.equal(fs.existsSync(manifestFile), true, "generated CLI runtime should include a manifest");
   const manifest = JSON.parse(fs.readFileSync(manifestFile, "utf8"));
   assert.equal(manifest.entry, "src/bin.js", "generated CLI runtime manifest should point at the real bin entry");
+  assert.match(manifest.contentHash, /^[0-9a-f]{64}$/, "generated CLI runtime manifest should use a stable content hash");
+  assert.equal(Object.keys(manifest.hashes || {}).length, (manifest.files || []).length + 2, "every generated runtime file should have an integrity hash");
   assert.ok((manifest.files || []).includes("src/bin.js"), "generated CLI runtime manifest should include bin.js");
   assert.ok((manifest.files || []).includes("src/cli.js"), "generated CLI runtime manifest should include cli.js");
   assert.equal((manifest.files || []).includes("src/main.js"), false, "generated CLI runtime manifest must not include Electron main process");

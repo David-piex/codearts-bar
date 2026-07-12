@@ -196,6 +196,7 @@ function compactRollupIsSafeForDashboard(compact, { payload = {}, windows = {}, 
   if (bucketMs !== HOUR_MS) return false;
   const trendBucketMs = Math.max(60000, toNumber(trendRange.bucketMs, HOUR_MS));
   if (trendBucketMs < bucketMs || trendBucketMs % bucketMs !== 0) return false;
+  if (toNumber(trendRange.bucketOffsetMs) % bucketMs !== 0) return false;
   const minTime = toNumber(compact.minTime);
   const maxTime = toNumber(compact.maxTime);
   const range = normalizeRange(payload.range || {});
@@ -227,9 +228,10 @@ function trendBucketsFromCompact(compact, trendRange = {}) {
   const bucketMs = Math.max(sourceBucketMs, toNumber(trendRange.bucketMs, sourceBucketMs));
   const start = toNumber(trendRange.start);
   const end = toNumber(trendRange.end);
+  const bucketOffsetMs = toNumber(trendRange.bucketOffsetMs);
   const map = new Map();
   for (const row of compactRowsInRange(compact.hourly || [], start, end)) {
-    const bucket = Math.floor(toNumber(row.start) / bucketMs) * bucketMs;
+    const bucket = Math.floor((toNumber(row.start) + bucketOffsetMs) / bucketMs) * bucketMs - bucketOffsetMs;
     const prev = map.get(bucket) || emptyPlainUsage({ start: bucket, end: bucket + bucketMs });
     addCompactRow(prev, row);
     map.set(bucket, prev);
@@ -332,12 +334,13 @@ function trendBucketsFromRows(rows = [], trendRange = {}) {
   const bucketMs = Math.max(60000, toNumber(trendRange.bucketMs, 3600000));
   const start = toNumber(trendRange.start);
   const end = toNumber(trendRange.end);
+  const bucketOffsetMs = toNumber(trendRange.bucketOffsetMs);
   const map = new Map();
   for (const row of rows) {
     const time = toNumber(row.timeCreated);
     if (start && time < start) continue;
     if (end && time > end) continue;
-    const bucket = Math.floor(time / bucketMs) * bucketMs;
+    const bucket = Math.floor((time + bucketOffsetMs) / bucketMs) * bucketMs - bucketOffsetMs;
     const prev = map.get(bucket) || {
       start: bucket,
       end: bucket + bucketMs,

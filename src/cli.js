@@ -8,7 +8,10 @@ const { officialStatsCacheStatus } = require('./officialStats');
 const { listProviders } = require('./providers');
 const { sqliteRuntimeStatus } = require('./providers/codearts/sqlite');
 const { jetbrainsPayload } = require('./jetbrains-payload');
-const { queryPayload } = require('./protocol/query');
+const { queryPayload, databasePagePayload } = require('./protocol/query');
+const { envelope, failure } = require('./protocol/envelope');
+const { getSessionsPage, getRequestsPage, getSessionRequestsPage } = require('./providers/codearts/pagination');
+const localProvider = require('./providers/codeartsLocal');
 
 const cmd = process.argv[2] || 'snapshot';
 const rest = process.argv.slice(3);
@@ -28,6 +31,16 @@ function parseSetArgs(args) {
   return out;
 }
 
+function usageFromBuckets(buckets = []) {
+  const fields = ['total', 'input', 'output', 'reasoning', 'cacheRead', 'cacheWrite', 'messages', 'errors', 'cacheHitDenominator'];
+  const usage = Object.fromEntries(fields.map((field) => [field, 0]));
+  for (const bucket of buckets || []) {
+    for (const field of fields) usage[field] += Number(bucket?.[field] || 0);
+  }
+  usage.cacheHitRate = usage.cacheHitDenominator > 0 ? (usage.cacheRead / usage.cacheHitDenominator) * 100 : null;
+  return usage;
+}
+
 async function run() {
   try {
     if (cmd === 'snapshot') {
@@ -39,10 +52,48 @@ async function run() {
       const resource = rest[0] || 'dashboard';
       const optionArgs = rest.slice(1);
       const readOption = (name, fallback = null) => { const index = optionArgs.indexOf(name); return index >= 0 ? optionArgs[index + 1] : fallback; };
+      const page = Math.max(1, Math.trunc(Number(readOption('--page', 1)) || 1));
+      const pageSize = Math.max(1, Math.min(500, Math.trunc(Number(readOption('--page-size', 50)) || 50)));
+      const sessionId = readOption('--session-id');
+      const source = readOption('--source');
+      const query = readOption('--search', '');
+      const start = Math.max(0, Number(readOption('--start', 0)) || 0);
+      const end = Math.max(0, Number(readOption('--end', 0)) || 0);
+      const range = { start, end };
+      const pageOptions = { page, pageSize, sessionId, source, query, range };
+      if (resource === 'analytics') {
+        const bucketMs = Math.max(60000, Number(readOption('--bucket-ms', 3600000)) || 3600000);
+        const bucketOffsetOption = readOption('--bucket-offset-ms');
+        const bucketOffsetMs = bucketOffsetOption == null ? undefined : Number(bucketOffsetOption);
+        const timestamp = end || Date.now();
+        const aggregates = await localProvider.getDashboardAggregates({ source, range, timestamp, bucketMs, bucketOffsetMs });
+        if (!aggregates?.ok) throw new Error(aggregates?.error || 'Unable to aggregate local usage data.');
+        const buckets = Array.isArray(aggregates.buckets) ? aggregates.buckets : [];
+        console.log(JSON.stringify(envelope({
+          start: aggregates.start || start,
+          end: aggregates.end || end,
+          bucketMs: aggregates.bucketMs || bucketMs,
+          bucketOffsetMs: aggregates.bucketOffsetMs ?? bucketOffsetMs ?? 0,
+          usage: usageFromBuckets(buckets),
+          trend: buckets,
+          models: aggregates.modelStats || [],
+          sources: aggregates.sourceStats || [],
+        }, pageOptions), null, 2));
+        return;
+      }
+      if (resource === 'sessions' || resource === 'requests') {
+        const payload = { limit: pageSize, offset: (page - 1) * pageSize, query, source, range };
+        const result = resource === 'sessions'
+          ? await getSessionsPage({ ...payload, status: 'active' })
+          : sessionId
+            ? await getSessionRequestsPage({ ...payload, sessionId })
+            : await getRequestsPage(payload);
+        console.log(JSON.stringify(databasePagePayload(result, pageOptions), null, 2));
+        return;
+      }
       const snap = await getSnapshotWithCache();
       console.log(JSON.stringify(queryPayload(snap, resource, {
-        page: Number(readOption('--page', 1)), pageSize: Number(readOption('--page-size', 50)),
-        sessionId: readOption('--session-id'), requestId: readOption('--request-id'),
+        ...pageOptions, requestId: readOption('--request-id'),
       }), null, 2));
       return;
     }
@@ -133,6 +184,7 @@ Usage:
   } catch (error) {
     const snap = errorSnapshot(error);
     if (cmd === 'snapshot') console.log(JSON.stringify(snap, null, 2));
+    else if (cmd === 'query') console.log(JSON.stringify(failure(error), null, 2));
     else console.error(snap.error);
     process.exitCode = 1;
   }

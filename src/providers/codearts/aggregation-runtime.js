@@ -174,7 +174,13 @@ function normalizeTrendRange(payload = {}) {
   const endValue = payload.end ?? payload.range?.end ?? timestamp;
   const start = Number(startValue);
   const end = Number(endValue);
-  return { timestamp, start, end, bucketMs };
+  const reference = Number.isFinite(start) && Number.isFinite(end) ? start + (end - start) / 2 : timestamp;
+  const localOffset = -new Date(reference).getTimezoneOffset() * 60 * 1000;
+  const requestedOffset = Number(payload.bucketOffsetMs);
+  const bucketOffsetMs = Number.isFinite(requestedOffset)
+    ? Math.max(-day, Math.min(day, requestedOffset))
+    : localOffset;
+  return { timestamp, start, end, bucketMs, bucketOffsetMs };
 }
 function mergeSummaryParts(parts, payload = {}) {
   const usage = { today: emptyUsage(), window: emptyUsage(), week: emptyUsage(), all: emptyUsage() };
@@ -207,7 +213,8 @@ function trendFromDashboardBundle(bundle = {}, payload = {}) {
     start: Number(bundle.start || trendRange.start),
     end: Number(bundle.end || trendRange.end),
     bucketMs: Number(bundle.bucketMs || trendRange.bucketMs),
-    buckets: bundle.buckets || [],
+    bucketOffsetMs: Number(bundle.bucketOffsetMs ?? trendRange.bucketOffsetMs),
+    buckets: densifyBuckets(bundle.buckets || [], trendRange),
     sourceErrors: bundle.sourceErrors || [],
     perf: bundle.perf,
   };
@@ -249,6 +256,38 @@ function mergeBuckets(items, bucketMs) {
     b.label = new Date(b.start).toLocaleString('zh-CN', { hour12: false });
     return agg.cacheMetrics.withCacheHitMetrics(b);
   });
+}
+function densifyBuckets(items, trendRange = {}, maxBuckets = 400) {
+  const bucketMs = Math.max(60000, Number(trendRange.bucketMs || 3600000));
+  const offset = Number(trendRange.bucketOffsetMs || 0);
+  const start = Number(trendRange.start || 0);
+  const end = Number(trendRange.end || 0);
+  if (!(start > 0) || !(end >= start)) return items || [];
+  const first = Math.floor((start + offset) / bucketMs) * bucketMs - offset;
+  const last = Math.floor((end + offset) / bucketMs) * bucketMs - offset;
+  const count = Math.floor((last - first) / bucketMs) + 1;
+  if (count <= 0 || count > maxBuckets) return items || [];
+  const byStart = new Map((items || []).map((item) => [Number(item.start || 0), item]));
+  const dense = [];
+  for (let index = 0; index < count; index++) {
+    const bucketStart = first + index * bucketMs;
+    dense.push(byStart.get(bucketStart) || agg.cacheMetrics.withCacheHitMetrics({
+      start: bucketStart,
+      end: bucketStart + bucketMs,
+      total: 0,
+      input: 0,
+      output: 0,
+      reasoning: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+      messages: 0,
+      errors: 0,
+      latencyAvg: null,
+      latencyP95: null,
+      label: new Date(bucketStart).toLocaleString('zh-CN', { hour12: false }),
+    }));
+  }
+  return dense;
 }
 function mergeModelStats(items) {
   const map = new Map();
@@ -298,6 +337,7 @@ module.exports = {
   sourceStatsFromDashboardBundle,
   modelStatsFromDashboardBundle,
   mergeBuckets,
+  densifyBuckets,
   mergeModelStats,
   mergeSessionSummaries,
   slowAggregateStats,

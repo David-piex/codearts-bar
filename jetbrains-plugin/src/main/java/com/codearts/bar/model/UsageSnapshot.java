@@ -1,6 +1,9 @@
 package com.codearts.bar.model;
 
 import com.google.gson.*;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.*;
 
 public record UsageSnapshot(
@@ -12,12 +15,14 @@ public record UsageSnapshot(
         Performance performance, QueueStats queue, Health health, Quota quota,
         long sessionTotal, long sessionActive
 ) {
+    private static final int MAX_DENSE_TREND_BUCKETS = 400;
     public record UsageWindow(long total, long input, long output, long reasoning, long cacheRead, long cacheWrite, long messages, long errors, Double cacheHitRate) {}
     public record TrendPoint(long start, String label, long total, long input, long output, long cacheRead) {}
     public record ModelUsage(String name, String provider, String model, long total, long input, long output, long reasoning, long cacheRead, long requests, long errors, Double cacheHitRate, Double latencyAvg, Double latencyP95) {}
     public record SourceInfo(String label, String adapter, String dbPath, long total, long requests, long errors, Double latencyAvg, Double latencyP95) {}
     public record SessionInfo(String id, String title, String directory, String source, long updatedAt, long ageMs, long total, long input, long output, long requests, String model, long errors, Double cacheHitRate) {}
     public record RequestInfo(String id, String sessionTitle, String source, String provider, String model, long time, int status, boolean success, long total, long input, long output, long reasoning, long cacheRead, long latencyMs, Double ttftMs, Double outputTokensPerSec) {}
+    public record AnalyticsData(UsageWindow usage, List<TrendPoint> trend, List<ModelUsage> models, List<SourceInfo> sources) {}
     public record Performance(long samples, long errors, Double errorRate, Double latencyAvg, Double latencyP95, Double ttftAvg, Double ttftP95, Double firstContentAvg, Double outputTokensPerSec) {}
     public record QueueStats(long samples, Double avgMs, Double p95Ms, Double maxMs) {}
     public record Health(String level, String label, String message, List<String> issues) {}
@@ -69,7 +74,38 @@ public record UsageSnapshot(
     private static List<SourceInfo> sources(JsonArray a) { List<SourceInfo> out=new ArrayList<>(); for(JsonElement e:a){if(!e.isJsonObject())continue;JsonObject x=e.getAsJsonObject(),lat=object(x,"latency");String label=first(string(x,"sourceLabel"),string(x,"label"),string(x,"key"),string(x,"source"),string(x,"id"));out.add(new SourceInfo(label,string(x,"adapter"),string(x,"dbPath"),number(x,"total"),numberEither(x,"messages","requests"),number(x,"errors"),decimalOrNull(lat,"avg"),decimalOrNull(lat,"p95")));}return List.copyOf(out); }
     public static List<SessionInfo> sessionItems(JsonObject data) { return sessions(array(data, "items")); }
     public static List<RequestInfo> requestItems(JsonObject data) { return requests(array(data, "items")); }
-    private static List<SessionInfo> sessions(JsonArray a) { List<SessionInfo> out=new ArrayList<>(); for(JsonElement e:a){if(!e.isJsonObject())continue;JsonObject x=e.getAsJsonObject(),u=object(x,"usage"),top=object(u,"topModel");out.add(new SessionInfo(string(x,"id"),string(x,"title"),string(x,"directory"),first(string(x,"sourceLabel"),string(x,"source")),number(x,"updatedAt"),number(x,"age"),number(u,"total"),number(u,"input"),number(u,"output"),numberEither(u,"modelCalls","messages"),string(top,"model"),number(u,"errors"),decimalOrNull(u,"cacheHitRate")));}return List.copyOf(out); }
+    public static AnalyticsData analytics(JsonObject data) { return new AnalyticsData(usage(object(data,"usage")),trend(array(data,"trend")),models(array(data,"models")),sources(array(data,"sources"))); }
+    public static AnalyticsData withLocalDailyTrend(AnalyticsData data, long start, long end, ZoneId zone) {
+        if (data == null || end < start) return data;
+        Map<LocalDate, long[]> totals = new TreeMap<>();
+        for (TrendPoint point : data.trend()) {
+            LocalDate day = Instant.ofEpochMilli(point.start()).atZone(zone).toLocalDate();
+            long[] values = totals.computeIfAbsent(day, ignored -> new long[4]);
+            values[0] += point.total();
+            values[1] += point.input();
+            values[2] += point.output();
+            values[3] += point.cacheRead();
+        }
+        LocalDate first = Instant.ofEpochMilli(start).atZone(zone).toLocalDate();
+        LocalDate last = Instant.ofEpochMilli(end).atZone(zone).toLocalDate();
+        List<TrendPoint> daily = new ArrayList<>();
+        long dayCount = last.toEpochDay() - first.toEpochDay() + 1;
+        if (dayCount > MAX_DENSE_TREND_BUCKETS) {
+            for (Map.Entry<LocalDate, long[]> entry : totals.entrySet()) {
+                long[] values = entry.getValue();
+                daily.add(new TrendPoint(entry.getKey().atStartOfDay(zone).toInstant().toEpochMilli(), "",
+                        values[0], values[1], values[2], values[3]));
+            }
+            return new AnalyticsData(data.usage(), List.copyOf(daily), data.models(), data.sources());
+        }
+        for (LocalDate day = first; !day.isAfter(last); day = day.plusDays(1)) {
+            long[] values = totals.getOrDefault(day, new long[4]);
+            daily.add(new TrendPoint(day.atStartOfDay(zone).toInstant().toEpochMilli(), "",
+                    values[0], values[1], values[2], values[3]));
+        }
+        return new AnalyticsData(data.usage(), List.copyOf(daily), data.models(), data.sources());
+    }
+    private static List<SessionInfo> sessions(JsonArray a) { List<SessionInfo> out=new ArrayList<>(); for(JsonElement e:a){if(!e.isJsonObject())continue;JsonObject x=e.getAsJsonObject(),u=object(x,"usage"),top=object(u,"topModel");out.add(new SessionInfo(string(x,"id"),string(x,"title"),string(x,"directory"),first(string(x,"source"),string(x,"sourceLabel")),number(x,"updatedAt"),number(x,"age"),number(u,"total"),number(u,"input"),number(u,"output"),numberEither(u,"modelCalls","messages"),string(top,"model"),number(u,"errors"),decimalOrNull(u,"cacheHitRate")));}return List.copyOf(out); }
     private static List<RequestInfo> requests(JsonArray a) { List<RequestInfo> out=new ArrayList<>(); for(JsonElement e:a){if(!e.isJsonObject())continue;JsonObject x=e.getAsJsonObject();out.add(new RequestInfo(string(x,"id"),string(x,"sessionTitle"),first(string(x,"sourceLabel"),string(x,"source")),string(x,"provider"),string(x,"model"),numberEither(x,"time","createdAt"),(int)number(x,"status"),bool(x,"ok",true),number(x,"total"),number(x,"input"),number(x,"output"),number(x,"reasoning"),number(x,"cacheRead"),number(x,"latencyMs"),decimalOrNull(x,"ttftMs"),decimalOrNull(x,"outputTokensPerSec")));}return List.copyOf(out); }
     private static Performance performance(JsonObject x) { JsonObject latency=object(x,"latency"),ttft=object(x,"ttft"),content=object(x,"firstContentApprox"),rate=object(x,"outputTokensPerSec");return new Performance(number(x,"samples"),number(x,"errors"),decimalOrNull(x,"errorRate"),decimalOrNull(latency,"avg"),decimalOrNull(latency,"p95"),decimalOrNull(ttft,"avg"),decimalOrNull(ttft,"p95"),decimalOrNull(content,"avg"),decimalOrNull(rate,"avg")); }
     private static QueueStats queue(JsonObject x) { return new QueueStats(number(x,"samples"),decimalOrNull(x,"avg"),decimalOrNull(x,"p95"),decimalOrNull(x,"max")); }
