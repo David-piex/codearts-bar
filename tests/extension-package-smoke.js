@@ -9,20 +9,47 @@ const root = path.join(__dirname, "..");
 const extensionDir = path.join(root, ".cache", "extension-staging");
 const extensionPkg = JSON.parse(fs.readFileSync(path.join(extensionDir, "package.json"), "utf8").replace(/^\uFEFF/, ""));
 const providerDir = path.join(root, "src", "providers", "codearts");
+const coreDir = path.join(root, "src", "core");
 assert.ok(extensionPkg.files.includes("extension-data.js"), "extension package should include staged data loader");
 assert.ok(fs.existsSync(path.join(extensionDir, "extension-data.js")), "prepared extension should contain extension-data.js");
 const requiredProviderFiles = fs.readdirSync(providerDir)
   .filter((name) => name.endsWith(".js"))
   .map((name) => `providers/codearts/${name}`)
   .sort();
+const requiredCoreFiles = fs.readdirSync(coreDir)
+  .filter((name) => name.endsWith(".js") && name !== "chart-axis.js")
+  .map((name) => `core/${name}`)
+  .sort();
 
-for (const file of requiredProviderFiles) {
+for (const file of [...requiredCoreFiles, ...requiredProviderFiles]) {
   assert.ok(extensionPkg.files.includes(file), `extension files whitelist should include ${file}`);
   const stagedFile = path.join(extensionDir, file);
   const sourceFile = path.join(root, 'src', file);
   assert.ok(fs.existsSync(stagedFile), `prepared extension should contain ${file}`);
   assert.equal(fs.readFileSync(stagedFile, 'utf8'), fs.readFileSync(sourceFile, 'utf8'), `prepared extension copy should match src/${file}`);
 }
+
+function resolveLocalRequire(packageRoot, fromFile, request) {
+  const base = path.resolve(path.dirname(fromFile), request);
+  const nodeModulesSuffix = request.split(/node_modules[\\/]/)[1];
+  const packagedDependency = nodeModulesSuffix ? path.join(packageRoot, "node_modules", nodeModulesSuffix) : null;
+  return [base, `${base}.js`, path.join(base, "index.js"), packagedDependency, packagedDependency && `${packagedDependency}.js`]
+    .filter(Boolean)
+    .find((candidate) => fs.existsSync(candidate));
+}
+
+function assertLocalRequiresPresent(packageRoot, files) {
+  for (const relativeFile of files) {
+    if (!relativeFile.endsWith(".js")) continue;
+    const file = path.join(packageRoot, relativeFile);
+    const source = fs.readFileSync(file, "utf8");
+    for (const match of source.matchAll(/require\(["'](\.{1,2}\/[^"']+)["']\)/g)) {
+      assert.ok(resolveLocalRequire(packageRoot, file, match[1]), `${relativeFile} requires missing local module ${match[1]}`);
+    }
+  }
+}
+
+assertLocalRequiresPresent(extensionDir, extensionPkg.files);
 
 const sharedRuntimeFiles = [
   'codeartsData.js', 'officialStats.js', 'authStatus.js', 'settings.js',
@@ -39,9 +66,16 @@ for (const file of sharedRuntimeFiles) {
 const vsix = path.join(root, "release", "codearts-bar-status.vsix");
 if (fs.existsSync(vsix)) {
   const entries = execFileSync("tar.exe", ["-tf", vsix], { encoding: "utf8" }).split(/\r?\n/).filter(Boolean);
-  for (const file of requiredProviderFiles) {
+  for (const file of [...requiredCoreFiles, ...requiredProviderFiles]) {
     assert.ok(entries.includes(`extension/${file}`), `VSIX should contain extension/${file}`);
+  }
+  const unpackDir = fs.mkdtempSync(path.join(require("node:os").tmpdir(), "codearts-vsix-smoke-"));
+  try {
+    execFileSync("tar.exe", ["-xf", vsix, "-C", unpackDir]);
+    assertLocalRequiresPresent(path.join(unpackDir, "extension"), extensionPkg.files);
+  } finally {
+    fs.rmSync(unpackDir, { recursive: true, force: true });
   }
 }
 
-console.log(`ok - extension package smoke providers=${requiredProviderFiles.length}`);
+console.log(`ok - extension package smoke core=${requiredCoreFiles.length} providers=${requiredProviderFiles.length}`);

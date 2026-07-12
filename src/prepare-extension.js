@@ -50,9 +50,11 @@ props["codeartsBar.windowHours"].description =
 props["codeartsBar.refreshMs"].description =
   "\u81ea\u52a8\u5237\u65b0\u95f4\u9694\uff0c\u6beb\u79d2\u3002";
 const runtimeFiles = [
-  "core/aggregator.js",
-  "core/cacheMetrics.js",
-  "core/format.js",
+  ...fs
+    .readdirSync(path.join(root, "src", "core"), { withFileTypes: true })
+    .filter((entry) => entry.isFile() && entry.name.endsWith(".js") && entry.name !== "chart-axis.js")
+    .map((entry) => `core/${entry.name}`)
+    .sort(),
   "health.js",
   "quota.js",
   "extension-data.js",
