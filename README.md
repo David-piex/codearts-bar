@@ -4,6 +4,8 @@
 
 CodeArts Bar 在本机读取 CodeArts Agent 生成的 SQLite 数据，提供 **Windows 桌面端、VS Code / CodeArts 扩展、JetBrains 插件和 CLI**。它用于查看 token 用量、缓存命中、模型与来源趋势、性能指标和最近会话；原始数据库、日志和 prompt 不会上传。
 
+当前版本：**1.16.27**。
+
 [下载 Windows 版本](https://gitee.com/dtse01/codearts-bar/releases) · [安装 VS Code 扩展](#vs-code--codearts-扩展) · [使用 CLI](#cli) · [从源码运行](#从源码运行)
 
 ![CodeArts Bar 使用分析宽屏](docs/screenshots/dashboard-wide.png)
@@ -40,6 +42,10 @@ CodeArts Bar 在本机读取 CodeArts Agent 生成的 SQLite 数据，提供 **W
 | VS Code 趋势 Tooltip | 全零数据空态 |
 | --- | --- |
 | ![VS Code 趋势 Hover Tooltip](docs/screenshots/vscode-tooltip.png) | ![VS Code 全零数据空态](docs/screenshots/vscode-empty-state.png) |
+
+| JetBrains Token 时间筛选 |
+| --- |
+| ![JetBrains 使用分析与时间筛选](docs/screenshots/jetbrains-2025.3-token-filter-dark.png) |
 
 更多回归截图：[`docs/screenshots`](docs/screenshots)。
 
@@ -80,7 +86,7 @@ codeartsBar.dbPath
 
 插件工具窗口使用 **使用分析 / 会话管理 / 诊断** 三项主导航。使用分析包含 Token、缓存、软上限、趋势和模型/来源视图；会话管理支持搜索、来源筛选、数据库分页，以及从会话列表进入请求列表和请求明细；诊断页支持重试、打开设置或数据目录，并复制脱敏报告。
 
-插件内置共享 CLI 运行时，但仍需要系统可执行的 Node.js 18 或更高版本。自动发现失败时，可在 **Settings | Tools | CodeArts Bar** 中配置 Node.js、CLI 或 `opencode.db` 路径。会话搜索和分页直接查询本地数据库，不受概览快照条数限制。
+安装和使用插件**不需要单独安装 JDK**，它运行在 JetBrains IDE 自带的 Java Runtime 上。插件内置共享 CLI 资源，但读取本地数据仍需要系统可执行的 Node.js 18 或更高版本；自动发现失败时，可在 **Settings | Tools | CodeArts Bar** 中配置 Node.js、CLI 或 `opencode.db` 路径。会话搜索和分页直接查询本地数据库，不受概览快照条数限制。只有从源码构建 JetBrains 插件时才需要 JDK 21。
 
 ### CLI
 
@@ -148,6 +154,42 @@ npm run dev
 - 环境变量：`CODEARTS_BAR_DB=<path>`。
 
 运行 `codearts-bar diagnose` 可以检查实际发现的数据源、文件可读性与 SQLite adapter。
+
+## 统计口径
+
+CodeArts Bar 不估算或反向推测 token。它读取本地 `opencode.db` 中 assistant 消息及其 `step-finish` part 的 `tokens` / `usage` 字段；同一条消息有 `step-finish` 明细时优先汇总明细，否则使用消息自身的 usage。字段名同时兼容常见的 camelCase、snake_case 和 OpenAI 风格命名。
+
+| 指标 | 统计方式 |
+| --- | --- |
+| **输入 token** | 请求中未由缓存复用的新输入，读取 `input`、`inputTokens`、`prompt_tokens` 等字段。 |
+| **输出 token** | 模型生成内容，读取 `output`、`outputTokens`、`completion_tokens` 等字段。 |
+| **推理 token** | 数据源单独提供 reasoning 时独立累计；它计入总 token，但当前主面板不单独占一张卡。 |
+| **缓存创建** | 为后续请求写入缓存的提示词 token，读取 `cache.write`、`cacheWrite`、`cache_creation_input_tokens` 等字段。 |
+| **缓存命中** | 本次请求直接从缓存复用的提示词 token，读取 `cache.read`、`cacheRead`、`cached_tokens` 等字段。 |
+| **总 token** | 优先使用数据源给出的 `total`；没有 total 时按 `输入 + 输出 + 推理 + 缓存创建 + 缓存命中` 计算。它表示记录中的完整 token 用量，不等同于“输入 + 输出”。 |
+| **请求数** | 每条 assistant 模型响应计为一次请求；用户消息不计入请求数。 |
+| **会话数** | 按数据源和 session ID 去重。桌面端与 CLI 即使 ID 相同也视为不同来源的会话。 |
+| **错误数 / 错误率** | assistant 响应含 error 时记一次错误；错误率为 `错误请求数 / 请求数`。 |
+
+缓存命中率采用提示词复用口径：
+
+```text
+缓存命中率 = 缓存命中 token / (新增输入 token + 缓存命中 token) x 100%
+```
+
+分母只统计本次请求可复用的提示词输入，不包含输出、推理和缓存创建。因此它反映“输入上下文中有多少直接来自缓存”，不是 `缓存命中 / 总 token`。当分母为 0 时显示无数据，而不是 0%。
+
+时间、来源和模型筛选会共同限定统计范围：当天按本机时区的 00:00 开始；`1d` 至 `365d` 是相对当前时间的滚动窗口；自定义范围精确到开始和结束时间；“全部”不设开始时间。区间采用请求时间筛选，并同步重算总量、请求、缓存、趋势、模型与来源数据。趋势按本机时区分桶，短区间通常按小时，长区间按天；没有请求的桶补 0，避免折线跨过空闲时段。
+
+性能指标只使用存在相应时间记录的请求，所以样本数可能小于请求数：
+
+- **总等待 / 延迟**：assistant 响应创建到完成的时间；P50、P95、P99 从有效样本排序后取对应百分位。
+- **TTFT**：优先来自 CodeArts kernel 日志中的首 token 事件；没有日志事件时不伪造数值。
+- **等待首内容**：assistant 消息创建到第一个非 `step-start` / `step-finish` 内容 part 的时间，是本地记录推导的近似值。
+- **输出速度**：`输出 token / 完成耗时（秒）`，只统计完成时间有效且大于 0 的请求。
+- **排队时间**：来自本地队列事件；没有队列事件时显示无数据。
+
+数据库可能在对话结束后才写入完整 usage，因此正在生成的回复不会按字符实时估算；写入完成并刷新后才进入统计。双数据源合并时各来源先独立聚合，再按相同口径求和，读取失败的来源会在诊断中单独标记，不会用 0 静默替代。
 
 ## 隐私与本地数据
 
