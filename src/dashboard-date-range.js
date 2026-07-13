@@ -15,6 +15,11 @@ function timeInputValue(msValue){
   const d = new Date(Number(msValue) || Date.now());
   return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
 }
+function rangeMinute(value){
+  const n = Number(value);
+  if(typeof floorToMinute === 'function') return floorToMinute(n);
+  return Number.isFinite(n) ? Math.floor(n / 60000) * 60000 : Date.now() - (Date.now() % 60000);
+}
 function parseDateTimeLocal(value){
   const msValue = new Date(String(value || '')).getTime();
   return Number.isFinite(msValue) ? msValue : null;
@@ -36,6 +41,8 @@ function normalizeCustomDateRange(s = snapshot){
   if(!Number.isFinite(end) || end <= 0) end = now;
   end = Math.min(end, now);
   if(!Number.isFinite(start) || start <= 0) start = end - 86400000;
+  start = rangeMinute(start);
+  end = rangeMinute(end);
   if(start >= end) start = end - 86400000;
   if(start > end) [start, end] = [end, start];
   const maxSpan = 366 * 86400000;
@@ -49,7 +56,7 @@ function bucketTitle(b, s = snapshot){ const start = Number(b?.start); if(!valid
 function bucketAxisLabel(b, s = snapshot){ const start = Number(b?.start); if(!validTimestamp(start, s)) return '--'; const d = new Date(start); return isDayRange() ? d.toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' }) : d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false }); }
 function rangeLabel(range = rangeFilter){ range = normalizeRangeFilter(range); if(range === 'customTime'){ const r = normalizeCustomDateRange(); return `${dateLabel(r.start)} - ${dateLabel(r.end)}`; } return RANGE_LABELS[range] || range || TXT.unknown; }
 function isDayRange(range = rangeFilter){ range = normalizeRangeFilter(range); if(range === 'customTime'){ const r = normalizeCustomDateRange(); return r.end - r.start > 72 * 3600000; } return range === 'all' || ['7d', '14d', '30d', '60d', '90d', '180d', '365d'].includes(range); }
-function sinceForRange(s, range = rangeFilter){ range = normalizeRangeFilter(range); const now = Number(s?.timestamp || Date.now()); if(range === 'customTime') return normalizeCustomDateRange(s).start; if(range === 'all') return 0; if(range === 'today') return dayStart(now); const days = Number(String(range).replace('d', '')) || 1; return now - days * 86400000; }
+function sinceForRange(s, range = rangeFilter){ range = normalizeRangeFilter(range); const rawNow = Number(s?.timestamp || Date.now()); if(range === 'customTime') return normalizeCustomDateRange(s).start; if(range === 'all') return 0; if(range === 'today') return dayStart(rawNow); const now = rangeMinute(rawNow); const days = Number(String(range).replace('d', '')) || 1; return now - days * 86400000; }
 function untilForRange(s, range = rangeFilter){ range = normalizeRangeFilter(range); if(range === 'customTime') return normalizeCustomDateRange(s).end; return 0; }
 function ensureDateRangeDraft(){
   const r = normalizeCustomDateRange(snapshot || {});
@@ -70,7 +77,7 @@ function dateRangeDraftValidation(){
 }
 function dateRangeForCurrentFilter(s = snapshot || {}){
   const range = dateRangeForFilter({ range: rangeFilter, timestamp: s?.timestamp, customStart: customDateStart, customEnd: customDateEnd, customDays: customRangeDays });
-  return { start: range.start, end: range.end || Number(s?.timestamp || Date.now()) };
+  return { start: range.start, end: range.end || rangeMinute(Number(s?.timestamp || Date.now())) };
 }
 function openDateRangePopover(){
   const r = dateRangeForCurrentFilter(snapshot || {});
@@ -83,7 +90,7 @@ function openDateRangePopover(){
   dateRangeOpen = true;
 }
 function setDateRangeQuick(key){
-  const now = Number(snapshot?.timestamp || Date.now());
+  const now = rangeMinute(Number(snapshot?.timestamp || Date.now()));
   let start = dayStart(now);
   let end = now;
   if(key !== 'today'){
@@ -123,10 +130,10 @@ function chooseCalendarDay(dayMs){
   const b = new Date(base);
   b.setFullYear(d.getFullYear(), d.getMonth(), d.getDate());
   if(dateRangeFocus === 'start'){
-    dateRangeDraftStart = b.getTime();
+    dateRangeDraftStart = rangeMinute(b.getTime());
     dateRangeFocus = 'end';
   } else {
-    dateRangeDraftEnd = b.getTime();
+    dateRangeDraftEnd = rangeMinute(b.getTime());
     dateRangeFocus = 'start';
   }
   if(dateRangeDraftStart > dateRangeDraftEnd) [dateRangeDraftStart, dateRangeDraftEnd] = [dateRangeDraftEnd, dateRangeDraftStart];

@@ -169,7 +169,7 @@ function summaryOnlyUsageForView(s){
   const filter = s.summaryFilter || {};
   const currentRangeKey = normalizeRangeFilter(rangeFilter);
   const start = rangeFilter === 'all' ? 0 : sinceForRange(s);
-  const end = untilForRange(s) || Number(s?.timestamp || Date.now());
+  const end = untilForRange(s) || rangeMinute(Number(s?.timestamp || Date.now()));
   if(String(filter.source || 'all') !== String(sourceFilter || 'all')) return null;
   if(String(filter.model || 'all') !== String(modelFilter || 'all')) return null;
   // The user-selected custom range is a fixed interval. The snapshot and the

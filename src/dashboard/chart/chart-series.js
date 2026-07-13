@@ -13,7 +13,7 @@ function currentTrendScopeKey(s, dayMode = isDayRange()){
     source: sourceFilter,
     model: modelFilter,
     start: sinceForRange(s),
-    end: untilForRange(s) || Number(s?.timestamp || Date.now()),
+    end: untilForRange(s) || rangeMinute(Number(s?.timestamp || Date.now())),
     bucketMs,
   });
 }
@@ -70,7 +70,7 @@ function minValidTimestamp(list, reader, s){
 function bucketRows(rows, s){
   let since = sinceForRange(s);
   const until = untilForRange(s);
-  const now = Number(until || s.timestamp || Date.now());
+  const now = Number(until || rangeMinute(s.timestamp || Date.now()));
   const dayMode = isDayRange();
   const bucketMs = dayMode ? 86400000 : 3600000;
   const trendList = dayMode ? (s?.trends?.daily14d || []) : (s?.trends?.hourly24h || []);

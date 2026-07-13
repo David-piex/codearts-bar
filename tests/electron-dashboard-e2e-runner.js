@@ -974,6 +974,15 @@ async function main() {
   });
   await click(win, "[data-date-range-toggle]");
   await waitFor(win, () => Boolean(document.querySelector(".date-range-popover")));
+  await click(win, '[data-date-range-quick="30d"]');
+  const quick30dDraft = await evalIn(win, () => ({
+    start: Number(dateRangeDraftStart || 0),
+    end: Number(dateRangeDraftEnd || 0),
+    span: Number(dateRangeDraftEnd || 0) - Number(dateRangeDraftStart || 0),
+  }));
+  assert.equal(quick30dDraft.start % 60000, 0, `30d quick range start should be minute aligned: ${JSON.stringify(quick30dDraft)}`);
+  assert.equal(quick30dDraft.end % 60000, 0, `30d quick range end should be minute aligned: ${JSON.stringify(quick30dDraft)}`);
+  assert.equal(quick30dDraft.span, 30 * 86400000, `30d quick range should span exactly 30 days: ${JSON.stringify(quick30dDraft)}`);
   const dateOpen = await evalIn(win, () => ({
     dateInputs: document.querySelectorAll('[data-date-range-date]').length,
     timeInputs: document.querySelectorAll('[data-date-range-time]').length,

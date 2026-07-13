@@ -68,6 +68,54 @@ function mergeLightSnapshotPayload(current, incoming){
   return merged;
 }
 
+function usageScopeMatchesPayload(scope, payload){
+  if(!scope || !payload) return false;
+  const range = payload.range || {};
+  if(String(scope.source || 'all') !== String(payload.source || 'all')) return false;
+  if(String(scope.model || 'all') !== String(payload.model || 'all')) return false;
+  if(String(scope.rangeKey || '') !== String(payload.rangeKey || '')) return false;
+  const expectedStart = Number(payload.start ?? range.start ?? 0) || 0;
+  const expectedEnd = Number(payload.end ?? range.end ?? 0) || 0;
+  return Math.abs((Number(scope.start) || 0) - expectedStart) <= 1000
+    && Math.abs((Number(scope.end) || 0) - expectedEnd) <= 1000;
+}
+function protectRealtimeSnapshotScope(current, incoming, payload, expectedAggregateScope){
+  if(!current?.ok || !incoming?.ok) return { incoming, scopeMismatch: false };
+  const queryScope = incoming.queryScope || incoming.usageScope || incoming.summaryFilter || null;
+  const usageScope = incoming.usageScope || incoming.summaryFilter || null;
+  // Keep compatibility with older test/extension senders that predate scope
+  // metadata. Current main-process snapshots include queryScope and
+  // usageScope, so this branch does not weaken protection for production
+  // watcher payloads.
+  if(!queryScope && !usageScope && !incoming.aggregateScope){
+    return { incoming, scopeMismatch: false };
+  }
+  const queryMatches = queryScope
+    ? usageScopeMatchesPayload(queryScope, payload)
+    : Boolean(incoming.aggregateScope && incoming.aggregateScope === expectedAggregateScope);
+  const usageMatches = usageScope
+    ? usageScopeMatchesPayload(usageScope, payload)
+    : Boolean(incoming.aggregateScope && incoming.aggregateScope === expectedAggregateScope);
+  const aggregateMatches = Boolean(incoming.aggregateScope && incoming.aggregateScope === expectedAggregateScope);
+  if(queryMatches && usageMatches && aggregateMatches) return { incoming, scopeMismatch: false };
+  const protectedIncoming = { ...incoming };
+  const protectKeys = new Set();
+  if(!queryMatches){
+    for(const key of ['queryScope', 'requestLog', 'requestTotal', 'requestPage', 'sessions', 'sessionTotal', 'sessionPage']) protectKeys.add(key);
+  }
+  if(!queryMatches || !usageMatches){
+    for(const key of ['usage', 'usageScope', 'status', 'quota', 'health', 'summaryOnly', 'summaryFilter']) protectKeys.add(key);
+  }
+  if(!queryMatches || !aggregateMatches){
+    for(const key of ['sourceStats', 'models', 'trends', 'trendsSource', 'trendsScope', 'sessionSummary', 'aggregateScope', 'aggregateAt']) protectKeys.add(key);
+  }
+  for(const key of protectKeys){
+    if(Object.prototype.hasOwnProperty.call(current, key)) protectedIncoming[key] = current[key];
+    else delete protectedIncoming[key];
+  }
+  return { incoming: protectedIncoming, scopeMismatch: true };
+}
+
 // Realtime notifications must not rebuild the active workspace. The user may
 // be typing, inspecting a row, or scrolled deep into a table when a new
 // snapshot arrives, so only update data surfaces that have stable geometry.
@@ -88,7 +136,12 @@ function applyRealtimeSnapshot(incoming){
     clearTimeout(chartBindTimer);
     chartBindTimer = null;
   }
-  const next = mergeLightSnapshotPayload(snapshot, incoming);
+  const realtimeTimestamp = Number(incoming?.timestamp || snapshot?.timestamp || Date.now());
+  const currentScopeBase = snapshot?.ok ? { ...snapshot, timestamp: realtimeTimestamp } : null;
+  const currentPayload = currentScopeBase ? dashboardPayloadForCurrentView(currentScopeBase) : null;
+  const expectedAggregateScope = currentPayload ? trendScopeKey(currentPayload) : '';
+  const protectedRealtime = protectRealtimeSnapshotScope(snapshot, incoming, currentPayload, expectedAggregateScope);
+  const next = mergeLightSnapshotPayload(snapshot, protectedRealtime.incoming);
   if(!next?.ok) return false;
   if(!snapshot?.ok){
     render(next, { instantChart: true, windowLayout: false, partial: true, immediate: true });
@@ -98,6 +151,9 @@ function applyRealtimeSnapshot(incoming){
   const app = document.getElementById('app');
   const appScrollTop = Number(app?.scrollTop || 0);
   const appScrollLeft = Number(app?.scrollLeft || 0);
+  const content = document.querySelector('.content');
+  const contentScrollTop = Number(content?.scrollTop || 0);
+  const contentScrollLeft = Number(content?.scrollLeft || 0);
   const sessionScroll = document.querySelector('.session-scroll');
   const sessionScrollTop = Number(sessionScroll?.scrollTop || 0);
   const sessionScrollLeft = Number(sessionScroll?.scrollLeft || 0);
@@ -108,6 +164,8 @@ function applyRealtimeSnapshot(incoming){
   } : null;
   const restore = () => {
     if(app){ app.scrollTop = appScrollTop; app.scrollLeft = appScrollLeft; }
+    const currentContent = document.querySelector('.content');
+    if(currentContent){ currentContent.scrollTop = contentScrollTop; currentContent.scrollLeft = contentScrollLeft; }
     const currentSessionScroll = document.querySelector('.session-scroll');
     if(currentSessionScroll){
       currentSessionScroll.scrollTop = sessionScrollTop;
@@ -145,6 +203,9 @@ function applyRealtimeSnapshot(incoming){
     if(canvas && typeof scheduleChartBind === 'function'){
       scheduleChartBind(rows, next, { instant: true, realtime: true }, 0, restore);
     }
+    if(protectedRealtime.scopeMismatch){
+      scheduleDashboardAggregates(next, { forceAggregates: true, aggregateDelayMs: 0 });
+    }
   } else if(workspaceMode === 'sessions'){
     // The overview is a compact, fixed-height status strip. Keep the table and
     // inspector intact; replacing either would disrupt selection and scroll.
@@ -171,8 +232,11 @@ function shallowJsonEqual(a, b){
   try { return JSON.stringify(a || null) === JSON.stringify(b || null); } catch { return a === b; }
 }
 function aggregatePayloadForView(s, extra = {}){
-  const start = rangeFilter === 'all' ? 0 : sinceForRange(s);
-  const end = untilForRange(s) || Number(s?.timestamp || Date.now());
+  const selectedRange = typeof dateRangeForCurrentFilter === 'function'
+    ? dateRangeForCurrentFilter(s)
+    : { start: rangeFilter === 'all' ? 0 : sinceForRange(s), end: untilForRange(s) || rangeMinute(Number(s?.timestamp || Date.now())) };
+  const start = selectedRange.start;
+  const end = selectedRange.end;
   return {
     source: sourceFilter,
     model: modelFilter,
@@ -235,7 +299,7 @@ function runScheduledDashboardAggregates(s, token, opts = {}){
 }
 function scheduleDashboardAggregates(s, opts = {}){
   if(opts.skipAggregates || !s?.ok || layoutMode !== 'dashboard' || workspaceMode !== 'analytics') return;
-  if(hasFreshAggregatesForView(s)) return;
+  if(opts.forceAggregates !== true && hasFreshAggregatesForView(s)) return;
   if(aggregateRefreshTimer) clearTimeout(aggregateRefreshTimer);
   const token = ++aggregateRefreshToken;
   aggregateRefreshTimer = setTimeout(() => runScheduledDashboardAggregates(s, token, opts), dashboardAggregateDelay(opts));
@@ -248,14 +312,29 @@ async function refreshDashboardAggregates(s, token){
     const aggregate = await ipcRenderer.invoke('dashboard:getAggregates', basePayload);
     if(token !== aggregateRefreshToken || snapshot !== s || layoutMode !== 'dashboard' || workspaceMode !== 'analytics') return;
     const nextTrendScope = trendScopeKey(basePayload);
-    if(aggregate?.ok){
+    const partialAggregate = aggregate?.ok && Array.isArray(aggregate.sourceErrors) && aggregate.sourceErrors.length > 0;
+    const existingScope = s.usageScope || s.queryScope || s.summaryFilter;
+    const preserveCompleteAggregate = partialAggregate && s.usage && usageScopeMatchesPayload(existingScope, basePayload);
+    if(aggregate?.ok && !preserveCompleteAggregate){
       s.aggregateScope = nextTrendScope;
       s.aggregateAt = Date.now();
     }
     const changes = { summary: false, trend: false, sourceStats: false, modelStats: false, sessionSummary: false };
     let changed = false;
-    if(aggregate?.ok && aggregate.usage && !shallowJsonEqual(s.usage, aggregate.usage)){ s.usage = aggregate.usage; changes.summary = true; changed = true; }
-    if(aggregate?.ok && Array.isArray(aggregate.buckets)){
+    if(aggregate?.ok && aggregate.usage && !preserveCompleteAggregate){
+      const nextUsageScope = {
+        source: basePayload.source || 'all',
+        model: basePayload.model || 'all',
+        rangeKey: basePayload.rangeKey || '',
+        start: Number(basePayload.start ?? basePayload.range?.start ?? 0) || 0,
+        end: Number(basePayload.end ?? basePayload.range?.end ?? 0) || 0,
+      };
+      if(!shallowJsonEqual(s.usage, aggregate.usage)){ s.usage = aggregate.usage; changes.summary = true; changed = true; }
+      s.usageScope = nextUsageScope;
+      s.summaryOnly = false;
+      s.summaryFilter = null;
+    }
+    if(aggregate?.ok && Array.isArray(aggregate.buckets) && !preserveCompleteAggregate){
       const currentTrend = dayMode ? s.trends?.daily14d : s.trends?.hourly24h;
       if(!shallowJsonEqual(currentTrend, aggregate.buckets) || s.trendsScope !== nextTrendScope){
         s.trends = { ...(s.trends || {}) };
@@ -267,14 +346,16 @@ async function refreshDashboardAggregates(s, token){
         changed = true;
       }
     }
-    if(aggregate?.ok && Array.isArray(aggregate.sourceStats) && !shallowJsonEqual(s.sourceStats, aggregate.sourceStats)){ s.sourceStats = aggregate.sourceStats; changes.sourceStats = true; changed = true; }
-    if(aggregate?.ok && Array.isArray(aggregate.modelStats) && !shallowJsonEqual(s.models, aggregate.modelStats.slice(0, 12))){
+    if(aggregate?.ok && Array.isArray(aggregate.sourceStats) && !preserveCompleteAggregate && !shallowJsonEqual(s.sourceStats, aggregate.sourceStats)){ s.sourceStats = aggregate.sourceStats; changes.sourceStats = true; changed = true; }
+    if(aggregate?.ok && Array.isArray(aggregate.modelStats) && !preserveCompleteAggregate && !shallowJsonEqual(s.models, aggregate.modelStats.slice(0, 12))){
       s.models = aggregate.modelStats.slice(0, 12);
       try { memoForSnapshot(s).modelOptions = null; } catch {}
       changes.modelStats = true;
       changed = true;
     }
-    if(aggregate?.ok && aggregate.sessionSummary && !shallowJsonEqual(s.sessionSummary, aggregate.sessionSummary)){ s.sessionSummary = aggregate.sessionSummary; changes.sessionSummary = true; changed = true; }
+    if(aggregate?.ok && aggregate.sessionSummary && !preserveCompleteAggregate && !shallowJsonEqual(s.sessionSummary, aggregate.sessionSummary)){ s.sessionSummary = aggregate.sessionSummary; changes.sessionSummary = true; changed = true; }
+    if(partialAggregate) s.sourceErrors = aggregate.sourceErrors;
+    if(aggregate?.nativeError) s.nativeError = aggregate.nativeError;
     if(changed){
       if(!patchDashboardAggregateSlots(s, changes)){
         render(s, { windowLayout: false, instantChart: true, partial: true, skipAggregates: true });

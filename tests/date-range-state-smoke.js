@@ -5,12 +5,16 @@ const fs = require('node:fs');
 const path = require('node:path');
 const {
   DAY_MS,
+  MINUTE_MS,
+  floorToMinute,
   normalizeRangeFilterValue,
   normalizeCustomRange,
   dateRangeForFilter,
 } = require('../src/dashboard/date-range-core');
 
 const timestamp = new Date(2026, 6, 10, 15, 30, 0).getTime();
+const timestampWithSeconds = timestamp + 42 * 1000 + 987;
+assert.equal(floorToMinute(timestampWithSeconds), timestamp);
 assert.equal(normalizeRangeFilterValue('today'), 'today');
 assert.equal(normalizeRangeFilterValue('all'), 'all');
 assert.equal(normalizeRangeFilterValue('7d'), '7d');
@@ -24,8 +28,13 @@ assert.equal(today.start, new Date(2026, 6, 10, 0, 0, 0).getTime());
 assert.equal(today.end, 0);
 const sevenDays = dateRangeForFilter({ range: '7d', timestamp });
 assert.deepEqual(sevenDays, { start: timestamp - 7 * DAY_MS, end: 0 });
+const thirtyDays = dateRangeForFilter({ range: '30d', timestamp: timestampWithSeconds });
+assert.equal(thirtyDays.start, timestamp - 30 * DAY_MS);
+assert.equal(thirtyDays.start % MINUTE_MS, 0);
 const reversed = normalizeCustomRange(timestamp, timestamp - DAY_MS, timestamp);
 assert.deepEqual(reversed, { start: timestamp - DAY_MS, end: timestamp });
+const minuteCustom = normalizeCustomRange(timestampWithSeconds - 2 * DAY_MS, timestampWithSeconds, timestampWithSeconds);
+assert.deepEqual(minuteCustom, { start: timestamp - 2 * DAY_MS, end: timestamp });
 const custom = dateRangeForFilter({ range: 'customTime', timestamp, customStart: timestamp - 2 * DAY_MS, customEnd: timestamp - DAY_MS });
 assert.deepEqual(custom, { start: timestamp - 2 * DAY_MS, end: timestamp - DAY_MS });
 
@@ -43,6 +52,8 @@ assert.match(bootstrapSource, /localStorage\.setItem\('statsRange', rangeFilter\
 assert.match(eventsSource, /dateCancel[\s\S]*?dateRangeOpen = false[\s\S]*?dateRangeDraftStart = 0/);
 assert.match(dateRangeSource, /dateRangeFutureInvalid/);
 assert.match(dateRangeSource, /end > now \+ 60000/);
+assert.match(dateRangeSource, /function sinceForRange[\s\S]*rangeMinute\(rawNow\)/);
+assert.match(bootstrapSource, /dateRangeForCurrentFilter\(s\)/);
 const cancelBody = eventsSource.slice(eventsSource.indexOf('if(dateCancel){'), eventsSource.indexOf('if(dateConfirm){'));
 assert.doesNotMatch(cancelBody, /statsRange|rangeFilter\s*=/);
 

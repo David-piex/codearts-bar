@@ -1,6 +1,13 @@
 'use strict';
 
 const DAY_MS = 86400000;
+const MINUTE_MS = 60000;
+
+function floorToMinute(timestamp) {
+  const value = Number(timestamp);
+  if (!Number.isFinite(value)) return Date.now() - (Date.now() % MINUTE_MS);
+  return Math.floor(value / MINUTE_MS) * MINUTE_MS;
+}
 
 function normalizeRangeFilterValue(value, customDays = 60) {
   const raw = String(value || 'customTime');
@@ -25,7 +32,11 @@ function normalizeCustomRange(startValue, endValue, timestamp = Date.now()) {
   let end = Number(endValue || 0);
   if (!Number.isFinite(end) || end <= 0) end = now;
   if (!Number.isFinite(start) || start <= 0) start = end - DAY_MS;
+  end = Math.min(end, now);
+  start = floorToMinute(start);
+  end = floorToMinute(end);
   if (start > end) [start, end] = [end, start];
+  if (start >= end) start = end - DAY_MS;
   if (end - start > 366 * DAY_MS) start = end - 366 * DAY_MS;
   return { start, end };
 }
@@ -37,9 +48,10 @@ function dateRangeForFilter({ range, timestamp, customStart, customEnd, customDa
   if (normalized === 'all') return { start: 0, end: 0 };
   if (normalized === 'today') return { start: localDayStart(now), end: 0 };
   const days = Number(normalized.replace('d', '')) || 1;
-  return { start: now - days * DAY_MS, end: 0 };
+  const minuteNow = floorToMinute(now);
+  return { start: minuteNow - days * DAY_MS, end: 0 };
 }
 
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { DAY_MS, normalizeRangeFilterValue, localDayStart, normalizeCustomRange, dateRangeForFilter };
+  module.exports = { DAY_MS, MINUTE_MS, floorToMinute, normalizeRangeFilterValue, localDayStart, normalizeCustomRange, dateRangeForFilter };
 }

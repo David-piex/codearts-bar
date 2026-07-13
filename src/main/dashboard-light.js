@@ -51,6 +51,34 @@ function trendScopeKeyForPayload(payload = {}, bucketMs = 3600000) {
   return `${payload.source || 'all'}|${payload.model || 'all'}|${safeBucketMs}|${start}|${end}`;
 }
 
+function usageScopeForPayload(payload = {}) {
+  const range = payload.range || {};
+  return {
+    source: payload.source || 'all',
+    model: payload.model || 'all',
+    rangeKey: payload.rangeKey || '',
+    start: Number(payload.start ?? range.start ?? 0) || 0,
+    end: Number(payload.end ?? range.end ?? 0) || 0,
+  };
+}
+
+function usageScopeMatchesPayload(scope, payload = {}) {
+  if (!scope) return false;
+  const expected = usageScopeForPayload(payload);
+  return String(scope.source || 'all') === String(expected.source || 'all')
+    && String(scope.model || 'all') === String(expected.model || 'all')
+    && String(scope.rangeKey || '') === String(expected.rangeKey || '')
+    && Number(scope.start || 0) === Number(expected.start || 0)
+    && Number(scope.end || 0) === Number(expected.end || 0);
+}
+
+function shouldPreserveCompleteAggregate(fullBase, aggregates, payload = {}) {
+  if (!Array.isArray(aggregates?.sourceErrors) || !aggregates.sourceErrors.length) return false;
+  if (!fullBase?.usage) return false;
+  const scope = fullBase.usageScope || fullBase.queryScope || fullBase.summaryFilter;
+  return usageScopeMatchesPayload(scope, payload);
+}
+
 function pageBounds(payload = {}) {
   const limit = Math.max(1, Math.min(500, Number(payload.limit || 100)));
   const offset = Math.max(0, Number(payload.offset || 0));
@@ -169,6 +197,8 @@ function makeLightSnapshotFromAggregates(aggregates = {}, payload = {}) {
     dbPath: localProvider.resolveDbPath ? localProvider.resolveDbPath(settings) : '',
     sources: aggregates.sources || [],
     usage,
+    queryScope: usageScopeForPayload(payload),
+    usageScope: usageScopeForPayload(payload),
     status: usageStatusFromSummary(usage, settings),
     models: Array.isArray(aggregates.modelStats) ? aggregates.modelStats.slice(0, 12) : [],
     sourceStats: Array.isArray(aggregates.sourceStats) ? aggregates.sourceStats : [],
@@ -212,11 +242,7 @@ async function buildInitialSummarySnapshot(payload = {}) {
   }, basePayload);
   snap.summaryOnly = true;
   snap.summaryFilter = {
-    source: basePayload.source || 'all',
-    model: basePayload.model || 'all',
-    rangeKey: basePayload.rangeKey || '',
-    start: Number(basePayload.start ?? basePayload.range?.start ?? 0),
-    end: Number(basePayload.end ?? basePayload.range?.end ?? 0),
+    ...usageScopeForPayload(basePayload),
   };
   snap.aggregatePending = { trend: true, modelStats: true, sourceStats: true, sessionSummary: true };
   snap.freshness = { stale: false, source: 'summary', ageMs: 0 };
@@ -258,17 +284,25 @@ async function buildDashboardLightPair(fullBase, payload = {}) {
     localProvider.getSessionsPage(sessionPayload).catch((error) => ({ ok: false, error: error.message })),
   ]);
   const settings = loadSettings();
+  const preserveCompleteAggregate = shouldPreserveCompleteAggregate(fullBase, aggregates, basePayload);
   const fullSnap = {
     ...fullBase,
     timestamp,
+    queryScope: usageScopeForPayload(basePayload),
     updatedAt: lightUpdatedAt(timestamp),
     freshness: { stale: false, source: 'light', ageMs: 0 },
   };
-  if (aggregates?.ok && aggregates.usage) {
+  if (aggregates?.ok && aggregates.usage && !preserveCompleteAggregate) {
     fullSnap.usage = aggregates.usage;
+    fullSnap.usageScope = usageScopeForPayload(basePayload);
+    // A completed aggregate supersedes any progressive summary inherited from
+    // fullBase. Keeping those flags would relabel this new usage payload with
+    // the previous renderer filter (for example, a fixed 30-day interval).
+    fullSnap.summaryOnly = false;
+    fullSnap.summaryFilter = null;
     fullSnap.status = { ...(fullSnap.status || {}), ...usageStatusFromSummary(aggregates.usage, settings) };
   }
-  if (aggregates?.ok && Array.isArray(aggregates.buckets)) {
+  if (aggregates?.ok && Array.isArray(aggregates.buckets) && !preserveCompleteAggregate) {
     fullSnap.trends = { ...(fullSnap.trends || {}) };
     if (dayMode) fullSnap.trends.daily14d = aggregates.buckets;
     else fullSnap.trends.hourly24h = aggregates.buckets;
@@ -277,9 +311,9 @@ async function buildDashboardLightPair(fullBase, payload = {}) {
     fullSnap.aggregateScope = fullSnap.trendsScope;
     fullSnap.aggregateAt = timestamp;
   }
-  if (aggregates?.ok && Array.isArray(aggregates.sourceStats)) fullSnap.sourceStats = aggregates.sourceStats;
-  if (aggregates?.ok && Array.isArray(aggregates.modelStats)) fullSnap.models = aggregates.modelStats.slice(0, 12);
-  if (aggregates?.ok && aggregates.sessionSummary) fullSnap.sessionSummary = aggregates.sessionSummary;
+  if (aggregates?.ok && Array.isArray(aggregates.sourceStats) && !preserveCompleteAggregate) fullSnap.sourceStats = aggregates.sourceStats;
+  if (aggregates?.ok && Array.isArray(aggregates.modelStats) && !preserveCompleteAggregate) fullSnap.models = aggregates.modelStats.slice(0, 12);
+  if (aggregates?.ok && aggregates.sessionSummary && !preserveCompleteAggregate) fullSnap.sessionSummary = aggregates.sessionSummary;
   if (aggregates?.sourceErrors) fullSnap.sourceErrors = aggregates.sourceErrors;
   if (aggregates?.nativeError) fullSnap.nativeError = aggregates.nativeError;
   delete fullSnap.lightRefresh;
@@ -303,6 +337,9 @@ module.exports = {
   applyUsageDerivedFields,
   dashboardAggregatePayload,
   trendScopeKeyForPayload,
+  usageScopeForPayload,
+  usageScopeMatchesPayload,
+  shouldPreserveCompleteAggregate,
   pageBounds,
   normalizePageRange,
   matchesPageFilters,
