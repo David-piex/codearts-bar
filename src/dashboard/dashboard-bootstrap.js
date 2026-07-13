@@ -67,6 +67,87 @@ function mergeLightSnapshotPayload(current, incoming){
   }
   return merged;
 }
+
+// Realtime notifications must not rebuild the active workspace. The user may
+// be typing, inspecting a row, or scrolled deep into a table when a new
+// snapshot arrives, so only update data surfaces that have stable geometry.
+function applyRealtimeSnapshot(incoming){
+  const next = mergeLightSnapshotPayload(snapshot, incoming);
+  if(!next?.ok) return false;
+  if(!snapshot?.ok){
+    render(next, { instantChart: true, windowLayout: false, partial: true, immediate: true });
+    return true;
+  }
+
+  const app = document.getElementById('app');
+  const appScrollTop = Number(app?.scrollTop || 0);
+  const appScrollLeft = Number(app?.scrollLeft || 0);
+  const sessionScroll = document.querySelector('.session-scroll');
+  const sessionScrollTop = Number(sessionScroll?.scrollTop || 0);
+  const sessionScrollLeft = Number(sessionScroll?.scrollLeft || 0);
+  const active = document.activeElement;
+  const activeSelection = active && typeof active.selectionStart === 'number' ? {
+    start: active.selectionStart,
+    end: active.selectionEnd,
+  } : null;
+  const restore = () => {
+    if(app){ app.scrollTop = appScrollTop; app.scrollLeft = appScrollLeft; }
+    const currentSessionScroll = document.querySelector('.session-scroll');
+    if(currentSessionScroll){
+      currentSessionScroll.scrollTop = sessionScrollTop;
+      currentSessionScroll.scrollLeft = sessionScrollLeft;
+    }
+    if(active && active.isConnected){
+      try {
+        active.focus({ preventScroll: true });
+        if(activeSelection && typeof active.setSelectionRange === 'function') active.setSelectionRange(activeSelection.start, activeSelection.end);
+      } catch {}
+    }
+  };
+
+  // Invalidate deferred work scheduled for the previous snapshot. Those
+  // callbacks intentionally check snapshot identity and will now no-op.
+  snapshot = next;
+  analyticsDeferredToken += 1;
+  sessionTableItems = sessionTableItems || [];
+
+  if(layoutMode === 'compact'){
+    const rows = getFilteredRowsForView(next);
+    const pane = document.querySelector('.compact-pane');
+    if(pane && typeof renderCompactMenu === 'function' && typeof document.createElement === 'function'){
+      const tmp = document.createElement('div');
+      tmp.innerHTML = renderCompactMenu(next, rows);
+      const nextPane = tmp.querySelector('.compact-pane');
+      if(nextPane) pane.innerHTML = nextPane.innerHTML;
+    }
+  } else if(workspaceMode === 'analytics'){
+    const rows = getFilteredRowsForView(next);
+    // Keep the summary current, but leave filters, request rows and advanced
+    // analysis untouched so their DOM identity and geometry remain stable.
+    patchHtmlSlot('analyticsSummarySlot', renderSummary(rows, next));
+    const canvas = document.getElementById('usageChart');
+    if(canvas && typeof scheduleChartBind === 'function'){
+      scheduleChartBind(rows, next, { instant: true, realtime: true }, 0, restore);
+    }
+  } else if(workspaceMode === 'sessions'){
+    // The overview is a compact, fixed-height status strip. Keep the table and
+    // inspector intact; replacing either would disrupt selection and scroll.
+    patchSessionOverview(next);
+    const selected = findSelectedSession?.();
+    if(selected && typeof patchSessionInspectorInPlace === 'function'){
+      const slot = document.getElementById('sessionInspectorSlot');
+      patchSessionInspectorInPlace(slot, selected, sessionKeyFor(selected));
+    }
+  }
+
+  restore();
+  try { requestAnimationFrame(restore); } catch {}
+  setTimeout(restore, 0);
+  setTimeout(restore, 32);
+  setTimeout(restore, 96);
+  setTimeout(restore, 180);
+  return true;
+}
 function shallowJsonEqual(a, b){
   try { return JSON.stringify(a || null) === JSON.stringify(b || null); } catch { return a === b; }
 }

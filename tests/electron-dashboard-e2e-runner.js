@@ -60,6 +60,7 @@ const requestLog = Array.from({ length: 72 }, (_, i) => {
 let requestPageTotalOverride = null;
 let sessionPageTotalOverride = null;
 let refreshDelayMs = 0;
+let e2eWindow = null;
 
 function usageForRows(rows) {
   const out = rows.reduce((acc, row) => {
@@ -227,6 +228,14 @@ function registerIpc() {
     refreshDelayMs = Math.max(0, Number(value) || 0);
     return { ok: true, refreshDelayMs };
   });
+  ipcMain.handle("dashboard:e2ePushRealtime", (_event, payload = {}) => {
+    if (!e2eWindow || e2eWindow.isDestroyed()) return { ok: false };
+    const next = snapshotFor(payload);
+    next.timestamp = now + 1;
+    next.lightRefresh = true;
+    e2eWindow.webContents.send('dashboard:snapshot', next);
+    return { ok: true };
+  });
   ipcMain.handle("dashboard:log", (_event, payload) => { ipcCalls.push({ channel: "dashboard:log", payload }); if (payload?.scope === "renderer-resize-perf") resizeLogs.push(payload); return { ok: true }; });
   ipcMain.handle("dashboard:rendererError", (_event, payload) => { ipcCalls.push({ channel: "dashboard:rendererError", payload }); return { ok: true }; });
   for (const channel of ["dashboard:settings", "dashboard:openLogs", "dashboard:copySession", "dashboard:openSession", "dashboard:openCodeArtsSession", "dashboard:archiveSession", "dashboard:renameSession", "dashboard:setPinned", "dashboard:setLayoutMode"]) {
@@ -355,6 +364,7 @@ async function main() {
       partition: `e2e-${Date.now()}`,
     },
   });
+  e2eWindow = win;
   win.setMenuBarVisibility(false);
   await win.loadFile(path.join(root, "src", "dashboard.html"));
   await waitFor(win, () => Boolean(document.querySelector(".usage-total-board") && document.querySelector("#usageChart") && document.querySelector(".table-card")));
@@ -459,6 +469,41 @@ async function main() {
     summaryText: initial.summaryText,
   }, `refresh should patch in place without replacing stable shells: ${JSON.stringify(refreshedState)}`);
   assert.equal(ipcCalls.filter((x) => x.channel === "dashboard:refreshLight").length - refreshCallsBefore, 1, "overlapping refresh clicks should share one IPC request");
+
+  const realtimeBefore = await evalIn(win, async (currentNow) => {
+    const content = document.querySelector('.content');
+    if (content) content.scrollTop = Math.min(84, Math.max(0, content.scrollHeight - content.clientHeight));
+    window.__realtimeStable = {
+      app: document.querySelector('#app'),
+      filters: document.querySelector('#analyticsFiltersSlot'),
+      table: document.querySelector('#analyticsTableSlot'),
+      advanced: document.querySelector('#analyticsAdvancedSlot'),
+      scrollTop: Number(content?.scrollTop || 0),
+    };
+    await window.codeartsApi.invoke('dashboard:e2ePushRealtime', { source: 'all', model: 'all', range: { start: 0, end: currentNow } });
+    return window.__realtimeStable.scrollTop;
+  }, now);
+  await delay(120);
+  const realtimeState = await evalIn(win, () => {
+    const content = document.querySelector('.content');
+    return {
+      appStable: document.querySelector('#app') === window.__realtimeStable.app,
+      filtersStable: document.querySelector('#analyticsFiltersSlot') === window.__realtimeStable.filters,
+      tableStable: document.querySelector('#analyticsTableSlot') === window.__realtimeStable.table,
+      advancedStable: document.querySelector('#analyticsAdvancedSlot') === window.__realtimeStable.advanced,
+      scrollStable: Number(content?.scrollTop || 0) === window.__realtimeStable.scrollTop,
+      summaryVisible: Boolean(document.querySelector('#analyticsSummarySlot .summary-card')),
+    };
+  });
+  assert.deepEqual(realtimeState, {
+    appStable: true,
+    filtersStable: true,
+    tableStable: true,
+    advancedStable: true,
+    scrollStable: true,
+    summaryVisible: true,
+  }, `realtime snapshot should not move or rebuild the active interface: ${JSON.stringify(realtimeState)} (before=${realtimeBefore})`);
+
   const requestPaginationGeometry = await evalIn(win, (kind) => {
     const prefix = kind === 'sessions' ? 'session' : 'request';
     const note = document.querySelector(`[data-table-limit="${kind}"]`);

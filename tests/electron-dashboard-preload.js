@@ -20,7 +20,7 @@ const invokeChannels = new Set([
   'dashboard:getRuntimeInfo', 'dashboard:getInitialSummary', 'dashboard:getSnapshot',
   'dashboard:getRequestsPage', 'dashboard:getSessionRequestsPage', 'dashboard:getSessionsPage',
   'dashboard:getAggregates', 'dashboard:refreshLight', 'dashboard:refreshFull', 'dashboard:settings', 'dashboard:setLayoutMode', 'dashboard:setPinned',
-  'dashboard:log', 'dashboard:rendererError', 'dashboard:getDiagnostics', 'dashboard:openSession',
+  'dashboard:log', 'dashboard:rendererError', 'dashboard:getDiagnostics', 'dashboard:e2ePushRealtime', 'dashboard:openSession',
   'dashboard:openCodeArtsSession', 'dashboard:copySession', 'dashboard:openLogs',
   'dashboard:archiveSession', 'dashboard:renameSession', 'dashboard:e2eSetPageTotalOverride', 'dashboard:e2eSetRefreshDelay',
 ]);
