@@ -1061,6 +1061,14 @@ async function main() {
   assert.ok(dateState.start > 0 && dateState.end > dateState.start, "custom date range should be saved");
   assert.match(dateState.summary, /2026\/07\/08|07\/08/);
   assert.ok(ipcCalls.some((x) => x.channel === "dashboard:getRequestsPage" && x.payload?.offset === 0 && Number(x.payload?.range?.start || 0) === dateState.start && Number(x.payload?.range?.end || 0) === dateState.end), "date range apply should request the first DB page with the confirmed range");
+  const customSummary = await evalIn(win, () => ({
+    total: document.querySelector('.usage-total-value')?.textContent || '',
+    requests: document.querySelector('.usage-total-request strong')?.textContent || '',
+  }));
+  const expectedCustomRows = filterRows({ range: { start: dateState.start, end: dateState.end } });
+  const expectedCustomUsage = usageForRows(expectedCustomRows);
+  assert.equal(customSummary.requests, String(expectedCustomUsage.requests), `custom date summary must use the scoped aggregate, not the visible page: ${JSON.stringify({ customSummary, expected: expectedCustomUsage })}`);
+  assert.ok(customSummary.total.replace(/[^0-9]/g, '').startsWith(String(expectedCustomUsage.total)), `custom date summary total must cover all matching fixture rows: ${JSON.stringify({ customSummary, expected: expectedCustomUsage })}`);
   const dateScrollAfter = await evalIn(win, () => {
     const content = document.querySelector('.content');
     const table = document.querySelector('.request-main .table-scroll');

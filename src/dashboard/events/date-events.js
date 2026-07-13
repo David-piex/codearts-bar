@@ -153,10 +153,33 @@ async function applyDateRangeAndPatchView(opts = {}){
   resetSessionPaging();
   if(snapshot?.ok && workspaceMode === 'analytics'){
     setPagedTableLoading?.('requests', true, 0);
+    const summaryPayload = typeof dashboardPayloadForCurrentView === 'function'
+      ? dashboardPayloadForCurrentView(snapshot)
+      : null;
+    const summaryPromise = summaryPayload
+      ? ipcRenderer.invoke('dashboard:getInitialSummary', summaryPayload).catch(() => null)
+      : Promise.resolve(null);
     try {
-      await refreshRequestPageCache(0, { force: true });
+      const [summary] = await Promise.all([
+        summaryPromise,
+        refreshRequestPageCache(0, { force: true }),
+      ]);
+      if(summary?.ok && summary.usage){
+        snapshot = {
+          ...snapshot,
+          usage: summary.usage,
+          sources: summary.sources || snapshot.sources || [],
+          sourceErrors: summary.sourceErrors || snapshot.sourceErrors || [],
+          nativeError: summary.nativeError || snapshot.nativeError || null,
+          summaryOnly: true,
+          summaryFilter: summary.summaryFilter || null,
+          freshness: summary.freshness || snapshot.freshness,
+          status: summary.status || snapshot.status,
+          quota: summary.quota || snapshot.quota,
+          health: summary.health || snapshot.health,
+        };
+      }
       await ensureRequestPageInBoundsAfterLoad?.();
-      scrollPagedTableToTop?.('requests');
     } catch {
       setPagedTableLoading?.('requests', false, 0);
     } finally {
@@ -176,7 +199,6 @@ async function applyDateRangeAndPatchView(opts = {}){
       const canDbPage = typeof canUseDbSessionPage === 'function' && canUseDbSessionPage();
       if(canDbPage) await refreshSessionPageCache(0, { force: true });
       if(canDbPage) await ensureSessionPageInBoundsAfterLoad?.();
-      scrollPagedTableToTop?.('sessions');
     } catch {
       setPagedTableLoading?.('sessions', false, 0);
     } finally {

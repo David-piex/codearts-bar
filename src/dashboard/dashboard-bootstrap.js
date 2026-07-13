@@ -74,6 +74,20 @@ function mergeLightSnapshotPayload(current, incoming){
 function applyRealtimeSnapshot(incoming){
   if(typeof cancelDateRangeScrollRestore === 'function') cancelDateRangeScrollRestore();
   if(typeof dateRangeScrollState !== 'undefined' && dateRangeScrollState) dateRangeScrollState = null;
+  if(typeof chartAnimationFrame !== 'undefined' && chartAnimationFrame){
+    cancelAnimationFrame(chartAnimationFrame);
+    chartAnimationFrame = null;
+  }
+  if(typeof chartHoverFrame !== 'undefined' && chartHoverFrame){
+    cancelAnimationFrame(chartHoverFrame);
+    chartHoverFrame = null;
+  }
+  if(typeof clearChartHover === 'function') clearChartHover({ redraw: false, clearPinned: true });
+  if(typeof chartBindToken !== 'undefined') chartBindToken += 1;
+  if(typeof chartBindTimer !== 'undefined' && chartBindTimer){
+    clearTimeout(chartBindTimer);
+    chartBindTimer = null;
+  }
   const next = mergeLightSnapshotPayload(snapshot, incoming);
   if(!next?.ok) return false;
   if(!snapshot?.ok){

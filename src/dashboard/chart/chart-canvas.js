@@ -232,7 +232,7 @@ function drawChart(rows, s, hover = -1, progress = 1){
   rememberChartCanvasBox(canvas, box.width, box.height, dpr, resizedCanvas ? 'resize' : (box.cached ? 'cached' : 'draw'));
   if(resizedCanvas) markPerfStage('chartResizeMs', perfNow() - resizeStartedAt);
   const paintStartedAt = perfNow();
-  const ctx = canvas.getContext('2d', { alpha: false, desynchronized: true });
+  const ctx = canvas.getContext('2d', { alpha: false });
   if(ctx.setTransform) ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   else {
     if(ctx.resetTransform) ctx.resetTransform();

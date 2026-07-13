@@ -5,6 +5,11 @@ const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
 const { spawn } = require('node:child_process');
+
+// The dashboard uses a canvas for the trend chart. Hardware accelerated
+// renderer crashes were observed in the portable Windows build (exit code
+// 0x80000003), so keep the desktop surface on Electron's stable software path.
+app.disableHardwareAcceleration();
 const { getSnapshotWithCache, snapshotToText, errorSnapshot, fmtInt } = require('./codeartsData');
 const { loadSettings, saveSettings, watchSettings, closeSettingsStore } = require('./settings');
 const { diagnose } = require('./diagnose');

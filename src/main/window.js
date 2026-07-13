@@ -86,6 +86,7 @@ function createDashboardWindow({ appDir, isQuitting, hideToTray, appendLog, reco
       contextIsolation: true,
       sandbox: true,
       webSecurity: true,
+      backgroundThrottling: false,
     },
   });
   win.setMenuBarVisibility(false);
