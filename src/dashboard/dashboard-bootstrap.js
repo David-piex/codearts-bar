@@ -82,6 +82,7 @@ function aggregatePayloadForView(s, extra = {}){
     end,
     timestamp: Number(s?.timestamp || Date.now()),
     windowHours: Number(s?.config?.windowHours || 24),
+    bucketMs: typeof isDayRange === 'function' && isDayRange() ? 86400000 : 3600000,
     ...extra,
   };
 }

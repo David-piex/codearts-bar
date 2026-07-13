@@ -375,6 +375,7 @@ async function main() {
       yAxisMax: Number(document.querySelector("#usageChart")?.dataset?.yAxisMax || 0),
       yAxisUnit: document.querySelector("#usageChart")?.dataset?.yAxisUnit || "",
       xAxisLabels: JSON.parse(document.querySelector("#usageChart")?.dataset?.xAxisLabels || "[]"),
+      summaryText: document.querySelector(".usage-total-value")?.textContent || "",
     };
   });
   assert.match(initial.title, /Bar/);
@@ -441,6 +442,7 @@ async function main() {
       tableStable: document.querySelector("#analyticsTableSlot") === window.__refreshStable.table,
       popoverStable: document.querySelector(".date-range-popover") === window.__refreshStable.popover,
       scrollStable: Number(content?.scrollTop || 0) === window.__refreshStable.scrollTop,
+      summaryText: document.querySelector(".usage-total-value")?.textContent || "",
     };
     document.querySelector("[data-date-range-toggle]")?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, view: window }));
     await window.codeartsApi.invoke("dashboard:e2eSetRefreshDelay", 0);
@@ -454,6 +456,7 @@ async function main() {
     tableStable: true,
     popoverStable: true,
     scrollStable: true,
+    summaryText: initial.summaryText,
   }, `refresh should patch in place without replacing stable shells: ${JSON.stringify(refreshedState)}`);
   assert.equal(ipcCalls.filter((x) => x.channel === "dashboard:refreshLight").length - refreshCallsBefore, 1, "overlapping refresh clicks should share one IPC request");
   const requestPaginationGeometry = await evalIn(win, (kind) => {
