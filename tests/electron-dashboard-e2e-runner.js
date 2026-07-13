@@ -958,12 +958,27 @@ async function main() {
   await click(win, '[data-workspace="analytics"]');
   await waitFor(win, () => localStorage.getItem("workspaceMode") === "analytics" && Boolean(document.querySelector("#usageChart")));
 
+  await evalIn(win, () => {
+    const content = document.querySelector('.content');
+    if(content) content.scrollTop = Math.min(180, Math.max(0, content.scrollHeight - content.clientHeight));
+  });
+  const dateScrollBefore = await evalIn(win, () => {
+    const content = document.querySelector('.content');
+    const table = document.querySelector('.request-main .table-scroll');
+    window.__dateRangeScrollBefore = {
+      content: Number(content?.scrollTop || 0),
+      table: Number(table?.scrollTop || 0),
+      height: Number(content?.scrollHeight || 0),
+    };
+    return window.__dateRangeScrollBefore.content;
+  });
   await click(win, "[data-date-range-toggle]");
   await waitFor(win, () => Boolean(document.querySelector(".date-range-popover")));
   const dateOpen = await evalIn(win, () => ({
     dateInputs: document.querySelectorAll('[data-date-range-date]').length,
     timeInputs: document.querySelectorAll('[data-date-range-time]').length,
     viewport: { width: window.innerWidth, height: window.innerHeight },
+    scrollTop: Number(document.querySelector('.content')?.scrollTop || 0),
     popoverRect: (() => {
       const rect = document.querySelector(".date-range-popover")?.getBoundingClientRect();
       return rect ? { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom, width: rect.width, height: rect.height } : null;
@@ -975,6 +990,7 @@ async function main() {
   assert.ok(dateOpen.popoverRect.left >= 8, `date range popover should not overflow left after maximize: ${JSON.stringify(dateOpen.popoverRect)}`);
   assert.ok(dateOpen.popoverRect.right <= dateOpen.viewport.width - 8, `date range popover should not overflow right after maximize: ${JSON.stringify(dateOpen.popoverRect)}`);
   assert.ok(dateOpen.popoverRect.bottom <= dateOpen.viewport.height - 8, `date range popover should fit vertically after maximize: ${JSON.stringify(dateOpen.popoverRect)}`);
+  assert.equal(dateOpen.scrollTop, dateScrollBefore, `opening date range should preserve outer scroll position: before=${dateScrollBefore} after=${dateOpen.scrollTop}`);
   const invalidDateState = await evalIn(win, () => {
     const beforeStart = localStorage.getItem("customDateStart");
     const beforeEnd = localStorage.getItem("customDateEnd");
@@ -1045,6 +1061,23 @@ async function main() {
   assert.ok(dateState.start > 0 && dateState.end > dateState.start, "custom date range should be saved");
   assert.match(dateState.summary, /2026\/07\/08|07\/08/);
   assert.ok(ipcCalls.some((x) => x.channel === "dashboard:getRequestsPage" && x.payload?.offset === 0 && Number(x.payload?.range?.start || 0) === dateState.start && Number(x.payload?.range?.end || 0) === dateState.end), "date range apply should request the first DB page with the confirmed range");
+  const dateScrollAfter = await evalIn(win, () => {
+    const content = document.querySelector('.content');
+    const table = document.querySelector('.request-main .table-scroll');
+    return {
+      content: Number(content?.scrollTop || 0),
+      table: Number(table?.scrollTop || 0),
+      height: Number(content?.scrollHeight || 0),
+    };
+  });
+  assert.equal(dateScrollAfter.content, dateScrollBefore, `date range apply should preserve outer scroll position: before=${dateScrollBefore} after=${dateScrollAfter.content}`);
+  assert.equal(dateScrollAfter.table, 0, `date range apply should keep request table at page 1: after=${dateScrollAfter.table}`);
+  await delay(650);
+  const dateScrollSettled = await evalIn(win, () => ({
+    content: Number(document.querySelector('.content')?.scrollTop || 0),
+    table: Number(document.querySelector('.request-main .table-scroll')?.scrollTop || 0),
+  }));
+  assert.equal(dateScrollSettled.content, dateScrollBefore, `date range async patches should not move outer scroll: before=${dateScrollBefore} after=${dateScrollSettled.content}`);
 
   await evalIn(win, () => {
     window.__copiedPerfReport = "";

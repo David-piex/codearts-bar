@@ -72,6 +72,8 @@ function mergeLightSnapshotPayload(current, incoming){
 // be typing, inspecting a row, or scrolled deep into a table when a new
 // snapshot arrives, so only update data surfaces that have stable geometry.
 function applyRealtimeSnapshot(incoming){
+  if(typeof cancelDateRangeScrollRestore === 'function') cancelDateRangeScrollRestore();
+  if(typeof dateRangeScrollState !== 'undefined' && dateRangeScrollState) dateRangeScrollState = null;
   const next = mergeLightSnapshotPayload(snapshot, incoming);
   if(!next?.ok) return false;
   if(!snapshot?.ok){
@@ -146,6 +148,9 @@ function applyRealtimeSnapshot(incoming){
   setTimeout(restore, 32);
   setTimeout(restore, 96);
   setTimeout(restore, 180);
+  setTimeout(restore, 320);
+  setTimeout(restore, 520);
+  setTimeout(restore, 800);
   return true;
 }
 function shallowJsonEqual(a, b){

@@ -1,3 +1,11 @@
+let dateRangeScrollState = null;
+let dateRangeRestoreTimers = [];
+
+function cancelDateRangeScrollRestore(){
+  dateRangeRestoreTimers.forEach((timer) => clearTimeout(timer));
+  dateRangeRestoreTimers = [];
+}
+
 function patchDateRangeChrome(){
   if(snapshot?.ok && patchDateRangeControlOnly()) return true;
   if(snapshot?.ok && patchAnalyticsFiltersOnly(snapshot)) return true;
@@ -88,13 +96,58 @@ function handleDateRangeDraftInput(target){
   const part = dateInput.dataset.dateRangeDate ? 'date' : 'time';
   updateDateRangeDraft(which, part, dateInput.value);
   syncDateRangeFieldChrome();
+  if(dateRangeScrollState) scheduleDateRangeScrollRestore(dateRangeScrollState);
   return true;
+}
+function captureDateRangeScrollState(){
+  const content = document.querySelector('.content');
+  const requestScroller = document.querySelector('.request-main .table-scroll');
+  const sessionScroller = document.querySelector('.session-scroll');
+  const active = document.activeElement;
+  const selection = active && typeof active.selectionStart === 'number' ? {
+    start: active.selectionStart,
+    end: active.selectionEnd,
+  } : null;
+  return {
+    contentTop: Number(content?.scrollTop || 0),
+    contentLeft: Number(content?.scrollLeft || 0),
+    requestTop: Number(requestScroller?.scrollTop || 0),
+    requestLeft: Number(requestScroller?.scrollLeft || 0),
+    sessionTop: Number(sessionScroller?.scrollTop || 0),
+    sessionLeft: Number(sessionScroller?.scrollLeft || 0),
+    active,
+    selection,
+  };
+}
+function restoreDateRangeScrollState(state = {}, restoreFocus = false){
+  const content = document.querySelector('.content');
+  const requestScroller = document.querySelector('.request-main .table-scroll');
+  const sessionScroller = document.querySelector('.session-scroll');
+  if(content){ content.scrollTop = Number(state.contentTop || 0); content.scrollLeft = Number(state.contentLeft || 0); }
+  if(requestScroller){ requestScroller.scrollTop = Number(state.requestTop || 0); requestScroller.scrollLeft = Number(state.requestLeft || 0); }
+  if(sessionScroller){ sessionScroller.scrollTop = Number(state.sessionTop || 0); sessionScroller.scrollLeft = Number(state.sessionLeft || 0); }
+  if(restoreFocus && state.active?.isConnected){
+    try {
+      state.active.focus({ preventScroll: true });
+      if(state.selection && typeof state.active.setSelectionRange === 'function') state.active.setSelectionRange(state.selection.start, state.selection.end);
+    } catch {}
+  }
+}
+function scheduleDateRangeScrollRestore(state, restoreFocus = false){
+  cancelDateRangeScrollRestore();
+  restoreDateRangeScrollState(state, restoreFocus);
+  try { requestAnimationFrame(() => restoreDateRangeScrollState(state, restoreFocus)); } catch {}
+  [0, 32, 96, 180, 320, 520].forEach((delay) => {
+    dateRangeRestoreTimers.push(setTimeout(() => restoreDateRangeScrollState(state, restoreFocus), delay));
+  });
 }
 async function applyDateRangeAndPatchView(opts = {}){
   if(applyCustomDateInputs() === false){
     syncDateRangeErrorChrome();
     return false;
   }
+  const scrollState = dateRangeScrollState || captureDateRangeScrollState();
+  dateRangeScrollState = null;
   resetIncrementalRenderLimits('all');
   resetRequestPaging();
   resetSessionPaging();
@@ -109,8 +162,12 @@ async function applyDateRangeAndPatchView(opts = {}){
     } finally {
       clearPagedTableLoading?.('requests');
     }
-    if(patchAnalyticsSlotsForState(snapshot, { deferHeavy: true, chartDelayMs: 40, ...opts })) return true;
-    render(snapshot, { windowLayout: false, instantChart: true, deferHeavy: true, partial: true });
+    if(patchAnalyticsSlotsForState(snapshot, { deferHeavy: true, chartDelayMs: 40, ...opts })){
+      scheduleDateRangeScrollRestore(scrollState, true);
+      return true;
+    }
+    render(snapshot, { windowLayout: false, instantChart: true, deferHeavy: true, partial: true, preserveScrollTop: scrollState.contentTop });
+    scheduleDateRangeScrollRestore(scrollState, true);
     return true;
   }
   if(snapshot?.ok && workspaceMode === 'sessions'){
@@ -125,11 +182,18 @@ async function applyDateRangeAndPatchView(opts = {}){
     } finally {
       clearPagedTableLoading?.('sessions');
     }
-    if(patchSessionView(snapshot, { table: true, toolbar: false, inspector: true, pageChange: true })) return true;
-    render(snapshot, { windowLayout: false, instantChart: true, deferHeavy: true, partial: true });
+    if(patchSessionView(snapshot, { table: true, toolbar: false, inspector: true, pageChange: true })){
+      scheduleDateRangeScrollRestore(scrollState, true);
+      return true;
+    }
+    render(snapshot, { windowLayout: false, instantChart: true, deferHeavy: true, partial: true, preserveScrollTop: scrollState.contentTop });
+    scheduleDateRangeScrollRestore(scrollState, true);
     return true;
   }
-  if(snapshot?.ok) render(snapshot, { windowLayout: false, instantChart: true, deferHeavy: true, partial: true });
+  if(snapshot?.ok){
+    render(snapshot, { windowLayout: false, instantChart: true, deferHeavy: true, partial: true, preserveScrollTop: scrollState.contentTop });
+    scheduleDateRangeScrollRestore(scrollState, true);
+  }
   return Boolean(snapshot?.ok);
 }
 document.addEventListener('click', async (e) => {
@@ -138,13 +202,27 @@ document.addEventListener('click', async (e) => {
   if(dateRangeOpen && !dateControl && !preserveDatePopover){
     dateRangeOpen = false;
     patchDateRangeChrome();
+    cancelDateRangeScrollRestore();
+    if(dateRangeScrollState) restoreDateRangeScrollState(dateRangeScrollState, true);
+    dateRangeScrollState = null;
     e.__dashboardHandled = true; return;
   }
   const dateToggle = e.target.closest('[data-date-range-toggle]');
   if(dateToggle){
-    if(dateRangeOpen) dateRangeOpen = false;
-    else openDateRangePopover();
+    if(dateRangeOpen){
+      dateRangeOpen = false;
+      cancelDateRangeScrollRestore();
+      const closingScrollState = dateRangeScrollState;
+      dateRangeScrollState = null;
+      patchDateRangeChrome();
+      if(closingScrollState) restoreDateRangeScrollState(closingScrollState, true);
+      e.__dashboardHandled = true; return;
+    } else {
+      dateRangeScrollState = captureDateRangeScrollState();
+      openDateRangePopover();
+    }
     patchDateRangeChrome();
+    if(dateRangeScrollState) scheduleDateRangeScrollRestore(dateRangeScrollState);
     e.__dashboardHandled = true; return;
   }
   const dateQuick = e.target.closest('[data-date-range-quick]');
@@ -152,6 +230,7 @@ document.addEventListener('click', async (e) => {
     setDateRangeQuick(dateQuick.dataset.dateRangeQuick || 'today');
     dateRangeError = '';
     patchDateRangePopoverOnly();
+    if(dateRangeScrollState) scheduleDateRangeScrollRestore(dateRangeScrollState);
     e.__dashboardHandled = true; return;
   }
   const dateFocus = e.target.closest('[data-date-range-focus]');
@@ -163,6 +242,7 @@ document.addEventListener('click', async (e) => {
     }
     syncDateRangeFieldChrome();
     patchDateRangePopoverOnly();
+    if(dateRangeScrollState) scheduleDateRangeScrollRestore(dateRangeScrollState);
     e.__dashboardHandled = true; return;
   }
   const dateMonth = e.target.closest('[data-date-range-month]');
@@ -173,12 +253,14 @@ document.addEventListener('click', async (e) => {
     dateRangeMonth = monthStart(d.getTime());
     localStorage.setItem('dateRangeMonth', String(dateRangeMonth));
     patchDateRangePopoverOnly();
+    if(dateRangeScrollState) scheduleDateRangeScrollRestore(dateRangeScrollState);
     e.__dashboardHandled = true; return;
   }
   const dateDay = e.target.closest('[data-date-range-day]');
   if(dateDay){
     chooseCalendarDay(Number(dateDay.dataset.dateRangeDay));
     patchDateRangePopoverOnly();
+    if(dateRangeScrollState) scheduleDateRangeScrollRestore(dateRangeScrollState);
     e.__dashboardHandled = true; return;
   }
   const dateCancel = e.target.closest('[data-date-range-cancel]');
@@ -187,6 +269,9 @@ document.addEventListener('click', async (e) => {
     dateRangeDraftStart = 0;
     dateRangeDraftEnd = 0;
     patchDateRangeChrome();
+    cancelDateRangeScrollRestore();
+    if(dateRangeScrollState) restoreDateRangeScrollState(dateRangeScrollState, true);
+    dateRangeScrollState = null;
     e.__dashboardHandled = true; return;
   }
   const dateConfirm = e.target.closest('[data-date-range-confirm]');
