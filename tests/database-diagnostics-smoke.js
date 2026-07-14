@@ -37,8 +37,10 @@ try {
   assert.equal(classifyDatabaseError("database disk image is malformed", { id: "cli", label: "CLI" }).code, "database_corrupt_or_schema");
   assert.equal(classifyDatabaseError("SQLITE_BUSY: database is locked", { id: "cli", label: "CLI" }).code, "database_locked");
 
-  const fallback = getDatabaseDiagnostics({}, { nativeError: "Cannot find module node:sqlite", sourceErrors: [] });
+  const fallback = getDatabaseDiagnostics({ timestamp: 123 }, { nativeError: "Cannot find module node:sqlite", sourceErrors: [] });
   assert.ok(codes(fallback).has("sqlite_fallback"));
+  assert.equal(fallback.timestamp, 123);
+  assert.doesNotMatch(JSON.stringify(missing), new RegExp(tmpHome.replace(/[\\^$.*+?()[\]{}|]/g, "\\\\$&")));
 
   const ipcMain = { handlers: {}, handle(name, fn) { this.handlers[name] = fn; } };
   registerDashboardIpc({

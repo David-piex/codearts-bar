@@ -59,7 +59,7 @@ async function getSummarySqlJs(payload = {}) {
 async function getSummary(payload = {}) {
   if (process.env.CODEARTS_BAR_FORCE_SQLJS !== '1') {
     try { return getSummaryNative(payload); }
-    catch (error) { return aggregateError(error.message, await getSummarySqlJs(payload)); }
+    catch (error) { return aggregateError(error, await getSummarySqlJs(payload)); }
   }
   return aggregateError('CODEARTS_BAR_FORCE_SQLJS=1', await getSummarySqlJs(payload));
 }
@@ -99,7 +99,7 @@ async function getTrendBucketsSqlJs(payload = {}) {
 async function getTrendBuckets(payload = {}) {
   if (process.env.CODEARTS_BAR_FORCE_SQLJS !== '1') {
     try { return getTrendBucketsNative(payload); }
-    catch (error) { return aggregateError(error.message, await getTrendBucketsSqlJs(payload)); }
+    catch (error) { return aggregateError(error, await getTrendBucketsSqlJs(payload)); }
   }
   return aggregateError('CODEARTS_BAR_FORCE_SQLJS=1', await getTrendBucketsSqlJs(payload));
 }
@@ -122,7 +122,7 @@ async function getSourceStatsSqlJs(payload = {}) {
 async function getSourceStats(payload = {}) {
   if (process.env.CODEARTS_BAR_FORCE_SQLJS !== '1') {
     try { return getSourceStatsNative(payload); }
-    catch (error) { return aggregateError(error.message, await getSourceStatsSqlJs(payload)); }
+    catch (error) { return aggregateError(error, await getSourceStatsSqlJs(payload)); }
   }
   return aggregateError('CODEARTS_BAR_FORCE_SQLJS=1', await getSourceStatsSqlJs(payload));
 }
@@ -145,7 +145,7 @@ async function getModelStatsSqlJs(payload = {}) {
 async function getModelStats(payload = {}) {
   if (process.env.CODEARTS_BAR_FORCE_SQLJS !== '1') {
     try { return getModelStatsNative(payload); }
-    catch (error) { return aggregateError(error.message, await getModelStatsSqlJs(payload)); }
+    catch (error) { return aggregateError(error, await getModelStatsSqlJs(payload)); }
   }
   return aggregateError('CODEARTS_BAR_FORCE_SQLJS=1', await getModelStatsSqlJs(payload));
 }
@@ -168,7 +168,7 @@ async function getSessionSummarySqlJs(payload = {}) {
 async function getSessionSummary(payload = {}) {
   if (process.env.CODEARTS_BAR_FORCE_SQLJS !== '1') {
     try { return getSessionSummaryNative(payload); }
-    catch (error) { return aggregateError(error.message, await getSessionSummarySqlJs(payload)); }
+    catch (error) { return aggregateError(error, await getSessionSummarySqlJs(payload)); }
   }
   return aggregateError('CODEARTS_BAR_FORCE_SQLJS=1', await getSessionSummarySqlJs(payload));
 }
@@ -358,7 +358,7 @@ async function getDashboardAggregatesSqlJs(payload = {}) {
 async function getDashboardAggregates(payload = {}) {
   if (process.env.CODEARTS_BAR_FORCE_SQLJS !== '1') {
     try { return getDashboardAggregatesNative(payload); }
-    catch (error) { return aggregateError(error.message, await getDashboardAggregatesSqlJs(payload)); }
+    catch (error) { return aggregateError(error, await getDashboardAggregatesSqlJs(payload)); }
   }
   return aggregateError('CODEARTS_BAR_FORCE_SQLJS=1', await getDashboardAggregatesSqlJs(payload));
 }
@@ -392,7 +392,7 @@ async function getDatabaseHealth(payload = {}) {
   if (process.env.CODEARTS_BAR_FORCE_SQLJS !== '1') {
     try { return getDatabaseHealthNative(payload); }
     catch (error) {
-      const health = aggregateError(error.message, await getDatabaseHealthSqlJs(payload));
+      const health = aggregateError(error, await getDatabaseHealthSqlJs(payload));
       health.diagnostics = getDatabaseDiagnostics(payload, health);
       return health;
     }

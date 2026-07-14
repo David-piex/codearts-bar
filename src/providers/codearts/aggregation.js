@@ -36,7 +36,7 @@ const getDatabaseHealthSqlJs = (payload = {}) => workerAggregate('databaseHealth
 async function withFallback(payload, nativeFn, sqlJsFn) {
   if (process.env.CODEARTS_BAR_FORCE_SQLJS !== '1') {
     try { return nativeFn(payload); }
-    catch (error) { return aggregateError(error.message, await sqlJsFn(payload)); }
+    catch (error) { return aggregateError(error, await sqlJsFn(payload)); }
   }
   return aggregateError('CODEARTS_BAR_FORCE_SQLJS=1', await sqlJsFn(payload));
 }

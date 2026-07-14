@@ -11,7 +11,7 @@ const { listProviders } = require('../src/providers');
 const localProvider = require('../src/providers/codeartsLocal');
 const agg = require('../src/core/aggregator');
 const cacheMetrics = require('../src/core/cacheMetrics');
-const { getSnapshotAsync, getSnapshotWithCache, resolveNow } = require('../src/codeartsData');
+const { getSnapshotAsync, getSnapshotWithCache, errorSnapshot, resolveNow } = require('../src/codeartsData');
 const { writeCache, closeSettingsStore } = require('../src/settings');
 const rollupCache = require('../src/providers/codearts/rollup-cache');
 const dashboardUsageRollup = require('../src/providers/codearts/usage-rollup');
@@ -172,6 +172,38 @@ function testCacheMetricPipelineConsistency() {
   assert.equal(modelCache.cacheHitDenominator, 842000 + 100 + 509000 + 100);
   assert.equal(Math.round(modelCache.cacheHitRate * 10) / 10, Math.round(((509000 + 100) / modelCache.cacheHitDenominator) * 1000) / 10);
   assert.notEqual(core.cacheHitRate, (core.cacheRead / Math.max(1, core.cacheRead + core.cacheWrite)) * 100, 'cache hit rate must not use cacheRead/(cacheRead+cacheWrite)');
+}
+async function testRuntimeErrorPrivacy() {
+  const secretRoot = path.join(os.tmpdir(), 'private-runtime-secret');
+  const secretPath = path.join(secretRoot, 'opencode.db');
+  const raw = new Error(`EACCES token=secret-value ${secretPath}`);
+  const safe = localProvider.safeDbError(raw);
+  assert.doesNotMatch(safe, /secret-value|private-runtime-secret|opencode\.db/i);
+  assert.match(safe, /权限|数据源/);
+
+  const snapshot = errorSnapshot(raw, secretPath, { timestamp: FIXTURE_NOW_MS });
+  assert.doesNotMatch(snapshot.error, /secret-value|private-runtime-secret|opencode\.db/i);
+
+  const page = aggregationRuntime.aggregateError(raw, {});
+  assert.doesNotMatch(page.nativeError, /secret-value|private-runtime-secret|opencode\.db/i);
+
+  const missing = path.join(secretRoot, 'missing.db');
+  await assert.rejects(
+    () => localProvider.collectRows({ dbPath: missing }),
+    (error) => {
+      assert.match(String(error?.message || error), /不存在/);
+      assert.doesNotMatch(String(error?.message || error), /private-runtime-secret|missing\.db/i);
+      return true;
+    },
+  );
+  await assert.rejects(
+    () => localProvider.getRequestsPage({ dbPath: missing }),
+    (error) => {
+      assert.match(String(error?.message || error), /不存在/);
+      assert.doesNotMatch(String(error?.message || error), /private-runtime-secret|missing\.db/i);
+      return true;
+    },
+  );
 }
 function testLocalDayTrendBuckets() {
   const day = 86_400_000;
@@ -619,6 +651,11 @@ async function testSqlJsReadsCommittedWal() {
     sqlDb = await sqlite.openSqlJsDbReadonly(dbPath);
     const rows = sqlite.sqlJsAll(sqlDb, "select id, json_extract(data, '$.tokens.total') as total from message order by id");
     assert.deepEqual(rows.map((row) => ({ id: row.id, total: row.total })), [{ id: 'wal-only', total: 17 }]);
+    assert.throws(() => sqlDb.exec("update message set id = 'mutated'"), (error) => error?.code === 'SQLJS_READONLY');
+    assert.throws(() => sqlDb.prepare("delete from message where id = ?"), (error) => error?.code === 'SQLJS_READONLY');
+    assert.throws(() => sqlDb.exec("pragma quick_check; update message set id = 'mutated'"), (error) => error?.code === 'SQLJS_READONLY');
+    assert.throws(() => sqlDb.export(), (error) => error?.code === 'SQLJS_READONLY');
+    assert.equal(writer.prepare('select count(*) as count from message where id = ?').get('wal-only').count, 1);
   } finally {
     sqlite.closeDb(sqlDb);
     writer.close();
@@ -828,6 +865,7 @@ async function testDashboardUsageRollupCache() {
   testQuota();
   testProviders();
   testAggregator();
+  await testRuntimeErrorPrivacy();
   testCacheMetricsFormula();
   testCacheMetricPipelineConsistency();
   testLocalDayTrendBuckets();

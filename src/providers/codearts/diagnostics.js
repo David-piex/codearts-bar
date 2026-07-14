@@ -8,6 +8,7 @@ const {
   resolveDbPath,
   sourceForDb,
   sourceMatchesPayload,
+  resolveTimestamp,
 } = require('./sources');
 const { sqliteRuntimeStatus } = require('./sqlite');
 
@@ -19,22 +20,34 @@ function issue(tone, code, title, detail, extra = {}) {
   return { tone, code, title, detail, ...extra };
 }
 
+function safeIssueExtra(source = {}) {
+  return { source: source.id || source.source || undefined };
+}
+
 function classifyDatabaseError(message = '', source = {}) {
   const text = String(message || '');
   const label = source.label || source.source || source.id || '数据源';
   if (/ENOENT|no such file|not found|不存在|missing/i.test(text)) {
-    return issue('bad', 'database_missing', `${label} 数据库不存在`, `没有找到 ${source.dbPath || 'opencode.db'}。请先启动 CodeArts Agent / CLI 产生会话，或在设置里选择正确路径。`, { source: source.id || source.source, dbPath: source.dbPath, raw: text });
+    return issue('bad', 'database_missing', `${label} 数据库不存在`, '没有找到可读取的 opencode.db。请先启动 CodeArts Agent / CLI 产生会话，或在设置里选择正确路径。', safeIssueExtra(source));
   }
   if (/EACCES|EPERM|permission|权限|access denied/i.test(text)) {
-    return issue('bad', 'database_permission', `${label} 数据库无读取权限`, `当前用户没有读取 ${source.dbPath || 'opencode.db'} 的权限。请检查目录权限，或用普通用户重新启动应用。`, { source: source.id || source.source, dbPath: source.dbPath, raw: text });
+    return issue('bad', 'database_permission', `${label} 数据库无读取权限`, '当前用户没有读取数据库的权限。请检查目录权限，或用普通用户重新启动应用。', safeIssueExtra(source));
   }
   if (/malformed|corrupt|database disk image|file is not a database|缺少.*表|no such table|schema/i.test(text)) {
-    return issue('bad', 'database_corrupt_or_schema', `${label} 数据库结构异常`, `数据库可能损坏、版本不兼容或缺少 message/session 表。建议先备份数据库，再打开日志查看具体错误。`, { source: source.id || source.source, dbPath: source.dbPath, raw: text });
+    return issue('bad', 'database_corrupt_or_schema', `${label} 数据库结构异常`, '数据库可能损坏、版本不兼容或缺少 message/session 表。建议先备份数据库，再打开日志查看具体错误。', safeIssueExtra(source));
   }
   if (/busy|locked|SQLITE_BUSY|SQLITE_LOCKED/i.test(text)) {
-    return issue('warn', 'database_locked', `${label} 数据库暂时被占用`, `CodeArts 可能正在写入数据库。稍后刷新即可；如果持续出现，请重启 CodeArts Agent / CLI。`, { source: source.id || source.source, dbPath: source.dbPath, raw: text });
+    return issue('warn', 'database_locked', `${label} 数据库暂时被占用`, 'CodeArts 可能正在写入数据库。稍后刷新即可；如果持续出现，请重启 CodeArts Agent / CLI。', safeIssueExtra(source));
   }
-  return issue('warn', 'database_unknown', `${label} 数据源异常`, text || '读取数据源时出现未知异常。', { source: source.id || source.source, dbPath: source.dbPath, raw: text });
+  return issue('warn', 'database_unknown', `${label} 数据源异常`, '读取数据源时出现未知异常。请复制脱敏诊断报告排查。', safeIssueExtra(source));
+}
+
+function safeDbError(error) {
+  const text = String(error?.message || error || '').trim();
+  // Keep the CLI's argument-validation guidance actionable; it contains no
+  // runtime data and is safer than replacing it with a generic DB status.
+  if (/^self-test requires --(?:fixture-db|config-dir|now-ms)\b/i.test(text)) return text.slice(0, 180);
+  return classifyDatabaseError(text).title;
 }
 
 function expectedSources(payload = {}) {
@@ -52,8 +65,7 @@ function dataSourceInstallIssue(payload = {}) {
     'warn',
     'codearts_not_installed',
     '未检测到 CodeArts 数据目录',
-    `没有找到 ${root}。如果这是首次启动，请先运行 CodeArts Agent / CLI 并产生一次会话。`,
-    { path: root }
+    '没有找到 CodeArts 数据目录。如果这是首次启动，请先运行 CodeArts Agent / CLI 并产生一次会话。'
   );
 }
 
@@ -66,7 +78,7 @@ function sourceFileIssues(payload = {}) {
       continue;
     }
     if (!st.isFile()) {
-      issues.push(issue('bad', 'database_path_not_file', `${source.label} 数据库路径不是文件`, `${source.dbPath} 不是一个可读取的 opencode.db 文件。`, { source: source.id, dbPath: source.dbPath }));
+      issues.push(issue('bad', 'database_path_not_file', `${source.label} 数据库路径不是文件`, '数据源路径不是可读取的 opencode.db 文件。', safeIssueExtra(source)));
       continue;
     }
     if (!canRead(source.dbPath)) {
@@ -74,7 +86,7 @@ function sourceFileIssues(payload = {}) {
       continue;
     }
     if (st.size === 0) {
-      issues.push(issue('warn', 'database_empty_file', `${source.label} 数据库为空`, `${source.dbPath} 文件大小为 0。请先产生一次 CodeArts 会话，或检查数据库是否仍在初始化。`, { source: source.id, dbPath: source.dbPath }));
+      issues.push(issue('warn', 'database_empty_file', `${source.label} 数据库为空`, '数据库文件大小为 0。请先产生一次 CodeArts 会话，或检查数据库是否仍在初始化。', safeIssueExtra(source)));
     }
   }
   return issues;
@@ -85,21 +97,21 @@ function healthIssues(health = {}) {
   for (const error of health.sourceErrors || []) out.push(classifyDatabaseError(error.message || error.error, error));
   for (const item of health.items || []) {
     if (item.quickCheck && String(item.quickCheck).toLowerCase() !== 'ok') {
-      out.push(issue('bad', 'database_quick_check_failed', `${item.label || item.source} 数据库 quick_check 异常`, String(item.quickCheck), { source: item.source, dbPath: item.dbPath }));
+      out.push(issue('bad', 'database_quick_check_failed', `${item.label || item.source} 数据库 quick_check 异常`, '数据库完整性检查未通过。', safeIssueExtra(item)));
     }
     if (Number(item.messageCount || 0) === 0 && Number(item.sessionCount || 0) === 0) {
-      out.push(issue('warn', 'database_no_records', `${item.label || item.source} 暂无会话数据`, '数据库可读取，但 message/session 都为空。请先在 CodeArts Agent / CLI 中产生一次会话。', { source: item.source, dbPath: item.dbPath }));
+      out.push(issue('warn', 'database_no_records', `${item.label || item.source} 暂无会话数据`, '数据库可读取，但 message/session 都为空。请先在 CodeArts Agent / CLI 中产生一次会话。', safeIssueExtra(item)));
     }
   }
   if (health.nativeError) {
-    out.push(issue('info', 'sqlite_fallback', '已切换到 sql.js 兼容模式', `node:sqlite 当前不可用或读取失败：${health.nativeError}`, { nativeError: health.nativeError }));
+    out.push(issue('info', 'sqlite_fallback', '已切换到 sql.js 兼容模式', 'node:sqlite 当前不可用或读取失败，已自动回退到 sql.js。'));
   }
   return out;
 }
 
 function runtimeIssues(runtime = sqliteRuntimeStatus()) {
   if (runtime.native?.available) return [];
-  return [issue('info', 'node_sqlite_unavailable', 'node:sqlite 不可用，已准备 sql.js fallback', runtime.native?.error || '当前运行时不支持 node:sqlite。', { runtime })];
+  return [issue('info', 'node_sqlite_unavailable', 'node:sqlite 不可用，已准备 sql.js fallback', '当前运行时不支持 node:sqlite，已准备 sql.js 兼容模式。')];
 }
 
 function dedupeIssues(items = []) {
@@ -125,14 +137,14 @@ function getDatabaseDiagnostics(payload = {}, health = null) {
   const active = issues.filter((item) => item.tone === 'bad' || item.tone === 'warn');
   return {
     ok: active.length === 0,
-    timestamp: Date.now(),
+    timestamp: resolveTimestamp(payload),
     runtime,
     sources: expectedSources(payload).map((source) => {
       const st = stat(source.dbPath);
-      return { id: source.id, label: source.label, dbPath: source.dbPath, exists: Boolean(st), size: st?.size || 0, readable: st ? canRead(source.dbPath) : false };
+      return { id: source.id, label: source.label, exists: Boolean(st), size: st?.size || 0, readable: st ? canRead(source.dbPath) : false };
     }),
     issues,
   };
 }
 
-module.exports = { classifyDatabaseError, getDatabaseDiagnostics };
+module.exports = { classifyDatabaseError, safeDbError, getDatabaseDiagnostics };

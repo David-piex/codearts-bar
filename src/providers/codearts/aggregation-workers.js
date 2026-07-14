@@ -8,6 +8,7 @@ const {
   tagRows,
   resolveTimestamp,
 } = require('./sources');
+const { safeDbError } = require('./diagnostics');
 const {
   openNativeDbReadonly,
   openSqlJsDbReadonly,
@@ -45,7 +46,7 @@ function runNativeAggregate(payload, worker, sources = null) {
       validateTables(tables);
       items.push(worker({ source, db, tables, queryAll: nativeAllParams }));
     } catch (error) {
-      errors.push({ source: source.id, message: error.message });
+      errors.push({ source: source.id, message: safeDbError(error) });
     } finally { closeDb(db); }
   }
   if (!items.length && errors.length) throw new Error(errors.map((e) => `${e.source}: ${e.message}`).join('; '));
@@ -62,7 +63,7 @@ async function runSqlJsAggregate(payload, worker, sources = null) {
       validateTables(tables);
       items.push(worker({ source, db, tables, queryAll: sqlJsAllParams }));
     } catch (error) {
-      errors.push({ source: source.id, message: error.message });
+      errors.push({ source: source.id, message: safeDbError(error) });
     } finally { closeDb(db); }
   }
   if (!items.length && errors.length) throw new Error(errors.map((e) => `${e.source}: ${e.message}`).join('; '));

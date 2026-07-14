@@ -6,6 +6,7 @@ const nativeSql = require('./aggregation-sql');
 const { readRollupCache, writeRollupCache } = require('./rollup-cache');
 const { recordBestEffortFailure } = require('../../core/best-effort');
 const { assistantWhere, validateTables } = require('./sources');
+const { safeDbError } = require('./diagnostics');
 const {
   openNativeDbReadonly,
   openSqlJsDbReadonly,
@@ -78,15 +79,6 @@ function nowMs() {
   return Date.now();
 }
 
-function sanitizedBuildError(error) {
-  const message = error && error.message ? error.message : String(error || '');
-  if (!message) return '';
-  return message
-    .replace(/[A-Za-z]:[\\/][^\s'"]+/g, '[path]')
-    .replace(/\/(?:[^/\s'"]+\/)+[^/\s'"]+/g, '[path]')
-    .slice(0, 240);
-}
-
 function recordRollupBuild(source = {}, options = {}, result = null, durationMs = 0, error = null) {
   const dbPath = source.dbPath || '';
   const status = error ? 'failed' : (result?.usageRollup?.status || 'completed');
@@ -103,7 +95,7 @@ function recordRollupBuild(source = {}, options = {}, result = null, durationMs 
     compactBuckets: result?.usageRollup?.compact?.compactBuckets ?? result?.usageRollup?.compactBuckets ?? null,
     completedAt: Date.now(),
   };
-  if (error) entry.error = sanitizedBuildError(error);
+  if (error) entry.error = safeDbError(error);
   rollupStats.buildRuns += 1;
   rollupStats.buildMsTotal += entry.durationMs;
   rollupStats.buildMsMax = Math.max(rollupStats.buildMsMax, entry.durationMs);
@@ -303,7 +295,7 @@ function readOrBuildSessionSummaryRollup(args, options = {}) {
       usageRollup: {
         status: 'session-write-failed',
         previousReason: cached.reason || null,
-        error: error && error.message ? error.message : String(error),
+        error: safeDbError(error),
         rowCount: built.sessions.length,
       },
     };
@@ -372,7 +364,7 @@ function readOrBuildUsageRollup(args, options = {}) {
       usageRollup: {
         status: 'write-failed',
         previousReason: cached.reason || null,
-        error: error && error.message ? error.message : String(error),
+        error: safeDbError(error),
         rowCount: built.rows.length,
       },
     };
@@ -430,7 +422,7 @@ function scheduleUsageRollupBuild(source, options = {}) {
       .catch((error) => {
         rollupStats.buildFailed += 1;
         if (process.env.CODEARTS_BAR_DEBUG_ROLLUP === '1') {
-          console.warn(`[codearts-bar] usage rollup build failed for ${source.id}: ${error.message}`);
+          console.warn(`[codearts-bar] usage rollup build failed for ${source.id}: ${safeDbError(error)}`);
         }
       })
       .finally(() => pendingBuilds.delete(key));

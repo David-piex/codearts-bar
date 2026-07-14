@@ -41,7 +41,7 @@ function registerDashboardIpc({
   });
   const failedPage = (payload, error) => {
     const { limit, offset } = pageBounds(payload);
-    return { ok: false, limit, offset, total: 0, hasMore: false, items: [], snapshotTimestamp: 0, error: error.message };
+    return { ok: false, limit, offset, total: 0, hasMore: false, items: [], snapshotTimestamp: 0, error: '读取数据页失败' };
   };
 
   ipcMain.handle('dashboard:getRuntimeInfo', () => sqliteRuntimeStatus());
@@ -54,7 +54,7 @@ function registerDashboardIpc({
     catch (error) {
       appendLog('warn', 'dashboard:getInitialSummary', error.message, { payload });
       const fallback = getDashboardSnapshotForPayload?.(payload) || null;
-      return withRuntimeDiagnostics(fallback || { ok: false, error: error.message });
+      return withRuntimeDiagnostics(fallback || { ok: false, error: '读取摘要失败' });
     }
   });
 
@@ -73,7 +73,7 @@ function registerDashboardIpc({
       if (!fallback) return failedPage(payload, error);
       const page = fallbackPage(fallback?.requestLog || [], payload, fallback?.timestamp || 0);
       page.fallback = 'snapshot';
-      page.error = error.message;
+      page.error = '读取请求页失败';
       return page;
     }
   });
@@ -92,7 +92,7 @@ function registerDashboardIpc({
       });
       const page = fallbackPage(filtered, payload, fallback?.timestamp || 0);
       page.fallback = 'snapshot';
-      page.error = error.message;
+      page.error = '读取会话请求页失败';
       return page;
     }
   });
@@ -104,7 +104,7 @@ function registerDashboardIpc({
       if (!fallback) return failedPage(payload, error);
       const page = fallbackPage(fallback?.sessions || [], payload, fallback?.timestamp || 0);
       page.fallback = 'snapshot';
-      page.error = error.message;
+      page.error = '读取会话页失败';
       return page;
     }
   });
@@ -112,35 +112,35 @@ function registerDashboardIpc({
     try { return await localProvider.getSummary(dashboardAggregatePayload(payload)); }
     catch (error) {
       appendLog('warn', 'dashboard:getSummary', error.message, { payload });
-      return snapshotUsageFallback('summary', payload) || { ok: false, error: error.message };
+      return snapshotUsageFallback('summary', payload) || { ok: false, error: '读取摘要失败' };
     }
   });
   ipcMain.handle('dashboard:getTrendBuckets', async (_event, payload = {}) => {
     try { return await localProvider.getTrendBuckets(dashboardAggregatePayload(payload)); }
     catch (error) {
       appendLog('warn', 'dashboard:getTrendBuckets', error.message, { payload });
-      return snapshotUsageFallback('trend', payload) || { ok: false, error: error.message };
+      return snapshotUsageFallback('trend', payload) || { ok: false, error: '读取趋势失败' };
     }
   });
   ipcMain.handle('dashboard:getSourceStats', async (_event, payload = {}) => {
     try { return await localProvider.getSourceStats(dashboardAggregatePayload(payload)); }
     catch (error) {
       appendLog('warn', 'dashboard:getSourceStats', error.message, { payload });
-      return snapshotUsageFallback('source', payload) || { ok: false, error: error.message };
+      return snapshotUsageFallback('source', payload) || { ok: false, error: '读取来源统计失败' };
     }
   });
   ipcMain.handle('dashboard:getModelStats', async (_event, payload = {}) => {
     try { return await localProvider.getModelStats(dashboardAggregatePayload(payload)); }
     catch (error) {
       appendLog('warn', 'dashboard:getModelStats', error.message, { payload });
-      return snapshotUsageFallback('model', payload) || { ok: false, error: error.message };
+      return snapshotUsageFallback('model', payload) || { ok: false, error: '读取模型统计失败' };
     }
   });
   ipcMain.handle('dashboard:getSessionSummary', async (_event, payload = {}) => {
     try { return await localProvider.getSessionSummary(dashboardAggregatePayload(payload)); }
     catch (error) {
       appendLog('warn', 'dashboard:getSessionSummary', error.message, { payload });
-      return snapshotUsageFallback('session', payload) || { ok: false, error: error.message };
+      return snapshotUsageFallback('session', payload) || { ok: false, error: '读取会话统计失败' };
     }
   });
   ipcMain.handle('dashboard:getAggregates', async (_event, payload = {}) => {
@@ -162,7 +162,7 @@ function registerDashboardIpc({
         modelStats: model?.items || [],
         sessionSummary: session || {},
         fallback: 'snapshot',
-        error: error.message,
+        error: '读取聚合数据失败',
       };
     }
   });
@@ -170,7 +170,7 @@ function registerDashboardIpc({
     try { return await localProvider.getDatabaseHealth(dashboardAggregatePayload(payload)); }
     catch (error) {
       appendLog('warn', 'dashboard:getDatabaseHealth', error.message, { payload });
-      return { ok: false, error: error.message };
+      return { ok: false, error: '读取数据库健康状态失败' };
     }
   });
   ipcMain.handle('dashboard:getDiff', async (_event, payload = {}) => {
@@ -186,7 +186,7 @@ function registerDashboardIpc({
       return { ok: true, timestamp: Date.now(), changed: Boolean((requests.items || []).length || (sessions.items || []).length), requests: requests.items || [], sessions: sessions.items || [], requestTotal: requests.total || 0, sessionTotal: sessions.total || 0, source: 'db-page' };
     } catch (error) {
       appendLog('warn', 'dashboard:getDiff', error.message, { payload });
-      return { ok: true, timestamp: snap.timestamp || 0, changed: !since || Number(snap.timestamp || 0) > since, requests: (snap.requestLog || []).filter((item) => Number(item.time || 0) > since), sessions: (snap.sessions || []).filter((item) => Number(item.updatedAt || 0) > since), fallback: 'snapshot', error: error.message };
+      return { ok: true, timestamp: snap.timestamp || 0, changed: !since || Number(snap.timestamp || 0) > since, requests: (snap.requestLog || []).filter((item) => Number(item.time || 0) > since), sessions: (snap.sessions || []).filter((item) => Number(item.updatedAt || 0) > since), fallback: 'snapshot', error: '实时差异读取失败，已使用快照' };
     }
   });
   ipcMain.handle('dashboard:refreshLight', async (_event, payload = {}) => withRuntimeDiagnostics(await buildDashboardLightSnapshot(payload)));
@@ -210,8 +210,8 @@ function registerDashboardIpc({
     try { database = await localProvider.getDatabaseHealth(dashboardAggregatePayload({ timestamp: Date.now() })); }
     catch (error) {
       appendLog('warn', 'dashboard:getDiagnostics:database', error.message);
-      try { database = { ok: false, error: error.message, diagnostics: localProvider.getDatabaseDiagnostics({ timestamp: Date.now() }) }; }
-      catch { database = { ok: false, error: error.message }; }
+      try { database = { ok: false, error: '数据库健康检查失败', diagnostics: localProvider.getDatabaseDiagnostics({ timestamp: Date.now() }) }; }
+      catch { database = { ok: false, error: '数据库健康检查失败' }; }
     }
     let performance = null;
     try {
@@ -221,7 +221,7 @@ function registerDashboardIpc({
         slowAggregates: typeof localProvider.slowAggregateStats === 'function' ? localProvider.slowAggregateStats() : null,
       };
     } catch (error) {
-      performance = { error: error.message };
+      performance = { error: '读取性能诊断失败' };
     }
     const raw = {
       version: app.getVersion(),

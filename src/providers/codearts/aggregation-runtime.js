@@ -2,6 +2,7 @@
 
 const agg = require('../../core/aggregator');
 const { listDataSources, sourceMatchesPayload } = require('./sources');
+const { safeDbError } = require('./diagnostics');
 const {
   aggregateCacheKey,
   getAggregateCache,
@@ -149,7 +150,7 @@ function addTokenInto(target, value = {}) {
 }
 function emptyUsage() { return agg.cacheMetrics.withCacheHitMetrics({ total: 0, input: 0, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0, messages: 0, errors: 0 }); }
 function addUsage(a, b) { return addTokenInto(a, b); }
-function aggregateError(nativeError, page) { if (nativeError) page.nativeError = nativeError; return page; }
+function aggregateError(nativeError, page) { if (nativeError) page.nativeError = safeDbError(nativeError); return page; }
 function sourceList(payload = {}) {
   return listDataSources(payload).filter((s) => sourceMatchesPayload(s, payload));
 }

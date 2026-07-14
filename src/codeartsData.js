@@ -212,7 +212,7 @@ async function getSnapshotWithCache(options = {}) {
       const snap = cached.snapshot;
       if (!isAutomaticSourceSnapshot(snap)) throw error;
       snap.ok = true;
-      snap.freshness = { stale: true, source: 'cache', ageMs: Math.max(0, timestamp - (cached.savedAt || snap.timestamp || 0)), error: error.message };
+      snap.freshness = { stale: true, source: 'cache', ageMs: Math.max(0, timestamp - (cached.savedAt || snap.timestamp || 0)), error: localProvider.safeDbError(error) };
       return snap;
     } catch {
       throw error;
@@ -265,7 +265,7 @@ function snapshotToText(snapshot) {
 
 function errorSnapshot(error, dbPath = resolveDbPath(), options = {}) {
   const timestamp = resolveNow(options);
-  return { ok: false, app: '码道 Bar', timestamp, updatedAt: fmtTime(timestamp), dbPath, error: error && error.message ? error.message : String(error) };
+  return { ok: false, app: '码道 Bar', timestamp, updatedAt: fmtTime(timestamp), dbPath, error: localProvider.safeDbError(error) };
 }
 
 module.exports = { DEFAULT_DB_PATH, getSnapshot, getSnapshotAsync, getSnapshotWithCache, snapshotToText, errorSnapshot, resolveNow, fmtInt, fmtDuration, fmtTime, fmtMs };

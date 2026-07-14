@@ -91,7 +91,7 @@ function readRollupCache(dbPath, options = {}) {
   try {
     envelope = JSON.parse(fs.readFileSync(target, 'utf8').replace(/^\uFEFF/, ''));
   } catch (error) {
-    return validationFailure('corrupt', target, { error: error && error.message ? error.message : String(error) });
+    return validationFailure('corrupt', target);
   }
   return validateRollupEnvelope(envelope, dbPath, options);
 }

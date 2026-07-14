@@ -2,6 +2,7 @@
 
 const agg = require('../../core/aggregator');
 const { listDataSources, ensureReadableDb, validateTables, tagRows, placeholders, jsonExtractExpr, messageModelExpr } = require('./sources');
+const { safeDbError } = require('./diagnostics');
 const { openNativeDbReadonly, openSqlJsDbReadonly, nativeAll, sqlJsAll, nativeAllParams, sqlJsAllParams, closeDb } = require('./sqlite');
 
 function chunked(list, size = 800) {
@@ -41,7 +42,7 @@ async function collectOneSqlJs(source) {
 function mergeCollections(collections, adapter = 'mixed', errors = []) {
   const existing = collections.filter(Boolean);
   if (!existing.length) {
-    if (errors.length === 1) throw new Error(errors[0].error);
+    if (errors.length === 1) throw new Error(errors[0].message);
     throw new Error('没有可读取的 CodeArts 数据源');
   }
   const primary = existing[0];
@@ -148,7 +149,7 @@ function collectRowsNative(options = {}) {
   const errors = [];
   for (const source of sources) {
     try { out.push(collectOneNative(source)); }
-    catch (error) { errors.push({ source, error: error.message }); }
+    catch (error) { errors.push({ source: source.id, message: safeDbError(error) }); }
   }
   const merged = mergeCollections(out, 'node:sqlite', errors);
   if (errors.length) merged.sourceErrors = errors;
@@ -160,7 +161,7 @@ async function collectRowsSqlJs(options = {}) {
   const errors = [];
   for (const source of sources) {
     try { out.push(await collectOneSqlJs(source)); }
-    catch (error) { errors.push({ source, error: error.message }); }
+    catch (error) { errors.push({ source: source.id, message: safeDbError(error) }); }
   }
   const merged = mergeCollections(out, 'sql.js', errors);
   if (errors.length) merged.sourceErrors = errors;
@@ -171,12 +172,12 @@ async function collectRows(options = {}) {
     try { return collectRowsNative(options); }
     catch (error) {
       const rows = await collectRowsSqlJs(options);
-      rows.nativeError = error.message;
+      rows.nativeError = safeDbError(error);
       return rows;
     }
   }
   const rows = await collectRowsSqlJs(options);
-  rows.nativeError = 'CODEARTS_BAR_FORCE_SQLJS=1';
+  rows.nativeError = 'forced';
   return rows;
 }
 

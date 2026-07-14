@@ -1,6 +1,7 @@
 ﻿'use strict';
 
 const { listDataSources, validateTables, sourceMatchesPayload, pageBounds, assistantWhere, sessionWhere, tagRows } = require('./sources');
+const { safeDbError } = require('./diagnostics');
 const { openNativeDbReadonly, openSqlJsDbReadonly, nativeAll, nativeAllParams, sqlJsAll, sqlJsAllParams, closeDb } = require('./sqlite');
 const { requestRowsFromMessages, sessionsFromRows, queryPartsForMessages, querySessionsByIds, queryMessagesForSessions } = require('./collect');
 
@@ -14,14 +15,15 @@ function paginationBatchSize(limit) {
 function sourceContexts(payload, openDb, tableQuery) {
   const contexts = [];
   for (const source of listDataSources(payload).filter((s) => sourceMatchesPayload(s, payload))) {
-    const db = openDb(source.dbPath);
+    let db;
     try {
+      db = openDb(source.dbPath);
       const tables = tableQuery(db).map((r) => r.name);
       validateTables(tables);
       contexts.push({ source, db, tables });
     } catch (error) {
       closeDb(db);
-      throw error;
+      throw new Error(safeDbError(error));
     }
   }
   return contexts;
@@ -29,14 +31,15 @@ function sourceContexts(payload, openDb, tableQuery) {
 async function sourceContextsAsync(payload, openDb, tableQuery) {
   const contexts = [];
   for (const source of listDataSources(payload).filter((s) => sourceMatchesPayload(s, payload))) {
-    const db = await openDb(source.dbPath);
+    let db;
     try {
+      db = await openDb(source.dbPath);
       const tables = tableQuery(db).map((r) => r.name);
       validateTables(tables);
       contexts.push({ source, db, tables });
     } catch (error) {
       closeDb(db);
-      throw error;
+      throw new Error(safeDbError(error));
     }
   }
   return contexts;
@@ -227,12 +230,12 @@ async function getRequestsPage(payload = {}) {
     try { return getRequestsPageNative(payload); }
     catch (error) {
       const page = await getRequestsPageSqlJs(payload);
-      page.nativeError = error.message;
+      page.nativeError = safeDbError(error);
       return page;
     }
   }
   const page = await getRequestsPageSqlJs(payload);
-  page.nativeError = 'CODEARTS_BAR_FORCE_SQLJS=1';
+  page.nativeError = 'forced';
   return page;
 }
 function sessionRequestsPayload(payload = {}) {
@@ -258,12 +261,12 @@ async function getSessionsPage(payload = {}) {
     try { return getSessionsPageNative(payload); }
     catch (error) {
       const page = await getSessionsPageSqlJs(payload);
-      page.nativeError = error.message;
+      page.nativeError = safeDbError(error);
       return page;
     }
   }
   const page = await getSessionsPageSqlJs(payload);
-  page.nativeError = 'CODEARTS_BAR_FORCE_SQLJS=1';
+  page.nativeError = 'forced';
   return page;
 }
 
