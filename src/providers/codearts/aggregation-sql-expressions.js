@@ -1,6 +1,7 @@
 'use strict';
 
 const agg = require('../../core/aggregator');
+const { jsonExtractExpr, jsonTypeExpr, messageErrorExpr } = require('./sources');
 
 const TOKEN_PATHS = {
   input: [
@@ -90,8 +91,8 @@ function assistantTokenCtes(tables = [], whereSql = '1=1', options = {}) {
         sum(${tokenFieldExpr('p', 'cacheWrite')}) as cacheWrite
       from part p
       join filtered_messages fm on fm.id = p.message_id
-      where json_extract(p.data, '$.type') = 'step-finish'
-        and (json_type(p.data, '$.tokens') is not null or json_type(p.data, '$.usage') is not null)
+      where ${jsonExtractExpr('p.data', '$.type')} = 'step-finish'
+        and (${jsonTypeExpr('p.data', '$.tokens')} is not null or ${jsonTypeExpr('p.data', '$.usage')} is not null)
       group by p.message_id
     )`);
   }
@@ -108,7 +109,7 @@ function assistantTokenCtes(tables = [], whereSql = '1=1', options = {}) {
       ${hasPart ? `coalesce(pt.reasoning, ${tokenFieldExpr('m', 'reasoning')})` : tokenFieldExpr('m', 'reasoning')} as reasoning,
       ${hasPart ? `coalesce(pt.cacheRead, ${tokenFieldExpr('m', 'cacheRead')})` : tokenFieldExpr('m', 'cacheRead')} as cacheRead,
       ${hasPart ? `coalesce(pt.cacheWrite, ${tokenFieldExpr('m', 'cacheWrite')})` : tokenFieldExpr('m', 'cacheWrite')} as cacheWrite,
-      case when json_type(m.data, '$.error') is null then 0 else 1 end as error,
+      ${messageErrorExpr('m.data')} as error,
       coalesce(json_extract(m.data, '$.providerID'), json_extract(m.data, '$.model.providerID'), 'unknown') as provider,
       coalesce(json_extract(m.data, '$.modelID'), json_extract(m.data, '$.model.modelID'), 'unknown') as model,
       ${timeExpr('m', '$.time.created', 'time_created')} as message_created,

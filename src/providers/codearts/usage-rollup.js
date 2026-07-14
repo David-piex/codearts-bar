@@ -5,7 +5,7 @@ const path = require('node:path');
 const nativeSql = require('./aggregation-sql');
 const { readRollupCache, writeRollupCache } = require('./rollup-cache');
 const { recordBestEffortFailure } = require('../../core/best-effort');
-const { validateTables } = require('./sources');
+const { assistantWhere, validateTables } = require('./sources');
 const {
   openNativeDbReadonly,
   openSqlJsDbReadonly,
@@ -49,6 +49,7 @@ const rollupStats = {
   buildRuns: 0,
   incrementalBuilds: 0,
   incrementalRows: 0,
+  incrementalDeletedRows: 0,
   buildMsTotal: 0,
   buildMsMax: 0,
 };
@@ -139,6 +140,13 @@ function buildUsageRollupForSource(args, payload = {}) {
     source: { id: args.source.id, label: args.source.label, dbPath: args.source.dbPath },
     rows,
   };
+}
+
+function currentUsageMessageIds(args) {
+  const { where, params } = assistantWhere({});
+  return new Set(args.queryAll(args.db, `select id from message where ${where}`, params)
+    .map((row) => String(row.id || ''))
+    .filter(Boolean));
 }
 
 function buildSessionSummaryRollupForSource(args) {
@@ -324,12 +332,15 @@ function readOrBuildUsageRollup(args, options = {}) {
     ), 0);
     const updatedSince = Math.max(0, maxUpdatedTime - HOUR_MS);
     const changed = buildUsageRollupForSource(args, { updatedSince }).rows;
-    const merged = new Map(stale.rows.map((row) => [row.id, row]));
+    const currentIds = currentUsageMessageIds(args);
+    const retained = stale.rows.filter((row) => currentIds.has(String(row.id || '')));
+    const merged = new Map(retained.map((row) => [row.id, row]));
     for (const row of changed) merged.set(row.id, row);
     built = { source: stale.source, rows: [...merged.values()].sort((a, b) => Number(a.timeCreated || 0) - Number(b.timeCreated || 0)) };
     incremental = true;
     rollupStats.incrementalBuilds += 1;
     rollupStats.incrementalRows += changed.length;
+    rollupStats.incrementalDeletedRows += stale.rows.length - retained.length;
   } else {
     built = buildUsageRollupForSource(args);
   }

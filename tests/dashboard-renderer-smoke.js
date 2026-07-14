@@ -53,6 +53,10 @@ function makeStorage(initial = {}) {
 }
 
 const now = Date.UTC(2026, 6, 8, 1, 30, 0);
+class FixedDate extends Date {
+  constructor(...args){ super(...(args.length ? args : [now])); }
+  static now(){ return now; }
+}
 const snapshot = {
   ok: true,
   timestamp: now,
@@ -118,7 +122,7 @@ async function main() {
     requestAnimationFrame(fn){ rafNow += 240; if(typeof fn === "function") fn(rafNow); return rafNow; },
     cancelAnimationFrame(){},
     performance: { now: () => 0 },
-    Date,
+    Date: FixedDate,
     Intl,
     Math,
     Number,
@@ -132,11 +136,16 @@ async function main() {
     RegExp,
     Error,
     Promise,
+    testSnapshot: snapshot,
   };
   context.globalThis = context;
   vm.createContext(context);
   const code = fs.readFileSync(path.join(__dirname, "..", "src", "dashboard-renderer.js"), "utf8");
   vm.runInContext(code, context, { filename: "dashboard-renderer.js" });
+  const rollingBuckets = vm.runInContext('(() => { const previousRange = rangeFilter; rangeFilter = "30d"; try { return bucketRows([], testSnapshot); } finally { rangeFilter = previousRange; } })()', context);
+  const rollingEndExclusive = vm.runInContext('(() => { const previousRange = rangeFilter; rangeFilter = "30d"; try { return untilForRange(testSnapshot); } finally { rangeFilter = previousRange; } })()', context);
+  assert.ok(rollingBuckets.length > 0);
+  assert.ok(rollingBuckets.every((bucket) => bucket.start < rollingEndExclusive), 'trend buckets must not begin at or after the exclusive range end');
   for (let i = 0; i < 8; i += 1) await new Promise((resolve) => setImmediate(resolve));
 
   const html = elements.get("app").innerHTML;
@@ -482,6 +491,38 @@ async function main() {
   assert.equal(storage.getItem("workspaceMode"), "sessions");
   assert.equal(storage.getItem("sessionProjectFilter"), "C:/work/beta");
   assert.equal(storage.getItem("sessionQuickFilter"), "cacheLow");
+
+  vm.runInContext(`
+    rangeFilter = 'customTime';
+    sourceFilter = 'all';
+    modelFilter = 'all';
+    customDateStart = ${now - 2 * 86400000};
+    customDateEnd = ${now - 86400000};
+    dashboardScopeTimestamp = ${now};
+    snapshot = {
+      ...snapshot,
+      summaryOnly: true,
+      summaryFilter: { source: 'all', model: 'all', rangeKey: 'customTime', start: ${now - 2 * 86400000 + 1}, end: ${now - 86400000}, endExclusive: ${now - 86400000} },
+      usage: { ...snapshot.usage, all: { total: 999999 } }
+    };
+    globalThis.__wrongCustomSummary = summaryOnlyUsageForView(snapshot);
+  `, context);
+  assert.equal(context.__wrongCustomSummary, null, "customTime summary must match exact start/end bounds");
+
+  const timestampBeforeStaleRefresh = vm.runInContext("Number(snapshot.timestamp || 0)", context);
+  let resolveDelayedRefresh;
+  const originalInvoke = ipcRenderer.invoke;
+  ipcRenderer.invoke = async (channel, ...args) => {
+    if(channel === "dashboard:refreshLight") return new Promise((resolve) => { resolveDelayedRefresh = resolve; });
+    return originalInvoke(channel, ...args);
+  };
+  const staleRefresh = vm.runInContext("refreshNow()", context);
+  await new Promise((resolve) => setImmediate(resolve));
+  vm.runInContext("rangeFilter = '30d'; beginDashboardRequestGeneration();", context);
+  resolveDelayedRefresh({ ...snapshot, timestamp: now + 60000, lightRefresh: true });
+  await staleRefresh;
+  assert.equal(vm.runInContext("Number(snapshot.timestamp || 0)", context), timestampBeforeStaleRefresh, "a response from an older filter generation must not commit");
+  ipcRenderer.invoke = originalInvoke;
   console.log("ok - dashboard renderer smoke");
 }
 

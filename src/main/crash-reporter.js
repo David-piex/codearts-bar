@@ -3,35 +3,56 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
+const { safeJsonStringify, sanitizeForDisk, sanitizeTextForDisk } = require('./logger');
 
-function safeString(value, fallback = '') {
+function safeString(value, fallback = '', limit = 4096) {
   if (value == null) return fallback;
-  try { return String(value); } catch { return fallback; }
+  try { return sanitizeTextForDisk(String(value), limit) || fallback; }
+  catch { return fallback; }
 }
 
-function normalizeError(error) {
-  if (error instanceof Error) {
-    return {
-      name: error.name || 'Error',
-      message: error.message || String(error),
-      stack: error.stack || '',
-    };
+function safeProperty(value, key) {
+  try { return value?.[key]; }
+  catch { return undefined; }
+}
+
+function safeDiskValue(value, fallback = null) {
+  try { return sanitizeForDisk(value); }
+  catch { return fallback; }
+}
+
+function normalizeError(error, seen = new WeakSet(), depth = 0) {
+  if (!error || typeof error !== 'object') {
+    return { name: 'Error', message: safeString(error, 'Unknown error'), stack: '' };
   }
-  if (error && typeof error === 'object') {
-    return {
-      name: safeString(error.name, 'Error'),
-      message: safeString(error.message || error.reason || error.error || JSON.stringify(error), 'Unknown error'),
-      stack: safeString(error.stack, ''),
-      raw: error,
-    };
-  }
-  return { name: 'Error', message: safeString(error, 'Unknown error'), stack: '' };
+  if (seen.has(error)) return { name: 'Error', message: '[circular error]', stack: '' };
+  seen.add(error);
+
+  const constructorName = safeProperty(safeProperty(error, 'constructor'), 'name');
+  const explicitName = safeProperty(error, 'name') || safeProperty(error, 'type');
+  const name = safeString(explicitName || (constructorName === 'Object' ? '' : constructorName), 'Error', 120);
+  const rawMessage = safeProperty(error, 'message') ?? safeProperty(error, 'reason') ?? safeProperty(error, 'error');
+  const normalized = {
+    name,
+    message: safeString(rawMessage, 'Unknown error', 4096),
+    stack: safeString(safeProperty(error, 'stack'), '', 12000),
+  };
+  const code = safeProperty(error, 'code');
+  if (code != null && code !== '') normalized.code = safeString(code, '', 160);
+  const errno = safeProperty(error, 'errno');
+  if (errno != null && errno !== '') normalized.errno = safeString(errno, '', 160);
+  const syscall = safeProperty(error, 'syscall');
+  if (syscall != null && syscall !== '') normalized.syscall = safeString(syscall, '', 120);
+  const cause = safeProperty(error, 'cause');
+  if (cause != null && cause !== error && depth < 2) normalized.cause = normalizeError(cause, seen, depth + 1);
+  seen.delete(error);
+  return normalized;
 }
 
 function readJson(file) {
   try {
     if (!file || !fs.existsSync(file)) return null;
-    return JSON.parse(fs.readFileSync(file, 'utf8'));
+    return sanitizeForDisk(JSON.parse(fs.readFileSync(file, 'utf8')));
   } catch {
     return null;
   }
@@ -40,7 +61,7 @@ function readJson(file) {
 function writeJson(file, payload) {
   try {
     fs.mkdirSync(path.dirname(file), { recursive: true });
-    fs.writeFileSync(file, JSON.stringify(payload, null, 2), 'utf8');
+    fs.writeFileSync(file, safeJsonStringify(payload, 2), 'utf8');
     return true;
   } catch {
     return false;
@@ -81,7 +102,7 @@ function createCrashReporter({
 
   function runtimePayload(extra = {}) {
     const time = new Date(now()).toISOString();
-    return {
+    return sanitizeForDisk({
       app: 'CodeArts Bar',
       version: appVersion(),
       pid: processRef?.pid || null,
@@ -89,7 +110,7 @@ function createCrashReporter({
       updatedAt: time,
       cleanExit: false,
       ...extra,
-    };
+    });
   }
 
   function writeRuntimeMarker(extra = {}) {
@@ -199,33 +220,33 @@ function createCrashReporter({
 
   function recordCrash(type, error, detail = null) {
     const err = normalizeError(error);
-    const payload = {
+    const payload = sanitizeForDisk({
       app: 'CodeArts Bar',
       version: appVersion(),
       pid: processRef?.pid || null,
       type: safeString(type, 'process'),
       time: new Date(now()).toISOString(),
       error: err,
-      detail,
-    };
+      detail: safeDiskValue(detail, '[unserializable detail]'),
+    });
     writeJson(paths().processCrash, payload);
-    try { appendLog('fatal', `crash:${payload.type}`, err.message, { ...payload, error: { ...err, stack: err.stack ? err.stack.slice(0, 8000) : '' } }); } catch {}
+    try { appendLog('fatal', `crash:${payload.type}`, err.message, payload); } catch {}
     return payload;
   }
 
   function recordRendererError(type, error, detail = null) {
     const err = normalizeError(error);
-    const payload = {
+    const payload = sanitizeForDisk({
       app: 'CodeArts Bar',
       version: appVersion(),
       pid: processRef?.pid || null,
       type: safeString(type, 'renderer'),
       time: new Date(now()).toISOString(),
       error: err,
-      detail,
-    };
+      detail: safeDiskValue(detail, '[unserializable detail]'),
+    });
     writeJson(paths().rendererError, payload);
-    try { appendLog('error', `renderer:${payload.type}`, err.message, { ...payload, error: { ...err, stack: err.stack ? err.stack.slice(0, 8000) : '' } }); } catch {}
+    try { appendLog('error', `renderer:${payload.type}`, err.message, payload); } catch {}
     return payload;
   }
 

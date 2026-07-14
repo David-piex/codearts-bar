@@ -31,6 +31,8 @@ const {
   usageStatusFromSummary,
   applyUsageDerivedFields,
   dashboardAggregatePayload,
+  usageScopeKeyForPayload,
+  isCanonicalDashboardPayload,
   pageBounds,
   matchesPageFilters,
   buildDashboardPreviewSnapshot,
@@ -52,7 +54,10 @@ let trayHintShown = false;
 let fullRefreshInFlight = null;
 let lightRefreshInFlight = null;
 let stopSettingsWatch = null;
-let dashboardLightQueue;
+const dashboardLightQueues = new Map();
+const dashboardSnapshotCache = new Map();
+const dashboardUsageSnapshotCache = new Map();
+let canonicalSnapshotGeneration = 0;
 
 const trayAssetsDir = path.join(__dirname, '..', 'assets');
 const packageSmokeStartedAt = Date.now();
@@ -74,6 +79,14 @@ const dbWatchService = createDbWatchService({
   refreshLightAndPush,
   refreshTraySummaryOnly,
 });
+
+function markCanonicalSnapshot(snap) {
+  if (!snap?.ok) return snap;
+  const scope = { source: 'all', model: 'all', rangeKey: '', start: 0, end: 0, endExclusive: 0 };
+  snap.queryScope = scope;
+  snap.usageScope = scope;
+  return snap;
+}
 stopSettingsWatch = watchSettings(({ reason } = {}) => {
   if (reason === 'save') return;
   scheduleRefresh();
@@ -160,15 +173,23 @@ function quitApp() {
 async function refreshNow() {
   if (fullRefreshInFlight) return fullRefreshInFlight;
   fullRefreshInFlight = (async () => {
+    const generation = ++canonicalSnapshotGeneration;
     const settings = loadSettings();
     const previousLevel = lastSnapshot && lastSnapshot.ok ? lastSnapshot.status.level : null;
     const previousHealth = lastSnapshot && lastSnapshot.ok ? lastSnapshot.health : null;
     try {
-      lastSnapshot = await getSnapshotWithCache(settings);
-      applyUsageDerivedFields(lastSnapshot, settings, Number(lastSnapshot.timestamp || Date.now()));
-      lastDashboardSnapshot = buildDashboardPreviewSnapshot(lastSnapshot);
+      const next = markCanonicalSnapshot(await getSnapshotWithCache(settings));
+      applyUsageDerivedFields(next, settings, Number(next.timestamp || Date.now()));
+      if (generation !== canonicalSnapshotGeneration) return lastSnapshot;
+      lastSnapshot = next;
+      lastDashboardSnapshot = buildDashboardPreviewSnapshot(next);
     }
-    catch (error) { appendLog('error', 'refresh', error.message, { stack: error.stack }); lastSnapshot = errorSnapshot(error); lastDashboardSnapshot = lastSnapshot; }
+    catch (error) {
+      appendLog('error', 'refresh', error.message, { stack: error.stack });
+      if (generation !== canonicalSnapshotGeneration) return lastSnapshot;
+      lastSnapshot = errorSnapshot(error);
+      lastDashboardSnapshot = lastSnapshot;
+    }
     updateTray(lastSnapshot);
     if (lastSnapshot.ok && settings.notifyDanger && previousLevel !== 'danger' && lastSnapshot.status.level === 'danger' && Notification.isSupported()) {
       new Notification({ title: '\u7801\u9053 Bar', body: '\u4eca\u65e5 token \u4f7f\u7528\u504f\u9ad8\uff1a' + lastSnapshot.status.label }).show();
@@ -188,6 +209,7 @@ async function refreshNow() {
 async function refreshLight(options = {}) {
   if (lightRefreshInFlight) return lightRefreshInFlight;
   lightRefreshInFlight = (async () => {
+    const generation = ++canonicalSnapshotGeneration;
     const settings = loadSettings();
     const previousLevel = lastSnapshot && lastSnapshot.ok ? lastSnapshot.status?.level : null;
     const previousHealth = lastSnapshot && lastSnapshot.ok ? lastSnapshot.health : null;
@@ -195,16 +217,20 @@ async function refreshLight(options = {}) {
       const next = options.summaryOnly === true
         ? await buildInitialSummarySnapshot({ timestamp: Date.now(), ...options })
         : await buildInitialLightSnapshot({ timestamp: Date.now(), ...options });
+      if (generation !== canonicalSnapshotGeneration) return lastSnapshot;
       lastSnapshot = next;
       lastDashboardSnapshot = next;
     } catch (error) {
       appendLog('warn', 'refresh:light-initial', error.message, { stack: error.stack });
       try {
-        lastSnapshot = await getSnapshotWithCache(settings);
-        applyUsageDerivedFields(lastSnapshot, settings, Number(lastSnapshot.timestamp || Date.now()));
-        lastDashboardSnapshot = buildDashboardPreviewSnapshot(lastSnapshot);
+        const next = markCanonicalSnapshot(await getSnapshotWithCache(settings));
+        applyUsageDerivedFields(next, settings, Number(next.timestamp || Date.now()));
+        if (generation !== canonicalSnapshotGeneration) return lastSnapshot;
+        lastSnapshot = next;
+        lastDashboardSnapshot = buildDashboardPreviewSnapshot(next);
       } catch (fullError) {
         appendLog('error', 'refresh', fullError.message, { stack: fullError.stack });
+        if (generation !== canonicalSnapshotGeneration) return lastSnapshot;
         lastSnapshot = errorSnapshot(fullError);
         lastDashboardSnapshot = lastSnapshot;
       }
@@ -229,9 +255,11 @@ async function refreshTraySummaryOnly() {
   const previousLevel = lastSnapshot.status?.level || null;
   const settings = loadSettings();
   const timestamp = Date.now();
+  const generation = canonicalSnapshotGeneration;
   try {
     const summary = await localProvider.getSummary(dashboardAggregatePayload({ timestamp }));
     if (summary?.ok && summary.usage) {
+      if (generation !== canonicalSnapshotGeneration) return lastSnapshot;
       lastSnapshot = {
         ...lastSnapshot,
         timestamp,
@@ -326,6 +354,36 @@ function setDashboardPinned(pinned = false) {
 function pushDashboard() {
   if (dashboardWindow && !dashboardWindow.isDestroyed() && (lastDashboardSnapshot || lastSnapshot)) dashboardWindow.webContents.send('dashboard:snapshot', lastDashboardSnapshot || lastSnapshot);
 }
+
+function dashboardTaskScopeKey(payload = {}) {
+  return JSON.stringify({
+    usage: usageScopeKeyForPayload(payload),
+    query: String(payload.query || ''),
+    sessionQuery: String(payload.sessionQuery || ''),
+    status: String(payload.status || 'active'),
+    project: String(payload.project || 'all'),
+    bucketMs: Number(payload.bucketMs || 0),
+  });
+}
+
+function cacheDashboardSnapshot(payload, value) {
+  if (!value?.ok || isCanonicalDashboardPayload(payload)) return;
+  const key = dashboardTaskScopeKey(payload);
+  dashboardSnapshotCache.delete(key);
+  dashboardSnapshotCache.set(key, value);
+  while (dashboardSnapshotCache.size > 24) dashboardSnapshotCache.delete(dashboardSnapshotCache.keys().next().value);
+  const usageKey = usageScopeKeyForPayload(payload);
+  dashboardUsageSnapshotCache.delete(usageKey);
+  dashboardUsageSnapshotCache.set(usageKey, value);
+  while (dashboardUsageSnapshotCache.size > 24) dashboardUsageSnapshotCache.delete(dashboardUsageSnapshotCache.keys().next().value);
+}
+
+function getDashboardSnapshotForPayload(payload = {}) {
+  if (isCanonicalDashboardPayload(payload)) return lastDashboardSnapshot || (lastSnapshot?.ok ? buildDashboardPreviewSnapshot(lastSnapshot) : lastSnapshot);
+  return dashboardSnapshotCache.get(dashboardTaskScopeKey(payload))
+    || dashboardUsageSnapshotCache.get(usageScopeKeyForPayload(payload))
+    || null;
+}
 function sameSessionIdentity(a = {}, b = {}) {
   if (!a || !b || !a.id || !b.id || String(a.id) !== String(b.id)) return false;
   if (a.dbPath && b.dbPath && String(a.dbPath) !== String(b.dbPath)) return false;
@@ -344,22 +402,38 @@ async function refreshOfficialInBackground() {
 registerSettingsIpc({ ipcMain, loadSettings, saveSettings, diagnose, refreshLight, scheduleRefresh, scheduleDbWatch });
 
 async function buildDashboardLightSnapshot(payload = {}) {
-  if (!dashboardLightQueue) {
-    dashboardLightQueue = createLatestTaskQueue(async (nextPayload, isSuperseded) => {
-      if (!lastSnapshot || !lastSnapshot.ok) {
-        await refreshLight(nextPayload);
-        return lastDashboardSnapshot || lastSnapshot;
+  const scopeKey = dashboardTaskScopeKey(payload);
+  let queue = dashboardLightQueues.get(scopeKey);
+  if (!queue) {
+    queue = createLatestTaskQueue(async (nextPayload, isSuperseded) => {
+      if (!lastSnapshot?.ok) await refreshLight({ reason: 'dashboard-base' });
+      const canonical = isCanonicalDashboardPayload(nextPayload);
+      const base = canonical
+        ? lastSnapshot
+        : (getDashboardSnapshotForPayload(nextPayload) || lastSnapshot);
+      if (!base?.ok) return base;
+      const commitGeneration = canonical ? ++canonicalSnapshotGeneration : 0;
+      const { fullSnap, dashboardSnap } = await buildDashboardLightPair(base, nextPayload);
+      // Return this task's own result to its caller. Only cache/commit it when it
+      // is still the newest task for the same scope.
+      if (isSuperseded()) return dashboardSnap;
+      if (canonical) {
+        if (commitGeneration === canonicalSnapshotGeneration) {
+          lastSnapshot = fullSnap;
+          lastDashboardSnapshot = dashboardSnap;
+        }
+      } else {
+        cacheDashboardSnapshot(nextPayload, dashboardSnap);
       }
-      const { fullSnap, dashboardSnap } = await buildDashboardLightPair(lastSnapshot, nextPayload);
-      // A newer watcher/UI request arrived while SQLite was being read. Do not let
-      // this older result overwrite the newer snapshot when it resolves later.
-      if (isSuperseded()) return lastDashboardSnapshot || dashboardSnap;
-      lastSnapshot = fullSnap;
-      lastDashboardSnapshot = dashboardSnap;
       return dashboardSnap;
     });
+    dashboardLightQueues.set(scopeKey, queue);
   }
-  return dashboardLightQueue.enqueue(payload);
+  return queue.enqueue(payload).finally(() => {
+    setTimeout(() => {
+      if (dashboardLightQueues.get(scopeKey) === queue && !queue.busy()) dashboardLightQueues.delete(scopeKey);
+    }, 0);
+  });
 }
 
 registerDashboardIpc({
@@ -374,6 +448,7 @@ registerDashboardIpc({
     clearRendererError: crashReporter.clearRendererError,
   getLastSnapshot: () => lastSnapshot,
   getLastDashboardSnapshot: () => lastDashboardSnapshot,
+  getDashboardSnapshotForPayload,
   buildInitialSummarySnapshot,
   buildInitialLightSnapshot,
   buildDashboardPreviewSnapshot,

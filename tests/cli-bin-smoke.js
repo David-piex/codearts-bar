@@ -12,8 +12,10 @@ const bytes = fs.readFileSync(bin);
 assert.notDeepEqual([...bytes.subarray(0, 3)], [0xef, 0xbb, 0xbf], "CLI shebang must not be preceded by a UTF-8 BOM");
 assert.equal(bytes.subarray(0, 2).toString("ascii"), "#!", "CLI entry must start with a shebang");
 const fixtureDb = path.join(root, "tests", "fixtures", "opencode-fixture.db");
-const fixtureEnv = { ...process.env, CODEARTS_BAR_DB: fixtureDb, CODEARTS_BAR_CONFIG_DIR: path.join(os.tmpdir(), "codearts-bar-cli-smoke-config") };
-const direct = spawnSync(process.execPath, [bin, "self-test"], { cwd: root, encoding: "utf8", timeout: 30000, env: fixtureEnv });
+const fixtureConfig = path.join(os.tmpdir(), "codearts-bar-cli-smoke-config");
+const fixtureEnv = { ...process.env, CODEARTS_BAR_DB: fixtureDb, CODEARTS_BAR_CONFIG_DIR: fixtureConfig, CODEARTS_BAR_NOW_MS: "1783512000000" };
+const selfTestArgs = ["self-test", "--fixture-db", fixtureDb, "--config-dir", fixtureConfig, "--now-ms", "1783512000000"];
+const direct = spawnSync(process.execPath, [bin, ...selfTestArgs], { cwd: root, encoding: "utf8", timeout: 30000, env: fixtureEnv });
 assert.equal(direct.status, 0, direct.stderr || direct.stdout);
 assert.match(direct.stdout, /ok - has db path/);
 
@@ -34,7 +36,7 @@ try {
   const packedBin = path.join(unpacked, "package", "src", "bin.js");
   const packedBytes = fs.readFileSync(packedBin);
   assert.equal(packedBytes.subarray(0, 2).toString("ascii"), "#!");
-  const packedRun = spawnSync(process.execPath, [packedBin, "self-test"], { cwd: path.join(unpacked, "package"), encoding: "utf8", timeout: 30000, env: fixtureEnv });
+  const packedRun = spawnSync(process.execPath, [packedBin, ...selfTestArgs], { cwd: path.join(unpacked, "package"), encoding: "utf8", timeout: 30000, env: fixtureEnv });
   assert.equal(packedRun.status, 0, packedRun.stderr || packedRun.stdout);
 } finally {
   fs.rmSync(temp, { recursive: true, force: true });

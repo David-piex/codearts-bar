@@ -33,33 +33,66 @@ function applyUsageDerivedFields(snap, settings = loadSettings(), timestamp = Nu
 
 function dashboardAggregatePayload(payload = {}) {
   const settings = loadSettings();
-  return {
+  const range = payload.range || {};
+  const start = Number(payload.start ?? range.start ?? 0) || 0;
+  const hasExplicitEnd = payload.endExclusive != null || payload.end != null || range.endExclusive != null || range.end != null;
+  const endExclusive = hasExplicitEnd ? (Number(payload.endExclusive ?? payload.end ?? range.endExclusive ?? range.end ?? 0) || 0) : 0;
+  const normalized = {
     ...payload,
+    range: { ...range, start },
+    start,
     dailyLimit: Number(payload.dailyLimit || settings.dailyLimit || process.env.CODEARTS_BAR_DAILY_LIMIT || 200000),
     windowHours: Number(payload.windowHours || settings.windowHours || process.env.CODEARTS_BAR_WINDOW_HOURS || 24),
     timestamp: Number(payload.timestamp || Date.now()),
   };
+  if (hasExplicitEnd) {
+    normalized.range.end = endExclusive;
+    normalized.range.endExclusive = endExclusive;
+    normalized.end = endExclusive;
+    normalized.endExclusive = endExclusive;
+  }
+  return normalized;
 }
 
 function trendScopeKeyForPayload(payload = {}, bucketMs = 3600000) {
   const range = payload.range || {};
   const startRaw = Number(payload.start ?? range.start ?? 0) || 0;
-  const endRaw = Number(payload.end ?? range.end ?? payload.timestamp ?? Date.now()) || 0;
+  const endRaw = Number(payload.endExclusive ?? payload.end ?? range.endExclusive ?? range.end ?? payload.timestamp ?? Date.now()) || 0;
   const safeBucketMs = Math.max(1, Number(bucketMs || payload.bucketMs || 3600000));
-  const start = startRaw > 0 ? Math.floor(startRaw / safeBucketMs) * safeBucketMs : 0;
-  const end = endRaw > 0 ? Math.ceil(endRaw / safeBucketMs) * safeBucketMs : 0;
-  return `${payload.source || 'all'}|${payload.model || 'all'}|${safeBucketMs}|${start}|${end}`;
+  return `${payload.source || 'all'}|${payload.model || 'all'}|${safeBucketMs}|${startRaw}|${endRaw}`;
 }
 
 function usageScopeForPayload(payload = {}) {
   const range = payload.range || {};
+  const endExclusive = Number(payload.endExclusive ?? payload.end ?? range.endExclusive ?? range.end ?? 0) || 0;
   return {
     source: payload.source || 'all',
     model: payload.model || 'all',
     rangeKey: payload.rangeKey || '',
     start: Number(payload.start ?? range.start ?? 0) || 0,
-    end: Number(payload.end ?? range.end ?? 0) || 0,
+    end: endExclusive,
+    endExclusive,
   };
+}
+
+function usageScopeKeyForPayload(payload = {}) {
+  const scope = usageScopeForPayload(payload);
+  return JSON.stringify({
+    source: scope.source,
+    model: scope.model,
+    rangeKey: scope.rangeKey,
+    start: scope.start,
+    endExclusive: scope.endExclusive,
+  });
+}
+
+function isCanonicalDashboardPayload(payload = {}) {
+  const scope = usageScopeForPayload(payload);
+  return scope.source === 'all'
+    && scope.model === 'all'
+    && !scope.rangeKey
+    && scope.start === 0
+    && scope.endExclusive === 0;
 }
 
 function usageScopeMatchesPayload(scope, payload = {}) {
@@ -69,7 +102,7 @@ function usageScopeMatchesPayload(scope, payload = {}) {
     && String(scope.model || 'all') === String(expected.model || 'all')
     && String(scope.rangeKey || '') === String(expected.rangeKey || '')
     && Number(scope.start || 0) === Number(expected.start || 0)
-    && Number(scope.end || 0) === Number(expected.end || 0);
+    && Number(scope.endExclusive ?? scope.end ?? 0) === Number(expected.endExclusive || 0);
 }
 
 function shouldPreserveCompleteAggregate(fullBase, aggregates, payload = {}) {
@@ -87,20 +120,21 @@ function pageBounds(payload = {}) {
 
 function normalizePageRange(range = {}) {
   const start = Number(range.start || 0);
-  const end = Number(range.end || 0);
+  const endExclusive = Number(range.endExclusive ?? range.end ?? 0);
   return {
     start: Number.isFinite(start) && start > 0 ? start : 0,
-    end: Number.isFinite(end) && end > 0 ? end : 0,
+    end: Number.isFinite(endExclusive) && endExclusive > 0 ? endExclusive : 0,
+    endExclusive: Number.isFinite(endExclusive) && endExclusive > 0 ? endExclusive : 0,
   };
 }
 
 function matchesPageFilters(item, payload = {}) {
   if (!item) return false;
   if (payload.source && payload.source !== 'all' && String(item.source || '') !== String(payload.source)) return false;
-  const { start, end } = normalizePageRange(payload.range);
+  const { start, endExclusive } = normalizePageRange(payload.range);
   const time = Number(item.time || item.updatedAt || item.createdAt || 0);
   if (start && time && time < start) return false;
-  if (end && time && time > end) return false;
+  if (endExclusive && time && time >= endExclusive) return false;
   const query = String(payload.query || '').trim().toLowerCase();
   if (query) {
     const text = [
@@ -338,6 +372,8 @@ module.exports = {
   dashboardAggregatePayload,
   trendScopeKeyForPayload,
   usageScopeForPayload,
+  usageScopeKeyForPayload,
+  isCanonicalDashboardPayload,
   usageScopeMatchesPayload,
   shouldPreserveCompleteAggregate,
   pageBounds,

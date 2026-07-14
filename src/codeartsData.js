@@ -16,7 +16,8 @@ const DEFAULT_DB_PATH = localProvider.DEFAULT_DB_PATH;
 const DEFAULT_DAILY_LIMIT = 200_000;
 const DEFAULT_WINDOW_HOURS = 24;
 
-function nowMs() { return Date.now(); }
+const resolveNow = localProvider.resolveTimestamp;
+function nowMs() { return resolveNow(); }
 function resolveDbPath(options = {}) { return localProvider.resolveDbPath(options); }
 function samePath(left, right) {
   if (!left || !right) return false;
@@ -92,14 +93,16 @@ function aggregateBy(items, keyFn) {
     return { ...x, latency, ttft };
   }).sort((a, b) => b.total - a.total);
 }
-function buildSnapshotFromRows({ dbPath, stat, sources = [], dailyLimit, windowHours, timestamp, messages, sessions, parts = [] }) {
-  const dayStart = new Date();
+function buildSnapshotFromRows({ dbPath, stat, sources = [], dailyLimit, windowHours, timestamp, messages, sessions, parts = [], disableUsageLogs = false, disableEnvironmentProbes = false }) {
+  const dayStart = new Date(timestamp);
   dayStart.setHours(0, 0, 0, 0);
   const dayStartMs = dayStart.getTime();
   const windowStartMs = timestamp - windowHours * 60 * 60 * 1000;
   const weekStartMs = timestamp - 7 * 24 * 60 * 60 * 1000;
   const partMap = agg.buildPartMap(parts);
-  const perfLogs = typeof localProvider.scanUsageLogs === 'function'
+  const perfLogs = disableUsageLogs
+    ? { ttftEvents: [], queueEvents: [] }
+    : typeof localProvider.scanUsageLogs === 'function'
     ? localProvider.scanUsageLogs()
     : { ttftEvents: localProvider.scanTtftLogs(), queueEvents: localProvider.scanQueueLogs() };
   const ttftEvents = perfLogs.ttftEvents || [];
@@ -148,8 +151,10 @@ function buildSnapshotFromRows({ dbPath, stat, sources = [], dailyLimit, windowH
     sessionSummary: { total: sessions.length, active: activeSessionCount, archived: archivedSessionCount, visible: recentSessions.length },
     errors,
     balance,
-    process: localProvider.detectProcesses(),
-    codeartsConfig: localProvider.readCodeArtsConfig(),
+    process: disableEnvironmentProbes ? {} : localProvider.detectProcesses(),
+    codeartsConfig: disableEnvironmentProbes
+      ? { exists: false, enabledProviders: [], plugins: [], providers: [], officialQuota: { available: false, source: 'disabled', status: 'environment_probes_disabled' } }
+      : localProvider.readCodeArtsConfig(),
     providers: listProviders(),
     freshness: { stale: false, source: 'live', ageMs: 0 },
   };
@@ -164,14 +169,16 @@ function snapshotOptions(options = {}) {
   return {
     dailyLimit: Number(options.dailyLimit || settings.dailyLimit || process.env.CODEARTS_BAR_DAILY_LIMIT || DEFAULT_DAILY_LIMIT),
     windowHours: Number(options.windowHours || settings.windowHours || process.env.CODEARTS_BAR_WINDOW_HOURS || DEFAULT_WINDOW_HOURS),
-    timestamp: nowMs(),
+    timestamp: resolveNow(options),
+    disableUsageLogs: options.disableUsageLogs === true || options.fixtureMode === true,
+    disableEnvironmentProbes: options.disableEnvironmentProbes === true || options.fixtureMode === true,
   };
 }
 
 function getSnapshot(options = {}) {
   const opts = snapshotOptions(options);
   const rows = localProvider.collectRowsNative(options);
-  const snap = buildSnapshotFromRows({ dbPath: rows.dbPath, stat: rows.stat, sources: rows.sources, dailyLimit: opts.dailyLimit, windowHours: opts.windowHours, timestamp: opts.timestamp, messages: rows.messages, sessions: rows.sessions, parts: rows.parts });
+  const snap = buildSnapshotFromRows({ dbPath: rows.dbPath, stat: rows.stat, sources: rows.sources, dailyLimit: opts.dailyLimit, windowHours: opts.windowHours, timestamp: opts.timestamp, messages: rows.messages, sessions: rows.sessions, parts: rows.parts, disableUsageLogs: opts.disableUsageLogs, disableEnvironmentProbes: opts.disableEnvironmentProbes });
   snap.adapter = rows.adapter;
   writeCache(snap);
   return snap;
@@ -180,7 +187,7 @@ function getSnapshot(options = {}) {
 async function getSnapshotAsync(options = {}) {
   const opts = snapshotOptions(options);
   const rows = await localProvider.collectRows(options);
-  const snap = buildSnapshotFromRows({ dbPath: rows.dbPath, stat: rows.stat, sources: rows.sources, dailyLimit: opts.dailyLimit, windowHours: opts.windowHours, timestamp: opts.timestamp, messages: rows.messages, sessions: rows.sessions, parts: rows.parts });
+  const snap = buildSnapshotFromRows({ dbPath: rows.dbPath, stat: rows.stat, sources: rows.sources, dailyLimit: opts.dailyLimit, windowHours: opts.windowHours, timestamp: opts.timestamp, messages: rows.messages, sessions: rows.sessions, parts: rows.parts, disableUsageLogs: opts.disableUsageLogs, disableEnvironmentProbes: opts.disableEnvironmentProbes });
   snap.adapter = rows.adapter;
   if (rows.nativeError) snap.nativeError = rows.nativeError;
   writeCache(snap);
@@ -188,10 +195,16 @@ async function getSnapshotAsync(options = {}) {
 }
 
 async function getSnapshotWithCache(options = {}) {
-  const key = JSON.stringify({ dbPath: options.dbPath || '', dailyLimit: options.dailyLimit || '', windowHours: options.windowHours || '' });
+  const timestamp = resolveNow(options);
+  const scopedOptions = { ...options, timestamp };
+  const injectedClock = Number.isFinite(Number(options.timestamp))
+    || typeof options.clock === 'function'
+    || Boolean(options.clock && typeof options.clock.now === 'function')
+    || (Number.isFinite(Number(process.env.CODEARTS_BAR_NOW_MS)) && Number(process.env.CODEARTS_BAR_NOW_MS) > 0);
+  const key = JSON.stringify({ dbPath: options.dbPath || '', dailyLimit: options.dailyLimit || '', windowHours: options.windowHours || '', timestamp: injectedClock ? timestamp : 0, disableUsageLogs: options.disableUsageLogs === true || options.fixtureMode === true, disableEnvironmentProbes: options.disableEnvironmentProbes === true || options.fixtureMode === true });
   return snapshotFlights.run(key, async () => {
   try {
-    return await getSnapshotAsync(options);
+    return await getSnapshotAsync(scopedOptions);
   } catch (error) {
     if (!allowsSnapshotCacheFallback(options)) throw error;
     try {
@@ -199,7 +212,7 @@ async function getSnapshotWithCache(options = {}) {
       const snap = cached.snapshot;
       if (!isAutomaticSourceSnapshot(snap)) throw error;
       snap.ok = true;
-      snap.freshness = { stale: true, source: 'cache', ageMs: Date.now() - (cached.savedAt || snap.timestamp || 0), error: error.message };
+      snap.freshness = { stale: true, source: 'cache', ageMs: Math.max(0, timestamp - (cached.savedAt || snap.timestamp || 0)), error: error.message };
       return snap;
     } catch {
       throw error;
@@ -250,9 +263,10 @@ function snapshotToText(snapshot) {
   return lines.join('\n');
 }
 
-function errorSnapshot(error, dbPath = resolveDbPath()) {
-  return { ok: false, app: '码道 Bar', timestamp: nowMs(), updatedAt: fmtTime(nowMs()), dbPath, error: error && error.message ? error.message : String(error) };
+function errorSnapshot(error, dbPath = resolveDbPath(), options = {}) {
+  const timestamp = resolveNow(options);
+  return { ok: false, app: '码道 Bar', timestamp, updatedAt: fmtTime(timestamp), dbPath, error: error && error.message ? error.message : String(error) };
 }
 
-module.exports = { DEFAULT_DB_PATH, getSnapshot, getSnapshotAsync, getSnapshotWithCache, snapshotToText, errorSnapshot, fmtInt, fmtDuration, fmtTime, fmtMs };
+module.exports = { DEFAULT_DB_PATH, getSnapshot, getSnapshotAsync, getSnapshotWithCache, snapshotToText, errorSnapshot, resolveNow, fmtInt, fmtDuration, fmtTime, fmtMs };
 

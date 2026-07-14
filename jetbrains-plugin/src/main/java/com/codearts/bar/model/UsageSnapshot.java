@@ -87,7 +87,9 @@ public record UsageSnapshot(
             values[3] += point.cacheRead();
         }
         LocalDate first = Instant.ofEpochMilli(start).atZone(zone).toLocalDate();
-        LocalDate last = Instant.ofEpochMilli(end).atZone(zone).toLocalDate();
+        // The analytics range is [start, end); an exact local midnight belongs
+        // to the next day and must not create an extra empty bucket.
+        LocalDate last = Instant.ofEpochMilli(Math.max(start, end - 1)).atZone(zone).toLocalDate();
         List<TrendPoint> daily = new ArrayList<>();
         long dayCount = last.toEpochDay() - first.toEpochDay() + 1;
         if (dayCount > MAX_DENSE_TREND_BUCKETS) {

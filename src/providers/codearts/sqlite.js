@@ -2,6 +2,7 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
+const { readSqliteSnapshot, sqliteSnapshotFingerprint } = require('./sqlite-wal-snapshot');
 
 let nativeSqliteModule = null;
 let nativeSqliteError = null;
@@ -28,10 +29,7 @@ function locateSqlJsFile(file) {
 }
 function loadSqlJsFactory() {
   try { return require('sql.js'); }
-  catch {
-    try { return require(locateSqlJsFile('sql-wasm.js')); }
-    catch { return require('../../../node_modules/sql.js/dist/sql-wasm.js'); }
-  }
+  catch { return require(locateSqlJsFile('sql-wasm.js')); }
 }
 function loadNativeSqliteModule() {
   if (nativeSqliteModule) return nativeSqliteModule;
@@ -80,17 +78,8 @@ async function getSqlJs() {
   }
   return sqlJsReadyPromise;
 }
-function statFingerprint(file) {
-  try {
-    const st = fs.statSync(file);
-    return `${file}:${st.size}:${Math.round(st.mtimeMs)}`;
-  } catch {
-    return `${file}:missing`;
-  }
-}
 function sqliteFileFingerprint(dbPath) {
-  const files = [dbPath, `${dbPath}-wal`, `${dbPath}-shm`, `${dbPath}.touch`];
-  return files.map(statFingerprint).join('|');
+  return sqliteSnapshotFingerprint(dbPath);
 }
 function pruneSqlJsDbCache() {
   if (cachedSqlJsDbs.size <= SQLJS_DB_CACHE_LIMIT) return;
@@ -123,10 +112,10 @@ async function openSqlJsDbReadonly(dbPath) {
     cachedSqlJsDbs.delete(key);
   }
   const promise = (async () => {
-    const [SQL, bytes] = await Promise.all([getSqlJs(), fs.promises.readFile(dbPath)]);
-    const db = new SQL.Database(bytes);
+    const [SQL, snapshot] = await Promise.all([getSqlJs(), readSqliteSnapshot(dbPath)]);
+    const db = new SQL.Database(snapshot.bytes);
     cachedSqlJsDbSet.add(db);
-    cachedSqlJsDbs.set(key, { db, fingerprint, usedAt: Date.now() });
+    cachedSqlJsDbs.set(key, { db, fingerprint: snapshot.fingerprint, usedAt: Date.now() });
     pruneSqlJsDbCache();
     return db;
   })();

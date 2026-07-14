@@ -45,6 +45,11 @@
       hover: -1,
       frame: 0,
       geometry: null,
+      bitmap: null,
+      staticCanvas: document.createElement("canvas"),
+      staticDirty: true,
+      staticRevision: 0,
+      render: null,
     };
     const pointIndex = (event) => {
       if (!state.rows.length || !state.geometry) return -1;
@@ -104,6 +109,8 @@
       canvas.hidden = !hasRows;
       if (!hasRows) {
         if (state.tooltip) state.tooltip.hidden = true;
+        state.render = null;
+        state.staticDirty = true;
         delete canvas.dataset.yAxisTicks;
         delete canvas.dataset.yAxisMax;
         return;
@@ -111,107 +118,143 @@
 
       const rect = canvas.getBoundingClientRect();
       const dpr = Math.min(2, window.devicePixelRatio || 1);
-      canvas.width = Math.max(1, Math.round(rect.width * dpr));
-      canvas.height = Math.max(1, Math.round(rect.height * dpr));
-      const ctx = canvas.getContext("2d");
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      const width = rect.width, height = rect.height;
-      const pad = { left: width < 360 ? 40 : 48, right: 10, top: 22, bottom: 24 };
-      const rawMax = Math.max(0, ...rows.map((item) => Number(item.total) || 0), ...rows.map((item) => Number(item.output) || 0), ...rows.map((item) => Number(item.cacheRead) || 0));
-      const scale = niceChartScale(rawMax);
-      const plotWidth = Math.max(1, width - pad.left - pad.right);
-      const plotHeight = Math.max(1, height - pad.top - pad.bottom);
-      const x = (index) => pad.left + (rows.length === 1 ? plotWidth / 2 : index / (rows.length - 1) * plotWidth);
-      const y = (value) => pad.top + (1 - (Number(value) || 0) / scale.max) * plotHeight;
-      state.geometry = { left: pad.left, plotWidth };
-      const style = getComputedStyle(document.documentElement);
-      const line = style.getPropertyValue("--line-strong").trim();
-      const accent = style.getPropertyValue("--accent").trim();
-      const cyan = style.getPropertyValue("--cyan").trim();
-      const cache = style.getPropertyValue("--cache").trim();
-      const muted = style.getPropertyValue("--muted").trim();
-      ctx.clearRect(0, 0, width, height);
-      ctx.font = "10px -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', sans-serif";
-      ctx.fillStyle = muted;
-      ctx.textBaseline = "middle";
-      ctx.textAlign = "right";
-      scale.ticks.forEach((tick) => {
-        const gridY = y(tick);
-        ctx.strokeStyle = line;
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.moveTo(pad.left, gridY);
-        ctx.lineTo(width - pad.right, gridY);
-        ctx.stroke();
-        ctx.fillText(compactAxisValue(tick), pad.left - 7, gridY);
-      });
-      ctx.textBaseline = "alphabetic";
-      ctx.textAlign = "left";
-      ctx.font = "600 9px -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', sans-serif";
-      ctx.fillText("Token", 4, 11);
-
-      const path = (key) => {
-        ctx.beginPath();
-        rows.forEach((item, index) => {
-          const px = x(index), py = y(item[key]);
-          index ? ctx.lineTo(px, py) : ctx.moveTo(px, py);
-        });
+      const bitmap = {
+        width: Math.max(1, Math.round(rect.width * dpr)),
+        height: Math.max(1, Math.round(rect.height * dpr)),
+        dpr,
       };
-      if (hasValues) {
-        const gradient = ctx.createLinearGradient(0, pad.top, 0, height - pad.bottom);
-        gradient.addColorStop(0, accent);
-        gradient.addColorStop(1, "transparent");
-        path("total");
-        ctx.lineTo(x(rows.length - 1), height - pad.bottom);
-        ctx.lineTo(x(0), height - pad.bottom);
-        ctx.closePath();
-        ctx.fillStyle = gradient;
-        ctx.globalAlpha = 0.13;
-        ctx.fill();
-        ctx.globalAlpha = 1;
-        path("total");
-        ctx.strokeStyle = accent;
-        ctx.lineWidth = 2;
-        ctx.lineJoin = "round";
-        ctx.lineCap = "round";
-        ctx.stroke();
-        path("output");
-        ctx.strokeStyle = cyan;
-        ctx.lineWidth = 1.35;
-        ctx.stroke();
-        path("cacheRead");
-        ctx.strokeStyle = cache;
-        ctx.lineWidth = 1.35;
-        ctx.setLineDash([5, 4]);
-        ctx.stroke();
-        ctx.setLineDash([]);
+      if (!state.bitmap || state.bitmap.width !== bitmap.width || state.bitmap.height !== bitmap.height || state.bitmap.dpr !== bitmap.dpr) {
+        canvas.width = bitmap.width;
+        canvas.height = bitmap.height;
+        state.staticCanvas.width = bitmap.width;
+        state.staticCanvas.height = bitmap.height;
+        state.bitmap = bitmap;
+        state.staticDirty = true;
+      }
+      const width = rect.width, height = rect.height;
+      if (state.staticDirty || !state.render) {
+        const ctx = state.staticCanvas.getContext("2d");
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        ctx.clearRect(0, 0, width, height);
+        const pad = { left: width < 360 ? 40 : 48, right: 10, top: 22, bottom: 24 };
+        const rawMax = Math.max(0, ...rows.map((item) => Number(item.total) || 0), ...rows.map((item) => Number(item.output) || 0), ...rows.map((item) => Number(item.cacheRead) || 0));
+        const scale = niceChartScale(rawMax);
+        const plotWidth = Math.max(1, width - pad.left - pad.right);
+        const plotHeight = Math.max(1, height - pad.top - pad.bottom);
+        const x = (index) => pad.left + (rows.length === 1 ? plotWidth / 2 : index / (rows.length - 1) * plotWidth);
+        const y = (value) => pad.top + (1 - (Number(value) || 0) / scale.max) * plotHeight;
+        const style = getComputedStyle(document.documentElement);
+        const colors = {
+          line: style.getPropertyValue("--line-strong").trim(),
+          accent: style.getPropertyValue("--accent").trim(),
+          cyan: style.getPropertyValue("--cyan").trim(),
+          cache: style.getPropertyValue("--cache").trim(),
+          muted: style.getPropertyValue("--muted").trim(),
+          surface: style.getPropertyValue("--surface-solid").trim() || "#fff",
+        };
+        ctx.font = "10px -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', sans-serif";
+        ctx.fillStyle = colors.muted;
+        ctx.textBaseline = "middle";
+        ctx.textAlign = "right";
+        scale.ticks.forEach((tick) => {
+          const gridY = y(tick);
+          ctx.strokeStyle = colors.line;
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.moveTo(pad.left, gridY);
+          ctx.lineTo(width - pad.right, gridY);
+          ctx.stroke();
+          ctx.fillText(compactAxisValue(tick), pad.left - 7, gridY);
+        });
+        ctx.textBaseline = "alphabetic";
+        ctx.textAlign = "left";
+        ctx.font = "600 9px -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', sans-serif";
+        ctx.fillText("Token", 4, 11);
+
+        const path = (key) => {
+          ctx.beginPath();
+          rows.forEach((item, index) => {
+            const px = x(index), py = y(item[key]);
+            index ? ctx.lineTo(px, py) : ctx.moveTo(px, py);
+          });
+        };
+        if (hasValues) {
+          const gradient = ctx.createLinearGradient(0, pad.top, 0, height - pad.bottom);
+          gradient.addColorStop(0, colors.accent);
+          gradient.addColorStop(1, "transparent");
+          path("total");
+          ctx.lineTo(x(rows.length - 1), height - pad.bottom);
+          ctx.lineTo(x(0), height - pad.bottom);
+          ctx.closePath();
+          ctx.fillStyle = gradient;
+          ctx.globalAlpha = 0.13;
+          ctx.fill();
+          ctx.globalAlpha = 1;
+          path("total");
+          ctx.strokeStyle = colors.accent;
+          ctx.lineWidth = 2;
+          ctx.lineJoin = "round";
+          ctx.lineCap = "round";
+          ctx.stroke();
+          path("output");
+          ctx.strokeStyle = colors.cyan;
+          ctx.lineWidth = 1.35;
+          ctx.stroke();
+          path("cacheRead");
+          ctx.strokeStyle = colors.cache;
+          ctx.lineWidth = 1.35;
+          ctx.setLineDash([5, 4]);
+          ctx.stroke();
+          ctx.setLineDash([]);
+        }
+
+        const hourly = rows.length > 2 && Number(rows.at(-1)?.start || 0) - Number(rows[0]?.start || 0) <= 48 * 3600000;
+        ctx.fillStyle = colors.muted;
+        ctx.font = "9px -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', sans-serif";
+        const xIndices = chartAxisIndices(rows.length, plotWidth, width < 420 ? 92 : 78);
+        xIndices.forEach((index, position) => {
+          ctx.textAlign = position === 0 ? "left" : position === xIndices.length - 1 ? "right" : "center";
+          ctx.fillText(dateAxisLabel(rows[index], hourly), x(index), height - 5);
+        });
+        state.render = { colors, dpr, height, hourly, pad, plotHeight, plotWidth, scale, width, xIndices };
+        state.geometry = { left: pad.left, plotWidth };
+        state.staticDirty = false;
+        state.staticRevision += 1;
+        canvas.dataset.staticRevision = String(state.staticRevision);
+        canvas.dataset.yAxisTicks = JSON.stringify(scale.ticks);
+        canvas.dataset.yAxisMax = String(scale.max);
+        canvas.dataset.yAxisUnit = "token";
+        canvas.dataset.xAxisLabels = JSON.stringify(xIndices.map((index) => dateAxisLabel(rows[index], hourly)));
+        canvas.dataset.zeroState = String(!hasValues);
+        canvas.setAttribute("aria-label", `Token 使用趋势图，纵轴 0 到 ${compactAxisValue(scale.max)}，${rows.length} 个时间点`);
       }
 
-      const hourly = rows.length > 2 && Number(rows.at(-1)?.start || 0) - Number(rows[0]?.start || 0) <= 48 * 3600000;
-      ctx.fillStyle = muted;
-      ctx.font = "9px -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', sans-serif";
-      const xIndices = chartAxisIndices(rows.length, plotWidth, width < 420 ? 92 : 78);
-      xIndices.forEach((index, position) => {
-        ctx.textAlign = position === 0 ? "left" : position === xIndices.length - 1 ? "right" : "center";
-        ctx.fillText(dateAxisLabel(rows[index], hourly), x(index), height - 5);
-      });
+      const render = state.render;
+      const { colors, hourly, pad, plotHeight, plotWidth, scale } = render;
+      const x = (index) => pad.left + (rows.length === 1 ? plotWidth / 2 : index / (rows.length - 1) * plotWidth);
+      const y = (value) => pad.top + (1 - (Number(value) || 0) / scale.max) * plotHeight;
+      const ctx = canvas.getContext("2d");
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.clearRect(0, 0, bitmap.width, bitmap.height);
+      ctx.drawImage(state.staticCanvas, 0, 0);
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
       if (hasValues && state.hover >= 0 && rows[state.hover]) {
         const index = Math.min(rows.length - 1, state.hover);
         const row = rows[index];
         const px = x(index), totalY = y(row.total), outputY = y(row.output), cacheY = y(row.cacheRead);
-        ctx.strokeStyle = line;
+        ctx.strokeStyle = colors.line;
         ctx.lineWidth = 1;
         ctx.beginPath();
         ctx.moveTo(px, pad.top);
         ctx.lineTo(px, pad.top + plotHeight);
         ctx.stroke();
-        for (const [py, color] of [[totalY, accent], [outputY, cyan], [cacheY, cache]]) {
+        for (const [py, color] of [[totalY, colors.accent], [outputY, colors.cyan], [cacheY, colors.cache]]) {
           ctx.fillStyle = color;
           ctx.beginPath();
           ctx.arc(px, py, 3.5, 0, Math.PI * 2);
           ctx.fill();
-          ctx.strokeStyle = style.getPropertyValue("--surface-solid").trim() || "#fff";
+          ctx.strokeStyle = colors.surface;
           ctx.lineWidth = 2;
           ctx.stroke();
         }
@@ -220,18 +263,13 @@
         state.tooltip.hidden = true;
       }
 
-      canvas.dataset.yAxisTicks = JSON.stringify(scale.ticks);
-      canvas.dataset.yAxisMax = String(scale.max);
-      canvas.dataset.yAxisUnit = "token";
-      canvas.dataset.xAxisLabels = JSON.stringify(xIndices.map((index) => dateAxisLabel(rows[index], hourly)));
-      canvas.dataset.zeroState = String(!hasValues);
-      canvas.setAttribute("aria-label", `Token 使用趋势图，纵轴 0 到 ${compactAxisValue(scale.max)}，${rows.length} 个时间点`);
     });
   }
 
   function draw(canvas, rows, empty) {
     const state = stateFor(canvas, empty);
     state.rows = Array.isArray(rows) ? rows : [];
+    state.staticDirty = true;
     if (state.hover >= state.rows.length) state.hover = -1;
     paint(state);
   }

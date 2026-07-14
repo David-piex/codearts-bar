@@ -31,7 +31,7 @@ function previewHtml(mode='panel') {
   html = html.replace(/<meta http-equiv="Content-Security-Policy"[^>]+>/, '');
   html = html.replace(/<link rel="stylesheet" href="([^"]+)">/g, (_m, rel) => `<style>${fs.readFileSync(path.join(root, 'extension', rel), 'utf8')}</style>`);
   html = html.replace(/<script nonce="[^"]+" src="([^"]+)"><\/script>/g, (_m, rel) => `<script>${fs.readFileSync(path.join(root, 'extension', rel), 'utf8')}</script>`);
-  html = html.replace(/<body data-mode="([^"]+)">/, `<body data-mode="$1"><script>window.acquireVsCodeApi=()=>({postMessage(){},getState(){return{}},setState(){}});</script>`);
+  html = html.replace(/<body data-mode="([^"]+)">/, `<body data-mode="$1"><script>window.__vscodeMessages=[];window.__vscodeState={};window.acquireVsCodeApi=()=>({postMessage(message){window.__vscodeMessages.push(message)},getState(){return window.__vscodeState},setState(state){window.__vscodeState=state}});</script>`);
   return html;
 }
 const base = Date.UTC(2026,6,10,8,0,0);
@@ -62,18 +62,22 @@ function snapshot(zero=false) {
     await page.evaluate(()=>document.body.classList.add('vscode-dark'));
     const palette=await page.evaluate(()=>({page:getComputedStyle(document.documentElement).getPropertyValue('--page').trim(),accent:getComputedStyle(document.documentElement).getPropertyValue('--accent').trim()}));
     if(palette.page!=='#f5f6f8'||palette.accent!=='#0a84ff') throw new Error('VS Code theme leaked into fixed Desktop palette: '+JSON.stringify(palette));
-    await page.evaluate((data)=>window.dispatchEvent(new MessageEvent('message',{data:{type:'details',payload:data}})),snapshot(false));
+    await page.evaluate((data)=>window.dispatchEvent(new MessageEvent('message',{data:{type:'details',payload:data,generation:1}})),snapshot(false));
     await new Promise(r=>setTimeout(r,400));
     const canvas=await page.$('#trendChart');
     if(!canvas) throw new Error('trend chart was not rendered');
     const box=await canvas.boundingBox();
     if(!box || box.width <= 0 || box.height <= 0) throw new Error('trend chart has no visible geometry');
     await withTimeout('paint trend chart',()=>page.waitForFunction(()=>document.querySelector('#trendChart')?.dataset.yAxisTicks));
+    const chartBitmapBefore=await page.$eval('#trendChart',(node)=>({width:node.width,height:node.height,revision:node.dataset.staticRevision}));
     await page.mouse.move(box.x+box.width*.72,box.y+box.height*.45);
+    await page.mouse.move(box.x+box.width*.76,box.y+box.height*.48);
     await withTimeout('show chart tooltip',()=>page.waitForFunction(()=>{
       const tooltip=document.querySelector('[data-chart-tooltip]');
       return tooltip && !tooltip.hidden && tooltip.dataset.index !== undefined;
     }));
+    const chartBitmapAfter=await page.$eval('#trendChart',(node)=>({width:node.width,height:node.height,revision:node.dataset.staticRevision}));
+    if(JSON.stringify(chartBitmapAfter)!==JSON.stringify(chartBitmapBefore)) throw new Error('chart hover rebuilt the static bitmap: '+JSON.stringify({chartBitmapBefore,chartBitmapAfter}));
     const privacy=await page.evaluate(()=>document.body.innerText);
     if(/HPUAGK|JKcewe/.test(privacy)||!privacy.includes('[redacted]')) throw new Error('sensitive session text was not redacted');
     await withTimeout('capture VS Code tooltip',()=>page.screenshot({path:path.join(outDir,'vscode-tooltip.png'),fullPage:true}));
@@ -85,6 +89,20 @@ function snapshot(zero=false) {
       const apply=document.querySelector('[data-range-apply]');
       return panel&&!panel.hidden&&start?.value&&end?.value&&apply?.getBoundingClientRect().width>0;
     }));
+    const draftScope = await page.$eval('#filterContext',(node)=>node.textContent || '');
+    if(!draftScope.startsWith('今天')) throw new Error('unapplied custom date draft replaced the committed data scope: '+draftScope);
+    await page.$eval('#rangeStart',(node)=>{node.value='2026-07-09T09:30';node.dispatchEvent(new Event('input',{bubbles:true}));});
+    await page.evaluate((data)=>window.dispatchEvent(new MessageEvent('message',{data:{type:'details',payload:{...data,selectedRange:{preset:'week',start:data.timestamp-7*86400000,end:data.timestamp,bucketMs:86400000},selectedScope:{source:'cli',model:'GPT-5.5'}},generation:20}})),snapshot(false));
+    const protectedDraft=await page.evaluate(()=>({
+      value:document.querySelector('#rangeStart')?.value,
+      context:document.querySelector('#filterContext')?.textContent,
+      source:document.querySelector('#sourceFilterValue')?.textContent,
+      customActive:document.querySelector('[data-range="custom"]')?.classList.contains('active'),
+    }));
+    if(protectedDraft.value!=='2026-07-09T09:30'||!protectedDraft.context?.startsWith('7 天')||protectedDraft.source!=='CLI'||!protectedDraft.customActive) throw new Error('realtime detail refresh disturbed the custom date draft: '+JSON.stringify(protectedDraft));
+    await page.evaluate((data)=>window.dispatchEvent(new MessageEvent('message',{data:{type:'details',payload:{...data,selectedScope:{source:'all',model:'all'}},generation:19}})),snapshot(false));
+    const sourceAfterStale=await page.$eval('#sourceFilterValue',(node)=>node.textContent || '');
+    if(sourceAfterStale!=='CLI') throw new Error('stale detail generation replaced the current scope: '+sourceAfterStale);
     const customGeometry=await page.evaluate(()=>{
       const panel=document.querySelector('#customRange').getBoundingClientRect();
       return {left:panel.left,right:panel.right,width:innerWidth};
@@ -100,9 +118,12 @@ function snapshot(zero=false) {
     });
     if(narrowGeometry.segmented!=='none'||narrowGeometry.menu==='none'||narrowGeometry.left<0||narrowGeometry.right>narrowGeometry.width) throw new Error('narrow range controls are not responsive: '+JSON.stringify(narrowGeometry));
     await withTimeout('capture narrow range',()=>page.screenshot({path:path.join(visualDir,'custom-range-narrow.png'),fullPage:true}));
+    await page.click('[data-range-cancel]');
+    const cancelled=await page.evaluate(()=>({hidden:document.querySelector('#customRange')?.hidden,range:window.__vscodeState?.range}));
+    if(!cancelled.hidden||cancelled.range!=='week') throw new Error('custom date cancel did not restore the committed range: '+JSON.stringify(cancelled));
     const sidebarFile=path.join(root,'.cache','vscode-webview-sidebar-preview.html'); fs.writeFileSync(sidebarFile,previewHtml('sidebar'),'utf8');
     await page.goto('file:///'+sidebarFile.replace(/\\/g,'/'),{waitUntil:'domcontentloaded'});
-    await page.evaluate((data)=>window.dispatchEvent(new MessageEvent('message',{data:{type:'details',payload:data}})),snapshot(false));
+    await page.evaluate((data)=>window.dispatchEvent(new MessageEvent('message',{data:{type:'details',payload:data,generation:1}})),snapshot(false));
     const sidebarState=await page.evaluate(()=>({scope:getComputedStyle(document.querySelector('.scope-filter')).display,token:getComputedStyle(document.querySelector('.token-strip')).display,requests:getComputedStyle(document.querySelector('.request-surface')).display}));
     if(sidebarState.scope!=='none'||sidebarState.token!=='none'||sidebarState.requests!=='none') throw new Error('sidebar leaked full-analysis workbench: '+JSON.stringify(sidebarState));
     await page.click('#rangeMenuButton');
@@ -118,7 +139,7 @@ function snapshot(zero=false) {
     await page.screenshot({path:path.join(visualDir,'sidebar-overview.png'),fullPage:true});
     await page.goto('file:///'+file.replace(/\\/g,'/'),{waitUntil:'domcontentloaded'});
     await page.setViewport({width:1120,height:900,deviceScaleFactor:1});
-    await page.evaluate((data)=>window.dispatchEvent(new MessageEvent('message',{data:{type:'details',payload:data}})),{...snapshot(true),trends:{hourly24h:[],daily14d:[]}});
+    await page.evaluate((data)=>window.dispatchEvent(new MessageEvent('message',{data:{type:'details',payload:data,generation:1}})),{...snapshot(true),trends:{hourly24h:[],daily14d:[]}});
     await new Promise(r=>setTimeout(r,300));
     await withTimeout('capture VS Code empty state',()=>page.screenshot({path:path.join(outDir,'vscode-empty-state.png'),fullPage:true}));
     console.log('ok - vscode README screenshots');

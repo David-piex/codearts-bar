@@ -49,6 +49,7 @@ function makeRequestState(ctx, payload, queryAll, batchSize) {
   const { where, params } = assistantWhere(payload);
   const total = Number(queryAll(db, `select count(*) as count from message where ${where}`, params)[0]?.count || 0);
   return {
+    payload,
     total,
     nextOffset: 0,
     fetched: 0,
@@ -56,7 +57,7 @@ function makeRequestState(ctx, payload, queryAll, batchSize) {
     exhausted: total <= 0,
     loadBatch() {
       if (this.exhausted) return;
-      const rawMessages = queryAll(db, `select id, session_id, time_created, time_updated, data from message where ${where} order by time_created desc limit ? offset ?`, [...params, batchSize, this.nextOffset]);
+      const rawMessages = queryAll(db, `select id, session_id, time_created, time_updated, data from message where ${where} order by time_created desc, id desc limit ? offset ?`, [...params, batchSize, this.nextOffset]);
       this.nextOffset += rawMessages.length;
       this.fetched += rawMessages.length;
       if (!rawMessages.length || this.nextOffset >= total) this.exhausted = true;
@@ -69,6 +70,7 @@ function makeSessionState(ctx, payload, queryAll, batchSize) {
   const { where, params } = sessionWhere(payload);
   const total = Number(queryAll(db, `select count(*) as count from session where ${where}`, params)[0]?.count || 0);
   return {
+    payload,
     total,
     nextOffset: 0,
     fetched: 0,
@@ -76,7 +78,7 @@ function makeSessionState(ctx, payload, queryAll, batchSize) {
     exhausted: total <= 0,
     loadBatch() {
       if (this.exhausted) return;
-      const rawSessions = queryAll(db, `select id, title, directory, version, time_created, time_updated, time_archived from session where ${where} order by time_updated desc limit ? offset ?`, [...params, batchSize, this.nextOffset]);
+      const rawSessions = queryAll(db, `select id, title, directory, version, time_created, time_updated, time_archived from session where ${where} order by time_updated desc, id desc limit ? offset ?`, [...params, batchSize, this.nextOffset]);
       this.nextOffset += rawSessions.length;
       this.fetched += rawSessions.length;
       if (!rawSessions.length || this.nextOffset >= total) this.exhausted = true;
@@ -100,7 +102,7 @@ function kWayMergePage(states, limit, offset, sortKey) {
       const head = state.buffer[0];
       if (!head) continue;
       const value = Number(head[sortKey] || 0);
-      if (!best || value > bestValue) { best = state; bestValue = value; }
+      if (!best || value > bestValue || (value === bestValue && comparePaginationRows(head, state.buffer[0]) < 0)) { best = state; bestValue = value; }
     }
     if (!best) break;
     const next = best.buffer.shift();
@@ -110,6 +112,12 @@ function kWayMergePage(states, limit, offset, sortKey) {
     fillState(best);
   }
   return { items, scanned };
+}
+function comparePaginationRows(a = {}, b = {}) {
+  const sourceA = String(a.source || '');
+  const sourceB = String(b.source || '');
+  if (sourceA !== sourceB) return sourceA.localeCompare(sourceB);
+  return String(a.id || '').localeCompare(String(b.id || ''));
 }
 function keyForSourceRow(row) {
   return `${row?.source || ''}:${row?.id || ''}`;
@@ -155,7 +163,7 @@ function hydrateSessionPageItems(rawItems, states, queryAll) {
     const state = states[index];
     if (!state || !sessions.length) continue;
     const { source, db, tables } = state.ctx;
-    const messages = queryMessagesForSessions(queryAll, db, source, sessions.map((s) => s.id));
+    const messages = queryMessagesForSessions(queryAll, db, source, sessions.map((s) => s.id), state.payload);
     const parts = tables.includes('part') ? queryPartsForMessages(queryAll, db, source, messages.map((m) => m.id)) : [];
     for (const item of sessionsFromRows(sessions, messages, parts, timestamp)) rowMap.set(keyForSourceRow(item), item);
   }
@@ -169,7 +177,7 @@ function directRequestsPage(ctx, payload, queryAll, limit, offset) {
   const { source, db, tables } = ctx;
   const { where, params } = assistantWhere(payload);
   const total = Number(queryAll(db, `select count(*) as count from message where ${where}`, params)[0]?.count || 0);
-  const rawMessages = queryAll(db, `select id, session_id, time_created, time_updated, data from message where ${where} order by time_created desc limit ? offset ?`, [...params, limit, offset]);
+  const rawMessages = queryAll(db, `select id, session_id, time_created, time_updated, data from message where ${where} order by time_created desc, id desc limit ? offset ?`, [...params, limit, offset]);
   const messages = tagRows(rawMessages, source);
   const sessions = querySessionsByIds(queryAll, db, source, messages.map((m) => m.session_id));
   const parts = tables.includes('part') ? queryPartsForMessages(queryAll, db, source, messages.map((m) => m.id)) : [];
@@ -179,9 +187,9 @@ function directSessionsPage(ctx, payload, queryAll, limit, offset) {
   const { source, db, tables } = ctx;
   const { where, params } = sessionWhere(payload);
   const total = Number(queryAll(db, `select count(*) as count from session where ${where}`, params)[0]?.count || 0);
-  const rawSessions = queryAll(db, `select id, title, directory, version, time_created, time_updated, time_archived from session where ${where} order by time_updated desc limit ? offset ?`, [...params, limit, offset]);
+  const rawSessions = queryAll(db, `select id, title, directory, version, time_created, time_updated, time_archived from session where ${where} order by time_updated desc, id desc limit ? offset ?`, [...params, limit, offset]);
   const sessions = tagRows(rawSessions, source);
-  const messages = queryMessagesForSessions(queryAll, db, source, sessions.map((s) => s.id));
+  const messages = queryMessagesForSessions(queryAll, db, source, sessions.map((s) => s.id), payload);
   const parts = tables.includes('part') ? queryPartsForMessages(queryAll, db, source, messages.map((m) => m.id)) : [];
   return { total, items: sessionsFromRows(sessions, messages, parts, Date.now()) };
 }

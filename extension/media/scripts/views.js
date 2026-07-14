@@ -94,7 +94,10 @@
   }
   function requests(snapshot) {
     const rows = snapshot.requests || [];
-    element("#requestCount").textContent = `${f.exact.format(rows.length)} 条`;
+    const total = Math.max(rows.length, f.number(snapshot.requestTotal));
+    element("#requestCount").textContent = total > rows.length
+      ? `${f.exact.format(rows.length)} / ${f.exact.format(total)} 条`
+      : `${f.exact.format(total)} 条`;
     element("#requests").innerHTML = rows.length ? rows.map((item) => {
       const when = item.time ? new Date(item.time).toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false }) : "—";
       const latency = Number.isFinite(Number(item.latencyMs)) ? f.milliseconds(item.latencyMs) : "—";
@@ -106,8 +109,8 @@
     surface.classList.add("performance-unavailable");
     element("#dataAdapter").textContent = snapshot.adapter || "\u672a\u77e5";
     element("#dataSources").textContent = f.exact.format((snapshot.sources || []).length);
-    element("#dataRequests").textContent = f.exact.format((snapshot.requests || []).length);
-    element("#dataSessions").textContent = f.exact.format((snapshot.sessions || []).length);
+    element("#dataRequests").textContent = f.exact.format(Math.max((snapshot.requests || []).length, f.number(snapshot.requestTotal)));
+    element("#dataSessions").textContent = f.exact.format(Math.max((snapshot.sessions || []).length, f.number(snapshot.sessionTotal)));
     element("#dbSize").textContent = f.bytes(snapshot.dbSize);
     const errors = snapshot.sourceErrors || [];
     element("#dataHealth").textContent = errors.length ? `${errors.length} \u4e2a\u6570\u636e\u6e90\u5f02\u5e38` : "\u8bfb\u53d6\u6b63\u5e38";

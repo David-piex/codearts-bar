@@ -22,7 +22,9 @@ assert.equal(fs.existsSync(path.join(npmStage,'src','dashboard-renderer.js')),fa
 const npmPkg=JSON.parse(fs.readFileSync(path.join(npmStage,'package.json'),'utf8'));
 assert.equal(npmPkg.version,pkg.version);
 assert.equal(npmPkg.bin['codearts-bar'],'src/bin.js');
-const fixtureEnv={...process.env,CODEARTS_BAR_DB:path.join(root,'tests','fixtures','opencode-fixture.db'),CODEARTS_BAR_CONFIG_DIR:path.join(os.tmpdir(),'codearts-bar-npm-smoke-config')};
-const run=spawnSync(process.execPath,[path.join(npmStage,'src','bin.js'),'self-test'],{cwd:npmStage,encoding:'utf8',timeout:30000,env:fixtureEnv});
+const fixtureDb=path.join(root,'tests','fixtures','opencode-fixture.db');
+const fixtureConfig=path.join(os.tmpdir(),'codearts-bar-npm-smoke-config');
+const fixtureEnv={...process.env,CODEARTS_BAR_DB:fixtureDb,CODEARTS_BAR_CONFIG_DIR:fixtureConfig,CODEARTS_BAR_NOW_MS:'1783512000000'};
+const run=spawnSync(process.execPath,[path.join(npmStage,'src','bin.js'),'self-test','--fixture-db',fixtureDb,'--config-dir',fixtureConfig,'--now-ms','1783512000000'],{cwd:npmStage,encoding:'utf8',timeout:30000,env:fixtureEnv});
 assert.equal(run.status,0,run.stderr||run.stdout);
 console.log(`ok - npm package staging files=${manifest.files.length}`);

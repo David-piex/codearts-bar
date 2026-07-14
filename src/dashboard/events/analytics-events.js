@@ -25,6 +25,7 @@ async function switchSourceFilter(nextSource, opts = {}){
   resetRequestPaging();
   resetSessionPaging();
   sourceFilter = nextSource || 'all';
+  beginDashboardRequestGeneration();
   localStorage.setItem('statsSource', sourceFilter);
   patchSourceSelectionChrome(sourceFilter);
   if(snapshot?.ok && workspaceMode === 'analytics'){
@@ -93,6 +94,7 @@ async function handleDashboardAnalyticsClick(e){
         tableTab = 'sessions';
         selectedSessionId = `${sourceKey(item)}:${item.sessionId || ''}`;
         sessionQuery = item.sessionId || '';
+        beginDashboardRequestGeneration({ preserveBoundary: true });
         resetSessionPaging();
         workspaceMode = 'sessions';
         localStorage.setItem('workspaceMode', workspaceMode);
@@ -110,13 +112,14 @@ async function handleDashboardAnalyticsClick(e){
     const series = e.target.closest('[data-series]');
     if(series){ const key = series.dataset.series; if(visibleSeries.has(key)) visibleSeries.delete(key); else visibleSeries.add(key); saveVisibleSeries(); if(snapshot?.ok && patchAnalyticsChartOnly(snapshot)) throw DASHBOARD_EVENT_HANDLED; if(snapshot?.ok) render(snapshot, { windowLayout: false, instantChart: true, partial: true }); throw DASHBOARD_EVENT_HANDLED; }
     const cacheModel = e.target.closest('[data-cache-model]');
-    if(cacheModel){ resetIncrementalRenderLimits('all'); modelFilter = cacheModel.dataset.cacheModel || 'all'; localStorage.setItem('statsModel', modelFilter); if(snapshot?.ok && patchAnalyticsSlotsForState(snapshot, { deferHeavy: true })) throw DASHBOARD_EVENT_HANDLED; if(snapshot?.ok) render(snapshot, { windowLayout: false, instantChart: true, partial: true }); throw DASHBOARD_EVENT_HANDLED; }
+    if(cacheModel){ resetIncrementalRenderLimits('all'); resetRequestPaging(); modelFilter = cacheModel.dataset.cacheModel || 'all'; beginDashboardRequestGeneration(); localStorage.setItem('statsModel', modelFilter); if(snapshot?.ok && patchAnalyticsSlotsForState(snapshot, { deferHeavy: true })) throw DASHBOARD_EVENT_HANDLED; if(snapshot?.ok) render(snapshot, { windowLayout: false, instantChart: true, partial: true }); throw DASHBOARD_EVENT_HANDLED; }
     const cacheProject = e.target.closest('[data-cache-project]');
     if(cacheProject){
       workspaceMode = 'sessions';
       sessionProjectFilter = cacheProject.dataset.cacheProject || 'all';
       sessionQuickFilter = 'cacheLow';
       sessionStatusFilter = 'all';
+      beginDashboardRequestGeneration({ preserveBoundary: true });
       tableTab = 'sessions';
       resetSessionPaging();
       localStorage.setItem('workspaceMode', workspaceMode);

@@ -24,19 +24,31 @@ dependencies {
 }
 
 java {
-    toolchain { languageVersion = JavaLanguageVersion.of(21) }
+    // IntelliJ's bundled JBR 21 is a complete compiler runtime for this
+    // plugin, but Gradle classifies it as a JRE because it has no jmods.
+    // Compile against Java 21 directly so local/release builds can use that
+    // supported JBR without requiring a separately installed JDK.
+    sourceCompatibility = JavaVersion.VERSION_21
+    targetCompatibility = JavaVersion.VERSION_21
+}
+
+tasks.withType<JavaCompile>().configureEach {
+    options.release.set(21)
 }
 
 val prepareEmbeddedCli by tasks.registering(Exec::class) {
     workingDir = file("..")
     commandLine("node", "src/build-cli-resources.js")
+    environment("CODEARTS_BAR_CLI_ENTRY", "src/providers/codearts/jetbrains-cli.js")
+    environment("CODEARTS_BAR_CLI_RUNTIME_DIR", file("build/jetbrains-cli-runtime").absolutePath)
+    environment("CODEARTS_BAR_CLI_BUNDLE", "1")
     inputs.files(fileTree("../src") { include("**/*.js", "**/*.json") })
-    outputs.dir(file("../.cache/cli-runtime"))
+    outputs.dir(file("build/jetbrains-cli-runtime"))
 }
 
 val copyEmbeddedCli by tasks.registering(Copy::class) {
     dependsOn(prepareEmbeddedCli)
-    from("../.cache/cli-runtime")
+    from("build/jetbrains-cli-runtime")
     into(layout.buildDirectory.dir("generated-resources/cli"))
 }
 

@@ -115,10 +115,11 @@ codearts-bar runtime               # Node / SQLite 运行时
 codearts-bar diagnose              # 数据源、日志和缓存诊断
 codearts-bar config show           # 查看配置与配置文件位置
 codearts-bar config set --db "D:\path\to\opencode.db"
-codearts-bar self-test             # 验证当前机器的真实数据读取
 ```
 
 未全局安装时，可在源码目录使用 `node src/cli.js <command>`。
+
+`self-test` 只用于发布和 CI 的隔离 fixture 验证，必须显式传入测试数据库、临时配置目录和固定时间；它会拒绝读取真实用户数据库。查看当前机器的真实统计请使用 `codearts-bar stats`，排查数据源请使用 `codearts-bar diagnose`。
 
 ### 从源码运行
 
@@ -235,6 +236,7 @@ npm run build:extension      # 生成 release/codearts-bar-status.vsix
 npm run build:jetbrains      # 生成 JetBrains 插件 ZIP（需要 JDK 21）
 npm run build:app            # 生成 Windows 安装版与便携版
 npm run pack:npm             # 生成精简 npm 包
+node src/cli.js self-test --fixture-db tests/fixtures/opencode-fixture.db --config-dir .cache/self-test-config --now-ms 1783512000000
 ```
 
 Gitee Go 在分支、PR 和 `master` 上使用 Node.js 22 执行可跨平台的测试、压力测试、VSIX 与 npm 包构建。Windows 安装包由 Windows CI 构建并执行 ASAR/资源校验。

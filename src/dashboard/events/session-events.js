@@ -64,6 +64,7 @@ async function handleDashboardSessionClick(e){
       sessionStatusFilter = key === 'archived' ? 'archived' : 'active';
       sessionQuickFilter = key === 'archived' ? 'all' : key;
       sessionTagFilter = 'all';
+      beginDashboardRequestGeneration({ preserveBoundary: true });
       if(key === 'cacheLow') sessionSort = 'opportunity';
       else if(sessionSort === 'opportunity') sessionSort = 'updated';
       resetSessionPaging();
@@ -74,7 +75,7 @@ async function handleDashboardSessionClick(e){
     const quick = e.target.closest('[data-session-quick]');
     if(quick){ sessionQuickFilter = quick.dataset.sessionQuick || 'all'; resetSessionPaging(); localStorage.setItem('sessionQuickFilter', sessionQuickFilter); patchSessionsOrRender({ table: true, toolbar: true, inspector: true, overview: true }); throw DASHBOARD_EVENT_HANDLED; }
     const project = e.target.closest('[data-session-project]');
-    if(project){ sessionProjectFilter = project.dataset.sessionProject || 'all'; resetSessionPaging(); localStorage.setItem('sessionProjectFilter', sessionProjectFilter); patchSessionsOrRender({ table: true, toolbar: true, inspector: true, overview: true }); throw DASHBOARD_EVENT_HANDLED; }
+    if(project){ sessionProjectFilter = project.dataset.sessionProject || 'all'; beginDashboardRequestGeneration({ preserveBoundary: true }); resetSessionPaging(); localStorage.setItem('sessionProjectFilter', sessionProjectFilter); patchSessionsOrRender({ table: true, toolbar: true, inspector: true, overview: true }); throw DASHBOARD_EVENT_HANDLED; }
     const resetSessionFilters = e.target.closest('[data-session-reset-filters]');
     if(resetSessionFilters){
       sessionQuickFilter = 'all';
@@ -83,6 +84,7 @@ async function handleDashboardSessionClick(e){
       sessionSort = 'updated';
       sessionTagFilter = 'all';
       sessionQuery = '';
+      beginDashboardRequestGeneration({ preserveBoundary: true });
       resetSessionPaging();
       saveSessionViewState();
       patchSessionsOrRender({ table: true, toolbar: true, inspector: true, overview: true });
@@ -94,6 +96,7 @@ async function handleDashboardSessionClick(e){
       if(action === 'focus'){
         sessionQuickFilter = 'cacheLow';
         sessionStatusFilter = 'active';
+        beginDashboardRequestGeneration({ preserveBoundary: true });
         sessionSort = 'opportunity';
         resetSessionPaging();
         saveSessionViewState();
@@ -227,6 +230,7 @@ async function handleDashboardSessionClick(e){
       if(action.dataset.sessionAction === 'focus-requests'){
         tableTab = 'requests';
         analyticsQuery = item.id || '';
+        beginDashboardRequestGeneration({ preserveBoundary: true });
         workspaceMode = 'analytics';
         localStorage.setItem('workspaceMode', workspaceMode);
         localStorage.setItem('statsTableTab', tableTab);
@@ -268,6 +272,6 @@ async function handleDashboardSessionClick(e){
     const select = e.target.closest('[data-session-select]');
     if(select){ selectedSessionId = select.dataset.sessionSelect; localStorage.setItem('selectedSessionId', selectedSessionId); if(select.dataset.table){ tableTab = select.dataset.table; localStorage.setItem('statsTableTab', tableTab); layoutMode = 'dashboard'; localStorage.setItem('layoutMode', layoutMode); if(tableTab === 'sessions'){ workspaceMode = 'sessions'; localStorage.setItem('workspaceMode', workspaceMode); } if(snapshot?.ok) render(snapshot, { windowLayout: false, instantChart: true, partial: true }); throw DASHBOARD_EVENT_HANDLED; } if(workspaceMode === 'sessions'){ patchSessionSelectionChrome(select); scheduleSessionInspectorPatch(8); throw DASHBOARD_EVENT_HANDLED; } if(snapshot?.ok) render(snapshot, { windowLayout: false, instantChart: true, partial: true }); throw DASHBOARD_EVENT_HANDLED; }
     const status = e.target.closest('[data-session-status]');
-    if(status){ sessionStatusFilter = status.dataset.sessionStatus; resetSessionPaging(); localStorage.setItem('sessionStatusFilter', sessionStatusFilter); patchSessionsOrRender({ table: true, toolbar: true, inspector: true, overview: true }); throw DASHBOARD_EVENT_HANDLED; }
+    if(status){ sessionStatusFilter = status.dataset.sessionStatus; beginDashboardRequestGeneration({ preserveBoundary: true }); resetSessionPaging(); localStorage.setItem('sessionStatusFilter', sessionStatusFilter); patchSessionsOrRender({ table: true, toolbar: true, inspector: true, overview: true }); throw DASHBOARD_EVENT_HANDLED; }
   return false;
 }

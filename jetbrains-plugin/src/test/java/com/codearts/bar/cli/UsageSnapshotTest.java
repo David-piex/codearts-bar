@@ -59,13 +59,12 @@ class UsageSnapshotTest {
                 java.util.List.of(), java.util.List.of());
 
         var rebucketed = UsageSnapshot.withLocalDailyTrend(data, start, end, berlin);
-        assertEquals(3, rebucketed.trend().size());
+        assertEquals(2, rebucketed.trend().size());
         assertEquals(10, rebucketed.trend().get(0).total());
         assertEquals(20, rebucketed.trend().get(1).total());
-        assertEquals(0, rebucketed.trend().get(2).total());
         assertEquals(30, rebucketed.trend().stream().mapToLong(UsageSnapshot.TrendPoint::total).sum());
         assertEquals(start, rebucketed.trend().getFirst().start());
-        assertEquals(end, rebucketed.trend().getLast().start());
+        assertEquals(LocalDateTime.of(2026, 3, 29, 0, 0).atZone(berlin).toInstant().toEpochMilli(), rebucketed.trend().getLast().start());
     }
 
     @Test void keepsAllTimeLocalTrendSparseAndBounded() {

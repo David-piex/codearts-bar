@@ -19,6 +19,7 @@ const {
   modelStatsFromDashboardBundle,
   mergeBuckets,
   densifyBuckets,
+  rebucketCalendarDays,
   mergeModelStats,
   mergeSessionSummaries,
   slowAggregateStats,
@@ -66,12 +67,14 @@ function getTrendBucketsNative(payload = {}) {
   return timeAggregateSync('trendBuckets', 'node:sqlite', payload, () => {
     const rollupBundle = dashboardBundleFromUsageRollups(payload, 'node:sqlite');
     if (rollupBundle) return trendFromDashboardBundle(rollupBundle, payload);
-    const { start, end, bucketMs, bucketOffsetMs, timestamp } = normalizeTrendRange(payload);
+    const normalized = normalizeTrendRange(payload);
+    const { start, end, bucketMs, bucketOffsetMs, timestamp } = normalized;
     const buckets = [];
-    const trendRange = { start, end, bucketMs, bucketOffsetMs, timestamp };
-    const result = runNativeAggregate(payload, (args) => nativeSql.trendForSourceSql({ ...args, payload, trendRange }));
+    const queryTrendRange = { ...normalized, bucketMs: normalized.queryBucketMs, bucketOffsetMs: normalized.queryBucketOffsetMs };
+    const result = runNativeAggregate(payload, (args) => nativeSql.trendForSourceSql({ ...args, payload, trendRange: queryTrendRange }));
     for (const arr of result.items) for (const b of arr) buckets.push(b);
-    const merged = densifyBuckets(mergeBuckets(buckets, bucketMs), trendRange);
+    const rebucketed = normalized.calendarRebucket ? rebucketCalendarDays(mergeBuckets(buckets, normalized.queryBucketMs), normalized) : mergeBuckets(buckets, bucketMs);
+    const merged = densifyBuckets(rebucketed, normalized);
     return { ok: true, timestamp, start, end, bucketMs, bucketOffsetMs, buckets: merged, sourceErrors: result.errors };
   });
 }
@@ -79,15 +82,17 @@ async function getTrendBucketsSqlJs(payload = {}) {
   return timeAggregateAsync('trendBuckets', 'sql.js', payload, async () => {
     const rollupBundle = dashboardBundleFromUsageRollups(payload, 'sql.js');
     if (rollupBundle) return trendFromDashboardBundle(rollupBundle, payload);
-    const { start, end, bucketMs, bucketOffsetMs, timestamp } = normalizeTrendRange(payload);
+    const normalized = normalizeTrendRange(payload);
+    const { start, end, bucketMs, bucketOffsetMs, timestamp } = normalized;
     const buckets = [];
     const result = await runSqlJsAggregate(payload, ({ source, db, tables, queryAll }) => {
       const rows = queryAssistantRows(queryAll, db, source, payload, start, end);
       const { partMap } = tokenUsageForRows(queryAll, db, source, tables, rows);
-      return agg.trendStats(rows, partMap, start, bucketMs, bucketOffsetMs);
+      return agg.trendStats(rows, partMap, start, normalized.queryBucketMs, normalized.queryBucketOffsetMs);
     });
     for (const arr of result.items) for (const b of arr) buckets.push(b);
-    const merged = densifyBuckets(mergeBuckets(buckets, bucketMs), { start, end, bucketMs, bucketOffsetMs });
+    const rebucketed = normalized.calendarRebucket ? rebucketCalendarDays(mergeBuckets(buckets, normalized.queryBucketMs), normalized) : mergeBuckets(buckets, bucketMs);
+    const merged = densifyBuckets(rebucketed, normalized);
     return { ok: true, timestamp, start, end, bucketMs, bucketOffsetMs, buckets: merged, sourceErrors: result.errors };
   });
 }
@@ -171,7 +176,8 @@ function mergeDashboardAggregateBundle(items = [], payload = {}, errors = []) {
   const trendRange = normalizeTrendRange(payload);
   const summary = mergeSummaryParts(items.map((x) => x.summary), payload);
   const sessionSummary = mergeSessionSummaries(items.map((x) => x.sessionSummary).filter(Boolean), payload, errors);
-  const buckets = densifyBuckets(mergeBuckets(items.flatMap((x) => x.trendBuckets || []), trendRange.bucketMs), trendRange);
+  const mergedTrendBuckets = mergeBuckets(items.flatMap((x) => x.trendBuckets || []), trendRange.queryBucketMs || trendRange.bucketMs);
+  const buckets = densifyBuckets(trendRange.calendarRebucket ? rebucketCalendarDays(mergedTrendBuckets, trendRange) : mergedTrendBuckets, trendRange);
   const sourceStats = items.map((x) => x.sourceStat).filter(Boolean).sort((a, b) => b.total - a.total);
   const modelStats = mergeModelStats(items.map((x) => x.modelStats || []));
   const rollups = items.map((x) => x.usageRollup).filter(Boolean);
@@ -269,6 +275,7 @@ function dashboardBundleFromUsageRollups(payload = {}, adapter = 'node:sqlite', 
   if (!selectedSources.length) return null;
   const windows = timeWindows(payload);
   const trendRange = normalizeTrendRange(payload);
+  if (trendRange.calendarRebucket) return null;
   const items = [];
   const misses = [];
   for (const source of selectedSources) {
@@ -298,6 +305,7 @@ function getDashboardAggregatesNative(payload = {}) {
   return timeAggregateSync('dashboardAggregates', 'node:sqlite', payload, () => {
     const windows = timeWindows(payload);
     const trendRange = normalizeTrendRange(payload);
+    const queryTrendRange = { ...trendRange, bucketMs: trendRange.queryBucketMs, bucketOffsetMs: trendRange.queryBucketOffsetMs };
     const result = runNativeAggregate(payload, (args) => {
       if (usageRollup.canUseUsageRollup(payload)) {
         const compact = usageRollup.readCompactUsageRollupForSource(args.source);
@@ -310,12 +318,12 @@ function getDashboardAggregatesNative(payload = {}) {
           const part = usageRollup.dashboardPartFromUsageRollup(rollup, { payload, windows, trendRange });
           return attachSessionSummaryFromRollupOrSql(part, args, payload, 'node:sqlite');
         }
-        const part = nativeSql.aggregateBundleForSourceSql({ ...args, payload, windows, trendRange });
+        const part = nativeSql.aggregateBundleForSourceSql({ ...args, payload, windows, trendRange: queryTrendRange });
         usageRollup.scheduleUsageRollupBuild(args.source, { adapter: 'node:sqlite', delayMs: 500 });
         part.usageRollup = { status: 'miss-pass-through', previousReason: rollup.reason || null, rowCount: null };
         return part;
       }
-      return nativeSql.aggregateBundleForSourceSql({ ...args, payload, windows, trendRange });
+      return nativeSql.aggregateBundleForSourceSql({ ...args, payload, windows, trendRange: queryTrendRange });
     });
     return mergeDashboardAggregateBundle(result.items, payload, result.errors);
   });
@@ -324,6 +332,7 @@ async function getDashboardAggregatesSqlJs(payload = {}) {
   return timeAggregateAsync('dashboardAggregates', 'sql.js', payload, async () => {
     const windows = timeWindows(payload);
     const trendRange = normalizeTrendRange(payload);
+    const queryTrendRange = { ...trendRange, bucketMs: trendRange.queryBucketMs, bucketOffsetMs: trendRange.queryBucketOffsetMs };
     const result = await runSqlJsAggregate(payload, (args) => {
       if (usageRollup.canUseUsageRollup(payload)) {
         const compact = usageRollup.readCompactUsageRollupForSource(args.source);
@@ -336,12 +345,12 @@ async function getDashboardAggregatesSqlJs(payload = {}) {
           const part = usageRollup.dashboardPartFromUsageRollup(rollup, { payload, windows, trendRange });
           return attachSessionSummaryFromRollupOrSql(part, args, payload, 'sql.js');
         }
-        const part = nativeSql.aggregateBundleForSourceSql({ ...args, payload, windows, trendRange });
+        const part = nativeSql.aggregateBundleForSourceSql({ ...args, payload, windows, trendRange: queryTrendRange });
         usageRollup.scheduleUsageRollupBuild(args.source, { adapter: 'sql.js', delayMs: 500 });
         part.usageRollup = { status: 'miss-pass-through', previousReason: rollup.reason || null, rowCount: null };
         return part;
       }
-      return nativeSql.aggregateBundleForSourceSql({ ...args, payload, windows, trendRange });
+      return nativeSql.aggregateBundleForSourceSql({ ...args, payload, windows, trendRange: queryTrendRange });
     });
     return mergeDashboardAggregateBundle(result.items, payload, result.errors);
   });

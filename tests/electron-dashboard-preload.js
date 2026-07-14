@@ -16,6 +16,8 @@ try {
 
 
 const { contextBridge, ipcRenderer } = require('electron');
+const injectedNow = Number(process.env.CODEARTS_BAR_NOW_MS || 0);
+if (Number.isFinite(injectedNow) && injectedNow > 0) contextBridge.exposeInMainWorld('codeartsTestNowMs', injectedNow);
 const invokeChannels = new Set([
   'dashboard:getRuntimeInfo', 'dashboard:getInitialSummary', 'dashboard:getSnapshot',
   'dashboard:getRequestsPage', 'dashboard:getSessionRequestsPage', 'dashboard:getSessionsPage',

@@ -126,22 +126,30 @@ assert.match(extensionSource, /getExtensionDetails/);
 assert.match(extensionSource, /hasTargets/);
 assert.match(htmlSource, /Content-Security-Policy/);
 assert.match(dashboardSource, /retainContextWhenHidden/);
-assert.match(dashboardSource, /broadcastDetails/);
+assert.match(dashboardSource, /postDetails/);
+assert.doesNotMatch(dashboardSource, /\bbroadcast\s*\(/, "unscoped summary broadcasts must not bypass target generations");
 assert.match(dashboardSource, /webview-ready/);
 assert.match(dashboardSource, /message\?\.type === "range"/);
 assert.match(dashboardSource, /onDidChangeVisibility/, "sidebar visibility must control heavy detail aggregation");
 assert.match(dashboardSource, /onDidChangeViewState/, "panel visibility must control heavy detail aggregation");
 assert.match(dashboardSource, /some\(\(target\) => target\.visible\)/, "hidden retained webviews must not keep detail refresh active");
-assert.match(dashboardSource, /if \(target\.visible\) target\.webview\.postMessage/, "detail payloads must only target visible webviews");
-assert.ok((dashboardSource.match(/if \(target\.visible\)/g) || []).length >= 3, "summary, details and refresh messages must skip hidden retained webviews");
+assert.match(dashboardSource, /!target\?\.visible \|\| !this\.targets\.has\(target\) \|\| target\.generation !== generation/, "detail payloads must only target the current visible webview generation");
+assert.match(dashboardSource, /visibleTargets\(\)/, "details must be scheduled per visible webview");
+assert.match(dashboardSource, /target\.generation === request\.generation/, "stale detail requests must not commit");
+assert.doesNotMatch(extensionSource, /dashboardHost\?\.broadcast\(lastSnapshot\)/, "summary refresh must not trigger an intermediate full render");
 assert.match(extensionSource, /formatCacheRate/, "status tooltip must expose cache-hit semantics");
+assert.match(extensionSource, /enabledCommands:\s*\[/, "trusted status tooltip links must use an explicit command allowlist");
+assert.doesNotMatch(extensionSource, /md\.isTrusted\s*=\s*true/, "status tooltip must not trust arbitrary command links");
 assert.match(extensionSource, /capabilities\?\.performance !== false/, "unsupported performance fields must stay out of the status tooltip");
 assert.match(extensionSource, /capabilities\?\.queue !== false/, "unsupported queue fields must stay out of the status tooltip");
 assert.match(dashboardSource, /require\("\.\/webview\/model"\)/);
 assert.match(clientSource, /vscode\.getState\(\)/);
 assert.match(clientSource, /vscode\.setState/);
 assert.match(clientSource, /message\.type === "snapshot" \|\| message\.type === "details"/);
+assert.match(clientSource, /generation <= 0 \|\| generation < latestGeneration/, "data payloads must always carry a current positive generation");
 assert.match(chartSource, /requestAnimationFrame/);
+assert.match(chartSource, /staticCanvas/, "chart hover should reuse a cached static pixel layer");
+assert.match(chartSource, /drawImage\(state\.staticCanvas/, "chart hover should blit the cached layer before drawing interaction chrome");
 assert.match(chartAxisSource, /niceChartScale|niceChartScale:/);
 assert.match(chartSource, /CodeArtsChartAxis/);
 assert.match(chartSource, /yAxisTicks/);
@@ -182,14 +190,23 @@ assert.ok((htmlSource.match(/\\u5f53\\u524d\\u8303\\u56f4/g) || []).length >= 2,
 for (const id of ["sourceFilter", "modelFilter", "metricInput", "metricOutput", "metricCacheWrite", "metricCacheRead", "requests"]) assert.match(htmlSource, new RegExp(`id="${id}"`), `missing full-analysis control ${id}`);
 assert.match(clientSource, /type: "filter"/);
 assert.match(viewsSource, /function requests\(snapshot\)/);
+assert.match(viewsSource, /snapshot\.requestTotal/);
+const { viewModel: directViewModel } = require('../extension/webview/model');
+const counted = directViewModel({ ok: true, requests: [{ id: 'one' }], requestTotal: 41, sessions: [{ id: 'session-one' }], sessionTotal: 12, sessionTotalExact: true });
+assert.equal(counted.requestTotal, 41);
+assert.equal(counted.sessionTotal, 12);
 assert.match(responsiveCss, /\.request-surface \{ display:none; \}/, "sidebar must not render the full request workbench");
 for (const range of ["today", "window", "week", "14d", "30d", "all", "custom"]) assert.match(htmlSource, new RegExp(`data-range="${range}"`), `missing range option ${range}`);
 assert.doesNotMatch(htmlSource, /<select/, "native selects must not leak platform menus into the macOS-style workbench");
 for (const menu of ["range", "source", "model"]) assert.match(htmlSource, new RegExp(`data-menu-toggle="${menu}"`), `missing controlled ${menu} menu`);
 assert.match(clientSource, /function setMenuOpen\(name, next\)/);
 assert.match(clientSource, /event\.key === "Escape"/);
+assert.match(clientSource, /generation < latestGeneration/, "webview must ignore stale detail messages");
+assert.match(clientSource, /customDraftDirty/, "realtime refresh must preserve active custom date input");
+assert.match(clientSource, /function dataRangeText\(\)/, "unapplied custom date drafts must not relabel committed data");
 assert.match(foundationCss, /\.control-menu\s*\{[\s\S]*?position:\s*absolute/, "controlled menus must overlay instead of resizing the workbench");
-assert.match(htmlSource, /type="datetime-local"/);
+assert.match(htmlSource, /id="rangeStart" type="text" inputmode="numeric"/);
+assert.match(htmlSource, /data-date-focus="rangeStart"/);
 assert.match(clientSource, /type: "range"/);
 assert.match(clientSource, /rangeEnd/);
 assert.match(clientSource, /366 \* 86400000/);
@@ -199,6 +216,91 @@ assert.match(viewsSource, /cacheRate !== null && cacheRate !== undefined/, "zero
 assert.match(clientSource, /function zeroTrendRows\(\)/, "empty real ranges must synthesize zero buckets so axes remain visible");
 assert.match(clientSource, /rows\.length \? rows : zeroTrendRows\(\)/, "empty trend ranges must use the zero-axis fallback");
 assert.match(viewsSource, /sourceErrors/);
+
+const dashboardModule = { exports: {} };
+const dashboardFakeVscode = {
+  Uri: { joinPath: (...parts) => parts.map((part) => String(part)).join("/") },
+  ViewColumn: { One: 1 },
+  window: {},
+  commands: {},
+};
+vm.runInNewContext(
+  dashboardSource,
+  {
+    require: (name) => {
+      if (name === "vscode") return dashboardFakeVscode;
+      if (name === "./webview/html") return { dashboardHtml: () => "" };
+      if (name === "./webview/model") return { viewModel: (value) => value };
+      return require(name);
+    },
+    module: dashboardModule,
+    exports: dashboardModule.exports,
+    console,
+    Set,
+  },
+  { filename: "dashboard.js" },
+);
+const { DashboardHost } = dashboardModule.exports;
+const posted = [];
+const webview = {
+  options: {},
+  html: "",
+  asWebviewUri: (value) => value,
+  onDidReceiveMessage(handler) { this.receive = handler; },
+  postMessage(message) { posted.push(message); },
+};
+const detailCalls = [];
+const host = new DashboardHost(
+  { extensionUri: "extension" },
+  () => ({ ok: true, summaryOnly: true }),
+  () => undefined,
+  (options) => detailCalls.push(options),
+  () => undefined,
+);
+const target = host.attach(webview, "dashboard");
+host.handleMessage({
+  type: "ready",
+  state: { range: "custom", customStart: 10, customEnd: 20, sourceFilter: "cli", modelFilter: "gpt-5" },
+}, target);
+assert.equal(detailCalls.length, 1);
+assert.equal(detailCalls[0].rangePreset, "custom");
+assert.equal(detailCalls[0].range.start, 10);
+assert.equal(detailCalls[0].range.end, 20);
+assert.equal(posted.length, 0, "summary-only startup payload must stay behind the loading surface");
+
+const oldRequest = host.beginDetails({ target, rangePreset: "week" })[0];
+const newRequest = host.beginDetails({ target, rangePreset: "30d", source: "desktop" })[0];
+assert.equal(host.commitDetails(oldRequest, { ok: true, marker: "old" }), false, "old generation must not commit");
+assert.equal(host.commitDetails(newRequest, { ok: true, marker: "new" }), true, "latest generation should commit");
+assert.equal(target.snapshot.marker, "new");
+assert.equal(posted.filter((message) => message.type === "details").length, 1, "only one committed payload should render");
+assert.equal(posted.find((message) => message.type === "details").generation, newRequest.generation);
+assert.equal(posted.at(-1).type, "refreshing");
+assert.equal(posted.at(-1).value, false);
+assert.equal(posted.at(-1).generation, newRequest.generation);
+
+const postedSecond = [];
+const secondWebview = {
+  options: {},
+  html: "",
+  asWebviewUri: (value) => value,
+  onDidReceiveMessage(handler) { this.receive = handler; },
+  postMessage(message) { postedSecond.push(message); },
+};
+const secondTarget = host.attach(secondWebview, "sidebar");
+host.beginDetails({ target: secondTarget, rangePreset: "week", source: "cli", model: "gpt-5" });
+const refreshRequests = host.beginDetails();
+assert.equal(refreshRequests.length, 2, "background refresh should retain both visible webview scopes");
+const firstRefresh = refreshRequests.find((request) => request.target === target);
+const secondRefresh = refreshRequests.find((request) => request.target === secondTarget);
+assert.equal(firstRefresh.scope.rangePreset, "30d");
+assert.equal(firstRefresh.scope.source, "desktop");
+assert.equal(secondRefresh.scope.rangePreset, "week");
+assert.equal(secondRefresh.scope.source, "cli");
+host.commitDetails(firstRefresh, { ok: true, marker: "panel-30d" });
+host.commitDetails(secondRefresh, { ok: true, marker: "sidebar-week" });
+assert.equal(posted.findLast((message) => message.type === "details").payload.marker, "panel-30d");
+assert.equal(postedSecond.findLast((message) => message.type === "details").payload.marker, "sidebar-week");
 
 const fakeVscode = {
   Uri: { joinPath: (...parts) => parts.map((part) => String(part)).join("/") },

@@ -10,11 +10,14 @@
   const knownSources = new Map();
   const knownModels = new Set();
   let openMenu = "";
+  let latestGeneration = 0;
+  let customDraftDirty = false;
   const element = (selector) => document.querySelector(selector),
     all = (selector) => [...document.querySelectorAll(selector)];
   function zeroTrendRows() {
     const end = Number(snapshot?.timestamp) || Date.now();
-    const hourly = snapshot?.selectedRange?.bucketMs === 3600000 || range === "today" || range === "window";
+    const dataRange = snapshot?.selectedRange?.preset || range;
+    const hourly = snapshot?.selectedRange?.bucketMs === 3600000 || dataRange === "today" || dataRange === "window";
     const count = hourly ? 24 : Math.min(31, Math.max(7, Math.ceil(((snapshot?.selectedRange?.end || Date.now()) - (snapshot?.selectedRange?.start || Date.now() - 14 * 86400000)) / 86400000)));
     const bucketMs = hourly ? 3600000 : 86400000;
     const alignedEnd = Math.floor(end / bucketMs) * bucketMs;
@@ -27,21 +30,36 @@
     }));
   }
   function trendRows() {
-    const rows = snapshot.trends.range?.length ? snapshot.trends.range : (range === "today" || range === "window" ? snapshot.trends.hourly24h : snapshot.trends.daily14d);
+    const dataRange = snapshot?.selectedRange?.preset || range;
+    const rows = snapshot.trends.range?.length ? snapshot.trends.range : (dataRange === "today" || dataRange === "window" ? snapshot.trends.hourly24h : snapshot.trends.daily14d);
     return Array.isArray(rows) && rows.length ? rows : zeroTrendRows();
   }
   const labels = { today: "今天", window: "24 小时", week: "7 天", "14d": "14 天", "30d": "30 天", all: "全部", custom: "自定义" };
   function localInputValue(timestamp) {
     if (!Number.isFinite(Number(timestamp)) || Number(timestamp) <= 0) return "";
-    const date = new Date(Number(timestamp) - new Date(Number(timestamp)).getTimezoneOffset() * 60000);
-    return date.toISOString().slice(0, 16);
+    const date = new Date(Number(timestamp));
+    const pad = (value) => String(value).padStart(2, "0");
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  }
+  function parseLocalInputValue(value) {
+    const text = String(value || "").trim().replace("T", " ");
+    const match = text.match(/^(\d{4})[-\/.](\d{1,2})[-\/.](\d{1,2})(?:\s+(\d{1,2})(?::(\d{1,2}))?)?$/);
+    if (!match) return NaN;
+    const date = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]), Number(match[4] || 0), Number(match[5] || 0), 0, 0);
+    return date.getFullYear() === Number(match[1]) && date.getMonth() === Number(match[2]) - 1 && date.getDate() === Number(match[3]) ? date.getTime() : NaN;
   }
   function rangeState() { return { range, customStart, customEnd, sourceFilter, modelFilter }; }
-  function rangeText() {
-    if (range !== "custom") return labels[range] || labels.today;
-    if (!customStart || !customEnd) return "自定义";
+  function rangeText(preset = range, start = customStart, end = customEnd) {
+    if (preset !== "custom") return labels[preset] || labels.today;
+    if (!start || !end) return "自定义";
     const format = (value) => new Date(value).toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false });
-    return `${format(customStart)} - ${format(customEnd)}`;
+    return `${format(start)} - ${format(end)}`;
+  }
+  function dataRangeText() {
+    const selected = snapshot?.selectedRange;
+    return selected?.preset
+      ? rangeText(selected.preset, Number(selected.start || 0), Number(selected.end || 0))
+      : rangeText();
   }
   function syncRangeChrome() {
     all("[data-range]").forEach((button) => button.classList.toggle("active", button.dataset.range === range));
@@ -54,8 +72,12 @@
     if (range === "custom") {
       if (!customStart) customStart = Date.now() - 7 * 86400000;
       if (!customEnd) customEnd = Date.now();
-      element("#rangeStart").value = localInputValue(customStart);
-      element("#rangeEnd").value = localInputValue(customEnd);
+      const active = document.activeElement;
+      const editing = customDraftDirty || active === element("#rangeStart") || active === element("#rangeEnd");
+      if (!editing) {
+        element("#rangeStart").value = localInputValue(customStart);
+        element("#rangeEnd").value = localInputValue(customEnd);
+      }
     }
     element("#rangeLabel").textContent = rangeText();
     element("#rangeLabel").hidden = range !== "custom";
@@ -85,7 +107,7 @@
     element("#modelMenu").innerHTML = menuOptionHtml("model", "all", "全部模型", modelFilter === "all") + models.map((item) => menuOptionHtml("model", item.name, item.name, modelFilter === item.name)).join("");
     element("#sourceFilterValue").textContent = sourceLabel;
     element("#modelFilterValue").textContent = modelLabel;
-    element("#filterContext").textContent = `${rangeText()} · ${sourceLabel} · ${modelLabel}`;
+    element("#filterContext").textContent = `${dataRangeText()} · ${sourceLabel} · ${modelLabel}`;
   }
   function requestScope() {
     document.body.classList.add("refreshing");
@@ -94,18 +116,20 @@
   }
   function selectRange(next) {
     range = next;
-    vscode.setState(rangeState());
+    customDraftDirty = false;
     syncRangeChrome();
+    vscode.setState(rangeState());
     syncScopeChrome();
     if (range !== "custom") requestRange();
   }
   function render() {
     if (!snapshot?.ok) return;
     syncRangeChrome();
+    syncScopeChrome();
     element("#updated").textContent =
       `${snapshot.stale ? "\u7f13\u5b58\u6570\u636e \u00b7 " : ""}${snapshot.updatedAt || "\u521a\u521a\u66f4\u65b0"}${snapshot.adapter ? ` \u00b7 ${snapshot.adapter}` : ""}`;
     const views = window.CodeArtsViews;
-    views.metrics(snapshot, range, rangeText());
+    views.metrics(snapshot, snapshot.selectedRange?.preset || range, dataRangeText());
     views.models(snapshot);
     views.sources(snapshot);
     views.sessions(snapshot);
@@ -153,18 +177,40 @@
       selectRange(rangeButton.dataset.range);
       return;
     }
-    if (event.target.closest("[data-range-cancel]")) { range = snapshot?.selectedRange?.preset || saved.range || "today"; syncRangeChrome(); return; }
+    if (event.target.closest("[data-range-cancel]")) {
+      customDraftDirty = false;
+      range = snapshot?.selectedRange?.preset || saved.range || "today";
+      if (range === "custom") {
+        customStart = Number(snapshot?.selectedRange?.start || customStart);
+        customEnd = Number(snapshot?.selectedRange?.end || customEnd);
+      }
+      element("#rangeError").hidden = true;
+      syncRangeChrome();
+      vscode.setState(rangeState());
+      return;
+    }
+    const dateFocus = event.target.closest("[data-date-focus]");
+    if (dateFocus) {
+      const target = element(`#${dateFocus.dataset.dateFocus}`);
+      target?.focus();
+      target?.select?.();
+      return;
+    }
     if (event.target.closest("[data-range-apply]")) {
-      const start = new Date(element("#rangeStart").value).getTime();
-      const end = new Date(element("#rangeEnd").value).getTime();
+      const start = parseLocalInputValue(element("#rangeStart").value);
+      const end = parseLocalInputValue(element("#rangeEnd").value);
       const error = !Number.isFinite(start) || !Number.isFinite(end) ? "请选择开始和结束时间" : end <= start ? "结束时间需晚于开始时间" : end > Date.now() + 60000 ? "结束时间不能晚于当前时间" : end - start > 366 * 86400000 ? "时间范围最多支持 366 天" : "";
       element("#rangeError").textContent = error; element("#rangeError").hidden = !error;
-      if (!error) { customStart = start; customEnd = end; vscode.setState(rangeState()); syncRangeChrome(); requestRange(); }
+      if (!error) { customStart = start; customEnd = end; customDraftDirty = false; vscode.setState(rangeState()); syncRangeChrome(); requestRange(); }
       return;
     }
     const action = event.target.closest("[data-action]")?.dataset.action;
     if (action) vscode.postMessage({ type: action });
     if (openMenu && !event.target.closest(".menu-control")) setMenuOpen(openMenu, false);
+  });
+  document.addEventListener("input", (event) => {
+    if (event.target === element("#rangeStart") || event.target === element("#rangeEnd"))
+      customDraftDirty = true;
   });
   document.addEventListener("keydown", (event) => {
     const toggle = event.target.closest("[data-menu-toggle]");
@@ -193,7 +239,10 @@
   window.addEventListener("message", (event) => {
     const message = event.data || {};
     if (message.type === "snapshot" || message.type === "details") {
-      if (message.payload?.selectedRange?.preset) {
+      const generation = Number(message.generation || 0);
+      if (!Number.isInteger(generation) || generation <= 0 || generation < latestGeneration) return;
+      latestGeneration = Math.max(latestGeneration, generation);
+      if (message.payload?.selectedRange?.preset && !customDraftDirty) {
         range = message.payload.selectedRange.preset;
         customStart = Number(message.payload.selectedRange.start || customStart);
         customEnd = Number(message.payload.selectedRange.end || customEnd);
@@ -205,8 +254,18 @@
       }
       receive(message.payload);
     }
-    if (message.type === "refreshing")
+    if (message.type === "refreshing") {
+      const generation = Number(message.generation || 0);
+      if (generation < latestGeneration) return;
+      latestGeneration = Math.max(latestGeneration, generation);
       document.body.classList.toggle("refreshing", Boolean(message.value));
+    }
+    if (message.type === "detailsError") {
+      const generation = Number(message.generation || 0);
+      if (generation < latestGeneration) return;
+      latestGeneration = Math.max(latestGeneration, generation);
+      document.body.classList.remove("refreshing");
+    }
   });
   window.addEventListener(
     "resize",
@@ -218,5 +277,5 @@
         element("#chartEmpty"),
       ),
   );
-  vscode.postMessage({ type: "ready" });
+  vscode.postMessage({ type: "ready", state: rangeState() });
 })();

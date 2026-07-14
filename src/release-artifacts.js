@@ -31,4 +31,31 @@ function cleanManagedReleaseDir(releaseDir) {
   return removed.sort((a, b) => a.localeCompare(b));
 }
 
-module.exports = { cleanManagedReleaseDir, isManagedReleaseEntry };
+function atomicReplaceReleaseDir(stagingDir, releaseDir, options = {}) {
+  const staging = path.resolve(stagingDir);
+  const target = path.resolve(releaseDir);
+  if (staging === target || path.dirname(staging) !== path.dirname(target)) {
+    throw new Error('Release staging and target must be different sibling directories');
+  }
+  if (!fs.existsSync(staging) || !fs.statSync(staging).isDirectory()) throw new Error(`Release staging directory does not exist: ${staging}`);
+  const backup = options.backupDir ? path.resolve(options.backupDir) : `${target}.previous-${process.pid}`;
+  if (path.dirname(backup) !== path.dirname(target) || backup === staging || backup === target) throw new Error('Release backup must be a distinct sibling directory');
+  fs.rmSync(backup, { recursive: true, force: true });
+  let movedTarget = false;
+  try {
+    if (fs.existsSync(target)) {
+      fs.renameSync(target, backup);
+      movedTarget = true;
+    }
+    fs.renameSync(staging, target);
+  } catch (error) {
+    if (movedTarget && !fs.existsSync(target) && fs.existsSync(backup)) {
+      try { fs.renameSync(backup, target); } catch (restoreError) { error.restoreError = restoreError; }
+    }
+    throw error;
+  }
+  fs.rmSync(backup, { recursive: true, force: true });
+  return target;
+}
+
+module.exports = { atomicReplaceReleaseDir, cleanManagedReleaseDir, isManagedReleaseEntry };

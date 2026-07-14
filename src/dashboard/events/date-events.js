@@ -137,11 +137,9 @@ function scheduleDateRangeScrollRestore(state, restoreFocus = false){
   cancelDateRangeScrollRestore();
   restoreDateRangeScrollState(state, restoreFocus);
   try { requestAnimationFrame(() => restoreDateRangeScrollState(state, restoreFocus)); } catch {}
-  [0, 32, 96, 180, 320, 520].forEach((delay) => {
-    dateRangeRestoreTimers.push(setTimeout(() => restoreDateRangeScrollState(state, restoreFocus), delay));
-  });
 }
 async function applyDateRangeAndPatchView(opts = {}){
+  beginDashboardRequestGeneration();
   if(applyCustomDateInputs() === false){
     syncDateRangeErrorChrome();
     return false;
@@ -159,11 +157,13 @@ async function applyDateRangeAndPatchView(opts = {}){
     const summaryPromise = summaryPayload
       ? ipcRenderer.invoke('dashboard:getInitialSummary', summaryPayload).catch(() => null)
       : Promise.resolve(null);
+    const ticket = summaryPayload ? captureDashboardRequest(summaryPayload) : null;
     try {
       const [summary] = await Promise.all([
         summaryPromise,
         refreshRequestPageCache(0, { force: true }),
       ]);
+      if(ticket && !dashboardRequestIsCurrent(ticket)) return false;
       if(summary?.ok && summary.usage){
         snapshot = {
           ...snapshot,
@@ -171,7 +171,9 @@ async function applyDateRangeAndPatchView(opts = {}){
           sources: summary.sources || snapshot.sources || [],
           sourceErrors: summary.sourceErrors || snapshot.sourceErrors || [],
           nativeError: summary.nativeError || snapshot.nativeError || null,
-          summaryOnly: true,
+          summaryOnly: summary.summaryOnly === true,
+          queryScope: summary.queryScope || snapshot.queryScope || null,
+          usageScope: summary.usageScope || summary.summaryFilter || null,
           summaryFilter: summary.summaryFilter || null,
           freshness: summary.freshness || snapshot.freshness,
           status: summary.status || snapshot.status,
@@ -181,9 +183,9 @@ async function applyDateRangeAndPatchView(opts = {}){
       }
       await ensureRequestPageInBoundsAfterLoad?.();
     } catch {
-      setPagedTableLoading?.('requests', false, 0);
+      if(!ticket || dashboardRequestIsCurrent(ticket)) setPagedTableLoading?.('requests', false, 0);
     } finally {
-      clearPagedTableLoading?.('requests');
+      if(!ticket || dashboardRequestIsCurrent(ticket)) clearPagedTableLoading?.('requests');
     }
     if(patchAnalyticsSlotsForState(snapshot, { deferHeavy: true, chartDelayMs: 40, ...opts })){
       scheduleDateRangeScrollRestore(scrollState, true);

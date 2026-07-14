@@ -69,6 +69,11 @@ const runtimeFiles = [
     .filter((entry) => entry.isFile() && entry.name.endsWith(".js"))
     .map((entry) => `providers/codearts/${entry.name}`)
     .sort(),
+  ...fs
+    .readdirSync(path.join(root, "src", "protocol"), { withFileTypes: true })
+    .filter((entry) => entry.isFile() && entry.name.endsWith(".js"))
+    .map((entry) => `protocol/${entry.name}`)
+    .sort(),
 ];
 const uiFiles = [
   "dashboard.js",
@@ -104,6 +109,9 @@ fs.cpSync(path.join(root, "src", "providers"), path.join(extDir, "providers"), {
   recursive: true,
 });
 fs.cpSync(path.join(root, "src", "core"), path.join(extDir, "core"), {
+  recursive: true,
+});
+fs.cpSync(path.join(root, "src", "protocol"), path.join(extDir, "protocol"), {
   recursive: true,
 });
 fs.rmSync(path.join(extDir, "core", "chart-axis.js"), { force: true });

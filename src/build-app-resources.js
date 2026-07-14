@@ -9,6 +9,12 @@ const outDir = path.join(root, '.cache', 'app-runtime');
 const required = new Set();
 
 function readUtf8(file) { return fs.readFileSync(file, 'utf8').replace(/^\uFEFF/, ''); }
+function reproducibleTimestamp() {
+  if (process.env.SOURCE_DATE_EPOCH == null || process.env.SOURCE_DATE_EPOCH === '') return null;
+  const seconds = Number(process.env.SOURCE_DATE_EPOCH);
+  if (!Number.isFinite(seconds) || seconds < 0) throw new Error('SOURCE_DATE_EPOCH must be a non-negative integer');
+  return new Date(Math.trunc(seconds) * 1000).toISOString();
+}
 function resolveLocalRequire(fromFile, spec) {
   if (!spec || !spec.startsWith('.')) return null;
   const base = path.resolve(path.dirname(fromFile), spec);
@@ -53,9 +59,12 @@ function build() {
   const runtimePkg = { name: pkg.name, version: pkg.version, description: pkg.description, main: 'src/main.js', type: 'commonjs', author: pkg.author, license: pkg.license };
   fs.writeFileSync(path.join(outDir, 'package.json'), JSON.stringify(runtimePkg, null, 2), 'utf8');
   const manifest = [...required].map((file) => path.relative(root, file).replace(/\\/g, '/')).sort();
-  fs.writeFileSync(path.join(outDir, 'APP_RUNTIME_MANIFEST.json'), JSON.stringify({ generatedAt: new Date().toISOString(), files: manifest }, null, 2), 'utf8');
+  const runtimeManifest = { files: manifest };
+  const generatedAt = reproducibleTimestamp();
+  if (generatedAt) runtimeManifest.generatedAt = generatedAt;
+  fs.writeFileSync(path.join(outDir, 'APP_RUNTIME_MANIFEST.json'), JSON.stringify(runtimeManifest, null, 2), 'utf8');
   const total = [...fs.readdirSync(outDir)].length;
   console.log(`app runtime: ${manifest.length} source dependencies -> ${path.relative(root, outDir)} topEntries=${total}`);
 }
 if (require.main === module) build();
-module.exports = { build, resolveLocalRequire };
+module.exports = { build, reproducibleTimestamp, resolveLocalRequire };

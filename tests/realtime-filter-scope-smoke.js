@@ -73,6 +73,15 @@ assert.equal(accepted.scopeMismatch, false);
 assert.equal(accepted.incoming.usage.all.total, 35400000);
 assert.equal(accepted.incoming.usage.all.requests, 408);
 
+const otherCustomRange = {
+  ...matching,
+  queryScope: { ...matching.queryScope, start: start + 86400000 },
+  usageScope: { ...matching.usageScope, start: start + 86400000 },
+};
+const rejectedOtherCustomRange = context.protectRealtimeSnapshotScope(current, otherCustomRange, payload, current.aggregateScope);
+assert.equal(rejectedOtherCustomRange.scopeMismatch, true, 'custom ranges with the same rangeKey but different bounds must not match');
+assert.equal(rejectedOtherCustomRange.incoming.usage.all.total, current.usage.all.total);
+
 const partial = context.protectRealtimeSnapshotScope(current, {
   ...matching,
   usage: watcher.usage,

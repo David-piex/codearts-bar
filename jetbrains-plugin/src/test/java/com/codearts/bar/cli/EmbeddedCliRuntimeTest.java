@@ -29,24 +29,25 @@ class EmbeddedCliRuntimeTest {
         Files.writeString(unrelated.resolve("data.txt"), "keep");
         ClassLoader loader = EmbeddedCliRuntime.class.getClassLoader();
         Path first = EmbeddedCliRuntime.materialize(loader, temp);
-        EmbeddedCliRuntime.cleanupOldVersionsForTest(temp, first.getParent().getParent());
+        Path root = EmbeddedCliRuntime.runtimeRootForTest(loader, first);
+        EmbeddedCliRuntime.cleanupOldVersionsForTest(temp, root);
         assertTrue(Files.isRegularFile(first));
         assertTrue(Files.size(first) > 0);
-        Path wasm = first.getParent().getParent().resolve("node_modules/sql.js/dist/sql-wasm.wasm");
+        Path wasm = root.resolve("node_modules/sql.js/dist/sql-wasm.wasm");
         assertTrue(Files.isRegularFile(wasm));
         assertTrue(Files.size(wasm) > 600_000);
 
-        var metadata = EmbeddedCliRuntime.snapshotRuntimeFilesForTest(first.getParent().getParent());
-        assertTrue(EmbeddedCliRuntime.metadataUnchangedForTest(first.getParent().getParent(), metadata));
+        var metadata = EmbeddedCliRuntime.snapshotRuntimeFilesForTest(root);
+        assertTrue(EmbeddedCliRuntime.metadataUnchangedForTest(root, metadata));
 
         Files.writeString(first, "corrupted but non-empty");
-        assertFalse(EmbeddedCliRuntime.metadataUnchangedForTest(first.getParent().getParent(), metadata));
+        assertFalse(EmbeddedCliRuntime.metadataUnchangedForTest(root, metadata));
         Path second = EmbeddedCliRuntime.materialize(loader, temp);
         assertEquals(first, second);
         assertTrue(Files.size(second) > "corrupted but non-empty".length());
         assertNotEquals("corrupted but non-empty", Files.readString(second));
-        assertTrue(EmbeddedCliRuntime.metadataUnchangedForTest(second.getParent().getParent(),
-                EmbeddedCliRuntime.snapshotRuntimeFilesForTest(second.getParent().getParent())));
+        assertTrue(EmbeddedCliRuntime.metadataUnchangedForTest(root,
+                EmbeddedCliRuntime.snapshotRuntimeFilesForTest(root)));
         assertFalse(Files.exists(oldRuntime));
         assertTrue(Files.isRegularFile(unrelated.resolve("data.txt")));
         try (var paths = Files.walk(temp)) {
@@ -57,14 +58,15 @@ class EmbeddedCliRuntimeTest {
     @Test void keepsAnOldRuntimeThatAnotherProcessHasLocked() throws Exception {
         Path oldRuntime = temp.resolve("cli-feedface");
         Files.createDirectories(oldRuntime);
-        Files.writeString(oldRuntime.resolve("in-use.txt"), "active");
+            Files.writeString(oldRuntime.resolve("in-use.txt"), "active");
         Path lockFile = temp.resolve(".locks/cli-feedface.lock");
         Files.createDirectories(lockFile.getParent());
         try (FileChannel channel = FileChannel.open(lockFile,
                 StandardOpenOption.CREATE, StandardOpenOption.WRITE);
              FileLock ignored = channel.lock()) {
             Path currentEntry = EmbeddedCliRuntime.materialize(EmbeddedCliRuntime.class.getClassLoader(), temp);
-            EmbeddedCliRuntime.cleanupOldVersionsForTest(temp, currentEntry.getParent().getParent());
+            EmbeddedCliRuntime.cleanupOldVersionsForTest(temp,
+                    EmbeddedCliRuntime.runtimeRootForTest(EmbeddedCliRuntime.class.getClassLoader(), currentEntry));
             assertTrue(Files.isRegularFile(oldRuntime.resolve("in-use.txt")));
         }
     }
@@ -87,9 +89,13 @@ class EmbeddedCliRuntimeTest {
 
     @Test void neverInstallsAResourceThatFailsItsManifestHash() throws Exception {
         ClassLoader packaged = EmbeddedCliRuntime.class.getClassLoader();
+        JsonObject manifest = JsonParser.parseString(new String(Objects.requireNonNull(
+                packaged.getResourceAsStream("cli/CLI_RUNTIME_MANIFEST.json"))
+                .readAllBytes(), java.nio.charset.StandardCharsets.UTF_8)).getAsJsonObject();
+        String entryName = manifest.get("entry").getAsString();
         ClassLoader corrupted = new ClassLoader(packaged) {
             @Override public InputStream getResourceAsStream(String name) {
-                if (name.equals("cli/src/bin.js")) {
+                if (name.equals("cli/" + entryName)) {
                     return new ByteArrayInputStream("corrupted payload".getBytes(java.nio.charset.StandardCharsets.UTF_8));
                 }
                 return super.getResourceAsStream(name);
@@ -98,7 +104,7 @@ class EmbeddedCliRuntimeTest {
         IOException error = assertThrows(IOException.class, () -> EmbeddedCliRuntime.materialize(corrupted, temp));
         assertTrue(error.getMessage().contains("integrity verification"));
         try (var files = Files.walk(temp)) {
-            assertFalse(files.anyMatch(path -> path.getFileName().toString().equals("bin.js")));
+            assertFalse(files.anyMatch(path -> path.endsWith(Path.of(entryName))));
         }
         try (var files = Files.walk(temp)) {
             assertFalse(files.anyMatch(path -> path.getFileName().toString().endsWith(".tmp")));
@@ -110,12 +116,13 @@ class EmbeddedCliRuntimeTest {
         Path entry = EmbeddedCliRuntime.materialize(loader, temp);
         byte[] original = Files.readAllBytes(entry);
         var modified = Files.getLastModifiedTime(entry);
-        var metadata = EmbeddedCliRuntime.snapshotRuntimeFilesForTest(entry.getParent().getParent());
+        Path root = EmbeddedCliRuntime.runtimeRootForTest(loader, entry);
+        var metadata = EmbeddedCliRuntime.snapshotRuntimeFilesForTest(root);
         byte[] tampered = original.clone();
         tampered[Math.min(8, tampered.length - 1)] ^= 1;
         Files.write(entry, tampered);
         Files.setLastModifiedTime(entry, modified);
-        assertTrue(EmbeddedCliRuntime.metadataUnchangedForTest(entry.getParent().getParent(), metadata));
+        assertTrue(EmbeddedCliRuntime.metadataUnchangedForTest(root, metadata));
 
         assertTrue(EmbeddedCliRuntime.repairAfterFailureForTest(loader, temp, entry));
         assertArrayEquals(original, Files.readAllBytes(entry));
@@ -138,6 +145,7 @@ class EmbeddedCliRuntimeTest {
         IOException error = assertThrows(IOException.class,
                 () -> EmbeddedCliRuntime.materialize(EmbeddedCliRuntime.class.getClassLoader(), temp));
         assertTrue(error.getMessage().contains("symbolic link"));
-        assertFalse(Files.exists(outside.resolve("src/bin.js")));
+        String entryName = manifest.get("entry").getAsString();
+        assertFalse(Files.exists(outside.resolve(entryName)));
     }
 }

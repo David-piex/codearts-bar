@@ -193,10 +193,14 @@ function sessionPageTotalHint(){
 }
 function currentPageRangePayload(){
   if(!snapshot?.ok) return {};
-  return { start: sinceForRange(snapshot), end: untilForRange(snapshot) };
+  const start = sinceForRange(snapshot);
+  const endExclusive = untilForRange(snapshot);
+  return { start, end: endExclusive, endExclusive };
 }
 function sameRangePayload(a = {}, b = {}){
   const ar = a.range || {};
   const br = b.range || {};
-  return Number(ar.start || 0) === Number(br.start || 0) && Number(ar.end || 0) === Number(br.end || 0);
+  const ae = Number(ar.endExclusive ?? ar.end ?? 0);
+  const be = Number(br.endExclusive ?? br.end ?? 0);
+  return Number(ar.start || 0) === Number(br.start || 0) && ae === be;
 }

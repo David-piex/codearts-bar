@@ -37,6 +37,40 @@ function applyCompactWindowChrome(){
 }
 function viewModeKey(){ return layoutMode === 'compact' ? `compact:${compactPane}` : workspaceMode; }
 
+function dashboardBoundaryTimestamp(){
+  return Number(dashboardScopeTimestamp || rendererNow());
+}
+function dashboardPayloadScopeKey(payload = {}){
+  const range = payload.range || {};
+  const endExclusive = Number(payload.endExclusive ?? payload.end ?? range.endExclusive ?? range.end ?? 0) || 0;
+  return JSON.stringify({
+    source: String(payload.source || 'all'),
+    model: String(payload.model || 'all'),
+    rangeKey: String(payload.rangeKey || ''),
+    start: Number(payload.start ?? range.start ?? 0) || 0,
+    endExclusive,
+  });
+}
+function beginDashboardRequestGeneration(opts = {}){
+  dashboardRequestGeneration += 1;
+  if(opts.preserveBoundary !== true) dashboardScopeTimestamp = rendererNow();
+  aggregateRefreshToken += 1;
+  if(aggregateRefreshTimer){ clearTimeout(aggregateRefreshTimer); aggregateRefreshTimer = null; }
+  requestPageLoadToken += 1;
+  sessionPageLoadToken += 1;
+  requestPageLoading = false;
+  sessionPageLoading = false;
+  return dashboardRequestGeneration;
+}
+function captureDashboardRequest(payload = dashboardPayloadForCurrentView()){
+  return { generation: dashboardRequestGeneration, scopeKey: dashboardPayloadScopeKey(payload) };
+}
+function dashboardRequestIsCurrent(ticket, payload = dashboardPayloadForCurrentView()){
+  return Boolean(ticket)
+    && Number(ticket.generation) === Number(dashboardRequestGeneration)
+    && String(ticket.scopeKey || '') === dashboardPayloadScopeKey(payload);
+}
+
 function mergeByKey(prev = [], next = [], keyFor){
   const map = new Map();
   for(const item of Array.isArray(prev) ? prev : []){
@@ -58,11 +92,11 @@ function mergeLightSnapshotPayload(current, incoming){
   const oldSessions = Array.isArray(current.sessions) ? current.sessions : [];
   const newSessions = Array.isArray(incoming.sessions) ? incoming.sessions : [];
   if(oldRequests.length > newRequests.length){
-    merged.requestLog = mergeByKey(oldRequests, newRequests, requestKeyFor).sort((a, b) => (b.time || 0) - (a.time || 0));
+    merged.requestLog = mergeByKey(oldRequests, newRequests, requestKeyFor).sort((a, b) => (b.time || 0) - (a.time || 0) || requestKeyFor(a).localeCompare(requestKeyFor(b)));
     merged.requestPage = incoming.requestPage || { items: newRequests, total: incoming.requestTotal ?? newRequests.length };
   }
   if(oldSessions.length > newSessions.length){
-    merged.sessions = mergeByKey(oldSessions, newSessions, sessionKeyFor).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+    merged.sessions = mergeByKey(oldSessions, newSessions, sessionKeyFor).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0) || sessionKeyFor(a).localeCompare(sessionKeyFor(b)));
     merged.sessionPage = incoming.sessionPage || { items: newSessions, total: incoming.sessionTotal ?? newSessions.length };
   }
   return merged;
@@ -75,21 +109,14 @@ function usageScopeMatchesPayload(scope, payload){
   if(String(scope.model || 'all') !== String(payload.model || 'all')) return false;
   if(String(scope.rangeKey || '') !== String(payload.rangeKey || '')) return false;
   const expectedStart = Number(payload.start ?? range.start ?? 0) || 0;
-  const expectedEnd = Number(payload.end ?? range.end ?? 0) || 0;
-  return Math.abs((Number(scope.start) || 0) - expectedStart) <= 1000
-    && Math.abs((Number(scope.end) || 0) - expectedEnd) <= 1000;
+  const expectedEnd = Number(payload.endExclusive ?? payload.end ?? range.endExclusive ?? range.end ?? 0) || 0;
+  return (Number(scope.start) || 0) === expectedStart
+    && (Number(scope.endExclusive ?? scope.end) || 0) === expectedEnd;
 }
 function protectRealtimeSnapshotScope(current, incoming, payload, expectedAggregateScope){
   if(!current?.ok || !incoming?.ok) return { incoming, scopeMismatch: false };
   const queryScope = incoming.queryScope || incoming.usageScope || incoming.summaryFilter || null;
   const usageScope = incoming.usageScope || incoming.summaryFilter || null;
-  // Keep compatibility with older test/extension senders that predate scope
-  // metadata. Current main-process snapshots include queryScope and
-  // usageScope, so this branch does not weaken protection for production
-  // watcher payloads.
-  if(!queryScope && !usageScope && !incoming.aggregateScope){
-    return { incoming, scopeMismatch: false };
-  }
   const queryMatches = queryScope
     ? usageScopeMatchesPayload(queryScope, payload)
     : Boolean(incoming.aggregateScope && incoming.aggregateScope === expectedAggregateScope);
@@ -120,23 +147,9 @@ function protectRealtimeSnapshotScope(current, incoming, payload, expectedAggreg
 // be typing, inspecting a row, or scrolled deep into a table when a new
 // snapshot arrives, so only update data surfaces that have stable geometry.
 function applyRealtimeSnapshot(incoming){
-  if(typeof cancelDateRangeScrollRestore === 'function') cancelDateRangeScrollRestore();
-  if(typeof dateRangeScrollState !== 'undefined' && dateRangeScrollState) dateRangeScrollState = null;
-  if(typeof chartAnimationFrame !== 'undefined' && chartAnimationFrame){
-    cancelAnimationFrame(chartAnimationFrame);
-    chartAnimationFrame = null;
-  }
-  if(typeof chartHoverFrame !== 'undefined' && chartHoverFrame){
-    cancelAnimationFrame(chartHoverFrame);
-    chartHoverFrame = null;
-  }
-  if(typeof clearChartHover === 'function') clearChartHover({ redraw: false, clearPinned: true });
-  if(typeof chartBindToken !== 'undefined') chartBindToken += 1;
-  if(typeof chartBindTimer !== 'undefined' && chartBindTimer){
-    clearTimeout(chartBindTimer);
-    chartBindTimer = null;
-  }
   const realtimeTimestamp = Number(incoming?.timestamp || snapshot?.timestamp || Date.now());
+  if(realtimeTimestamp <= Number(lastRealtimeSnapshotTimestamp || 0)) return false;
+  lastRealtimeSnapshotTimestamp = realtimeTimestamp;
   const currentScopeBase = snapshot?.ok ? { ...snapshot, timestamp: realtimeTimestamp } : null;
   const currentPayload = currentScopeBase ? dashboardPayloadForCurrentView(currentScopeBase) : null;
   const expectedAggregateScope = currentPayload ? trendScopeKey(currentPayload) : '';
@@ -145,6 +158,14 @@ function applyRealtimeSnapshot(incoming){
   if(!next?.ok) return false;
   if(!snapshot?.ok){
     render(next, { instantChart: true, windowLayout: false, partial: true, immediate: true });
+    return true;
+  }
+  if(protectedRealtime.scopeMismatch){
+    snapshot = next;
+    analyticsDeferredToken += 1;
+    if(layoutMode === 'dashboard' && workspaceMode === 'analytics'){
+      scheduleDashboardAggregates(next, { forceAggregates: true, aggregateDelayMs: 0 });
+    }
     return true;
   }
 
@@ -203,9 +224,6 @@ function applyRealtimeSnapshot(incoming){
     if(canvas && typeof scheduleChartBind === 'function'){
       scheduleChartBind(rows, next, { instant: true, realtime: true }, 0, restore);
     }
-    if(protectedRealtime.scopeMismatch){
-      scheduleDashboardAggregates(next, { forceAggregates: true, aggregateDelayMs: 0 });
-    }
   } else if(workspaceMode === 'sessions'){
     // The overview is a compact, fixed-height status strip. Keep the table and
     // inspector intact; replacing either would disrupt selection and scroll.
@@ -219,13 +237,6 @@ function applyRealtimeSnapshot(incoming){
 
   restore();
   try { requestAnimationFrame(restore); } catch {}
-  setTimeout(restore, 0);
-  setTimeout(restore, 32);
-  setTimeout(restore, 96);
-  setTimeout(restore, 180);
-  setTimeout(restore, 320);
-  setTimeout(restore, 520);
-  setTimeout(restore, 800);
   return true;
 }
 function shallowJsonEqual(a, b){
@@ -236,21 +247,23 @@ function aggregatePayloadForView(s, extra = {}){
     ? dateRangeForCurrentFilter(s)
     : { start: rangeFilter === 'all' ? 0 : sinceForRange(s), end: untilForRange(s) || rangeMinute(Number(s?.timestamp || Date.now())) };
   const start = selectedRange.start;
-  const end = selectedRange.end;
+  const endExclusive = selectedRange.endExclusive ?? selectedRange.end;
   return {
     source: sourceFilter,
     model: modelFilter,
     rangeKey: normalizeRangeFilter(rangeFilter),
-    range: { start, end },
+    range: { start, end: endExclusive, endExclusive },
     start,
-    end,
-    timestamp: Number(s?.timestamp || Date.now()),
+    end: endExclusive,
+    endExclusive,
+    timestamp: dashboardBoundaryTimestamp(),
+    generation: dashboardRequestGeneration,
     windowHours: Number(s?.config?.windowHours || 24),
     bucketMs: typeof isDayRange === 'function' && isDayRange() ? 86400000 : 3600000,
     ...extra,
   };
 }
-function dashboardPayloadForCurrentView(s = snapshot || { timestamp: Date.now(), config: { windowHours: 24 } }){
+function dashboardPayloadForCurrentView(s = snapshot || { timestamp: rendererNow(), config: { windowHours: 24 } }){
   return aggregatePayloadForView(s, {
     query: analyticsQuery,
     sessionQuery,
@@ -309,8 +322,9 @@ async function refreshDashboardAggregates(s, token){
     const dayMode = isDayRange();
     const bucketMs = dayMode ? 86400000 : 3600000;
     const basePayload = aggregatePayloadForView(s, { bucketMs });
+    const ticket = captureDashboardRequest(basePayload);
     const aggregate = await ipcRenderer.invoke('dashboard:getAggregates', basePayload);
-    if(token !== aggregateRefreshToken || snapshot !== s || layoutMode !== 'dashboard' || workspaceMode !== 'analytics') return;
+    if(token !== aggregateRefreshToken || snapshot !== s || layoutMode !== 'dashboard' || workspaceMode !== 'analytics' || !dashboardRequestIsCurrent(ticket)) return;
     const nextTrendScope = trendScopeKey(basePayload);
     const partialAggregate = aggregate?.ok && Array.isArray(aggregate.sourceErrors) && aggregate.sourceErrors.length > 0;
     const existingScope = s.usageScope || s.queryScope || s.summaryFilter;
@@ -327,7 +341,8 @@ async function refreshDashboardAggregates(s, token){
         model: basePayload.model || 'all',
         rangeKey: basePayload.rangeKey || '',
         start: Number(basePayload.start ?? basePayload.range?.start ?? 0) || 0,
-        end: Number(basePayload.end ?? basePayload.range?.end ?? 0) || 0,
+        end: Number(basePayload.endExclusive ?? basePayload.end ?? basePayload.range?.endExclusive ?? basePayload.range?.end ?? 0) || 0,
+        endExclusive: Number(basePayload.endExclusive ?? basePayload.end ?? basePayload.range?.endExclusive ?? basePayload.range?.end ?? 0) || 0,
       };
       if(!shallowJsonEqual(s.usage, aggregate.usage)){ s.usage = aggregate.usage; changes.summary = true; changed = true; }
       s.usageScope = nextUsageScope;
@@ -392,7 +407,7 @@ function setupAutoRefresh(){ if(autoRefreshTimer) clearInterval(autoRefreshTimer
 function initialSkeletonState(){
   return {
     ok: true,
-    timestamp: Date.now(),
+    timestamp: rendererNow(),
     config: { dailyLimit: 200000, windowHours: 24 },
     sources: [],
     usage: { today: {}, window: {}, week: {}, all: {} },
@@ -419,10 +434,13 @@ function renderInitialSkeleton(){
   applyWindowLayout();
 }
 async function load(){
+  beginDashboardRequestGeneration();
   const payload = dashboardPayloadForCurrentView();
+  const ticket = captureDashboardRequest(payload);
   if(layoutMode !== 'dashboard' || workspaceMode !== 'analytics'){
     setRefreshState(TXT.refresh);
     const first = await ipcRenderer.invoke('dashboard:getSnapshot', payload);
+    if(!dashboardRequestIsCurrent(ticket)){ setupAutoRefresh(); return; }
     render(first, { immediate: true, instantChart: true, deferHeavy: true });
     if(!first?.ok) await refreshNow();
     setupAutoRefresh();
@@ -444,6 +462,13 @@ async function load(){
   try {
     let first = await ipcRenderer.invoke('dashboard:getInitialSummary', payload);
     if(!first?.ok) first = await ipcRenderer.invoke('dashboard:getSnapshot', payload);
+    if(!dashboardRequestIsCurrent(ticket)){
+      initialSummarySettled = true;
+      if(slowCacheTimer) clearTimeout(slowCacheTimer);
+      document.body?.classList?.remove?.('cache-building');
+      setupAutoRefresh();
+      return;
+    }
     initialSummarySettled = true;
     if(slowCacheTimer) clearTimeout(slowCacheTimer);
     document.body?.classList?.remove?.('cache-building');
@@ -451,11 +476,12 @@ async function load(){
     if(!first?.ok){ await refreshNow(); setupAutoRefresh(); return; }
     setRefreshState(TXT.loadingBackgroundStats || '\u6458\u8981\u5df2\u5c31\u7eea\uff0c\u6b63\u5728\u540e\u53f0\u52a0\u8f7d\u8d8b\u52bf\u4e0e\u6a21\u578b\u7edf\u8ba1...');
     ipcRenderer.invoke('dashboard:getSnapshot', payload).then((full) => {
-      if(!full?.ok) return;
+      if(!full?.ok || !dashboardRequestIsCurrent(ticket)) return;
       render(mergeLightSnapshotPayload(snapshot, full), { instantChart: true, partial: true, skipAggregates: true });
       setRefreshState(TXT.refreshed);
       setTimeout(() => setRefreshState(''), 800);
     }).catch((error) => {
+      if(!dashboardRequestIsCurrent(ticket)) return;
       ipcRenderer.invoke('dashboard:log', { level: 'warn', scope: 'renderer:initial-background', message: error.message }).catch(() => {});
       setRefreshState('');
     });
@@ -469,7 +495,10 @@ async function load(){
 }
 async function refreshNow(opts = {}){
   const requested = opts && typeof opts === 'object' && !opts.type ? opts : {};
-  if(refreshInFlight) return refreshInFlight;
+  const currentPayload = dashboardPayloadForCurrentView(snapshot?.ok ? snapshot : undefined);
+  const currentScope = `${requested.full === true ? 'full' : 'light'}|${dashboardRequestGeneration}|${dashboardPayloadScopeKey(currentPayload)}`;
+  if(refreshInFlight && refreshInFlightScope === currentScope) return refreshInFlight;
+  beginDashboardRequestGeneration();
   // Capture the user's position before IPC can give the browser a chance to
   // anchor the scroll container around an asynchronously changing shell.
   const capturedScrollTop = Number(document.getElementById('app')?.scrollTop || 0);
@@ -482,26 +511,38 @@ async function refreshNow(opts = {}){
     preserveScrollTop: Number.isFinite(Number(requested.preserveScrollTop)) ? Number(requested.preserveScrollTop) : capturedScrollTop,
     ...requested,
   };
-  refreshInFlight = (async () => {
+  const payload = dashboardPayloadForCurrentView(snapshot?.ok ? snapshot : undefined);
+  const ticket = captureDashboardRequest(payload);
+  const requestScope = `${renderOpts.full === true ? 'full' : 'light'}|${dashboardRequestGeneration}|${dashboardPayloadScopeKey(payload)}`;
+  refreshInFlightScope = requestScope;
+  const requestPromise = (async () => {
     setRefreshState(TXT.refresh);
     document.body?.classList?.add?.('is-refreshing');
     try {
-      const payload = dashboardPayloadForCurrentView(snapshot?.ok ? snapshot : undefined);
       const channel = renderOpts.full === true ? 'dashboard:refreshFull' : 'dashboard:refreshLight';
-      const next = mergeLightSnapshotPayload(snapshot, await ipcRenderer.invoke(channel, payload));
+      const incoming = await ipcRenderer.invoke(channel, payload);
+      if(!dashboardRequestIsCurrent(ticket)) return null;
+      const next = mergeLightSnapshotPayload(snapshot, incoming);
       render(next, renderOpts);
       await new Promise((resolve) => schedulePostCommit(resolve, 80));
+      if(!dashboardRequestIsCurrent(ticket)) return null;
       setRefreshState(TXT.refreshed);
       setTimeout(() => setRefreshState(''), 800);
       return next;
     } catch (error) {
-      setRefreshState(TXT.failed || '\u5237\u65b0\u5931\u8d25');
-      ipcRenderer.invoke('dashboard:log', { level: 'warn', scope: 'renderer:refresh', message: error?.message || String(error) }).catch(() => {});
+      if(dashboardRequestIsCurrent(ticket)){
+        setRefreshState(TXT.failed || '\u5237\u65b0\u5931\u8d25');
+        ipcRenderer.invoke('dashboard:log', { level: 'warn', scope: 'renderer:refresh', message: error?.message || String(error) }).catch(() => {});
+      }
       return null;
     } finally {
-      document.body?.classList?.remove?.('is-refreshing');
-      refreshInFlight = null;
+      if(refreshInFlight === requestPromise){
+        document.body?.classList?.remove?.('is-refreshing');
+        refreshInFlight = null;
+        refreshInFlightScope = '';
+      }
     }
   })();
+  refreshInFlight = requestPromise;
   return refreshInFlight;
 }

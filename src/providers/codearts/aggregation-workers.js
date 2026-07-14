@@ -6,6 +6,7 @@ const {
   assistantWhere,
   sessionWhere,
   tagRows,
+  resolveTimestamp,
 } = require('./sources');
 const {
   openNativeDbReadonly,
@@ -19,8 +20,12 @@ const {
 const { queryPartsForMessages } = require('./collect');
 const { sourceList, timeWindows } = require('./aggregation-runtime');
 
-function queryAssistantRows(queryAll, db, source, payload = {}, start = 0, end = 0) {
-  const range = { start: start || 0, end: end || 0 };
+function queryAssistantRows(queryAll, db, source, payload = {}, start, end) {
+  const payloadRange = payload.range || {};
+  const range = {
+    start: start ?? payloadRange.start ?? 0,
+    endExclusive: end ?? payloadRange.endExclusive ?? payloadRange.end ?? 0,
+  };
   const { where, params } = assistantWhere({ ...payload, range });
   return tagRows(queryAll(db, `select id, session_id, time_created, time_updated, data from message where ${where} order by time_created asc`, params), source);
 }
@@ -66,7 +71,8 @@ async function runSqlJsAggregate(payload, worker, sources = null) {
 function summaryWorker(payload = {}) {
   const windows = timeWindows(payload);
   return ({ source, db, tables, queryAll }) => {
-    const allRows = queryAssistantRows(queryAll, db, source, payload, 0, 0);
+    const range = payload.range || {};
+    const allRows = queryAssistantRows(queryAll, db, source, payload, range.start || 0, range.endExclusive ?? range.end ?? 0);
     const { partMap } = tokenUsageForRows(queryAll, db, source, tables, allRows);
     const sumSince = (since) => agg.sumTokens(allRows.filter((m) => Number(m.time_created || 0) >= since), partMap);
     const usage = {
@@ -81,7 +87,7 @@ function summaryWorker(payload = {}) {
 function modelStatsWorker(payload = {}) {
   const range = payload.range || {};
   return ({ source, db, tables, queryAll }) => {
-    const rows = queryAssistantRows(queryAll, db, source, payload, range.start || 0, range.end || 0);
+    const rows = queryAssistantRows(queryAll, db, source, payload, range.start || 0, range.endExclusive ?? range.end ?? 0);
     const { partMap } = tokenUsageForRows(queryAll, db, source, tables, rows);
     return agg.modelStats(rows, 0, partMap).map((x) => ({ ...x, source: source.id, sourceLabel: source.label }));
   };
@@ -94,7 +100,7 @@ function sessionSummaryForSource(queryAll, db, source, payload = {}) {
   let active = 0;
   let archived = 0;
   let recent7d = 0;
-  const weekAgo = Number(payload.timestamp || Date.now()) - 7 * 86400000;
+  const weekAgo = resolveTimestamp(payload) - 7 * 86400000;
   for (const row of rows) {
     if (row.time_archived) archived += 1; else active += 1;
     if (Number(row.time_updated || 0) >= weekAgo) recent7d += 1;

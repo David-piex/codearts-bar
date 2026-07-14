@@ -24,7 +24,7 @@ const { createLatestTaskQueue } = require('../src/main/latest-task-queue');
   const result = await Promise.all([first, second, third]);
 
   assert.deepEqual(seen, ['start:first', 'start:third', 'commit:third']);
-  assert.deepEqual(result, ['third', 'third', 'third']);
+  assert.deepEqual(result, ['discarded', 'third', 'third']);
   assert.equal(queue.busy(), false);
-  console.log('ok - latest task queue coalesces stale refreshes');
+  console.log('ok - latest task queue preserves in-flight caller results and coalesces pending refreshes');
 })().catch((error) => { console.error(error); process.exit(1); });

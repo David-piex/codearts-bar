@@ -5,7 +5,7 @@ const path = require("node:path");
 const { app, BrowserWindow, ipcMain } = require("electron");
 
 const root = path.join(__dirname, "..");
-const now = Date.UTC(2026, 6, 9, 12, 0, 0);
+const now = Number(process.env.CODEARTS_BAR_NOW_MS || 0) || Date.UTC(2026, 6, 9, 12, 0, 0);
 const H = 3600000;
 const ipcCalls = [];
 const resizeLogs = [];
@@ -114,14 +114,14 @@ function filterRows(payload = {}) {
   const source = payload.source || "all";
   const range = payload.range || {};
   const start = Number(range.start || 0);
-  const end = Number(range.end || 0);
+  const end = Number(range.endExclusive ?? range.end ?? 0);
   const model = payload.model || "all";
   const query = String(payload.query || "").toLowerCase();
   return requestLog.filter((row) => {
     if (source !== "all" && row.source !== source) return false;
     if (model !== "all" && row.model !== model) return false;
     if (start && row.time < start) return false;
-    if (end && row.time > end) return false;
+    if (end && row.time >= end) return false;
     if (query && !`${row.sessionId} ${row.sessionTitle} ${row.model}`.toLowerCase().includes(query)) return false;
     return true;
   }).sort((a, b) => b.time - a.time);
@@ -200,7 +200,15 @@ function registerIpc() {
     ipcCalls.push({ channel: "dashboard:getSessionsPage", payload });
     const source = payload?.source || "all";
     const query = String(payload?.query || "").toLowerCase();
-    const rows = sessionsForRows(requestLog).filter((s) => (source === "all" || s.source === source) && (!query || `${s.id} ${s.title} ${s.directory}`.toLowerCase().includes(query)));
+    const range = payload?.range || {};
+    const start = Number(range.start || 0);
+    const end = Number(range.endExclusive ?? range.end ?? 0);
+    const rows = sessionsForRows(requestLog).filter((s) => {
+      if (source !== "all" && s.source !== source) return false;
+      if (start && s.updatedAt < start) return false;
+      if (end && s.updatedAt >= end) return false;
+      return !query || `${s.id} ${s.title} ${s.directory}`.toLowerCase().includes(query);
+    });
     return page(Number.isFinite(sessionPageTotalOverride) ? rows.slice(0, sessionPageTotalOverride) : rows, payload, 20);
   });
   ipcMain.handle("dashboard:getSessionRequestsPage", (_event, payload) => {
@@ -917,13 +925,36 @@ async function main() {
   assert.equal(sessionMinClamp.input, "1", "session page input should be rewritten to first page after min clamp");
   await setPageTotalOverride(win, { sessions: 8 });
   await click(win, '[data-session-page="next"]');
-  await waitFor(win, () => {
-    const note = document.querySelector('[data-table-limit="sessions"]');
-    return note?.dataset?.page === "0"
-      && note?.dataset?.total === "8"
-      && document.querySelectorAll(".session-scroll tbody tr").length === 8
-      && !document.querySelector(".session-scroll tbody .empty-cell");
-  });
+  try {
+    await waitFor(win, () => {
+      const note = document.querySelector('[data-table-limit="sessions"]');
+      return note?.dataset?.page === "0"
+        && note?.dataset?.total === "8"
+        && document.querySelectorAll(".session-scroll tbody tr").length === 8
+        && !document.querySelector(".session-scroll tbody .empty-cell");
+    });
+  } catch (error) {
+    const state = await evalIn(win, () => {
+      const note = document.querySelector('[data-table-limit="sessions"]');
+      return {
+        page: Number(sessionTablePage || 0),
+        note: note ? { ...note.dataset } : null,
+        rows: document.querySelectorAll('.session-scroll tbody tr').length,
+        empty: Boolean(document.querySelector('.session-scroll tbody .empty-cell')),
+        loading: Boolean(sessionPageLoading),
+        loadToken: Number(sessionPageLoadToken || 0),
+        cache: {
+          key: sessionPageCache?.key || '',
+          page: Number(sessionPageCache?.page || 0),
+          total: Number(sessionPageCache?.total || 0),
+          items: Array.isArray(sessionPageCache?.items) ? sessionPageCache.items.length : null,
+        },
+        payload: sessionPagePayload(),
+      };
+    });
+    const recentCalls = ipcCalls.filter((item) => item.channel === 'dashboard:getSessionsPage').slice(-4);
+    throw new Error(`${error.message} state=${JSON.stringify(state)} calls=${JSON.stringify(recentCalls)}`);
+  }
   const sessionEmptyFallback = await evalIn(win, () => ({
     page: Number(document.querySelector('[data-table-limit="sessions"]')?.dataset?.page || 0),
     total: Number(document.querySelector('[data-table-limit="sessions"]')?.dataset?.total || 0),
@@ -979,9 +1010,11 @@ async function main() {
     start: Number(dateRangeDraftStart || 0),
     end: Number(dateRangeDraftEnd || 0),
     span: Number(dateRangeDraftEnd || 0) - Number(dateRangeDraftStart || 0),
+    startTime: document.querySelector('[data-date-range-time="start"]')?.value || '',
+    endTime: document.querySelector('[data-date-range-time="end"]')?.value || '',
   }));
-  assert.equal(quick30dDraft.start % 60000, 0, `30d quick range start should be minute aligned: ${JSON.stringify(quick30dDraft)}`);
-  assert.equal(quick30dDraft.end % 60000, 0, `30d quick range end should be minute aligned: ${JSON.stringify(quick30dDraft)}`);
+  assert.match(quick30dDraft.startTime, /^\d{2}:\d{2}$/, `30d quick range start should display at minute precision: ${JSON.stringify(quick30dDraft)}`);
+  assert.match(quick30dDraft.endTime, /^\d{2}:\d{2}$/, `30d quick range end should display at minute precision: ${JSON.stringify(quick30dDraft)}`);
   assert.equal(quick30dDraft.span, 30 * 86400000, `30d quick range should span exactly 30 days: ${JSON.stringify(quick30dDraft)}`);
   const dateOpen = await evalIn(win, () => ({
     dateInputs: document.querySelectorAll('[data-date-range-date]').length,

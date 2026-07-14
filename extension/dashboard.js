@@ -23,7 +23,14 @@ class DashboardHost {
       ],
     };
     webview.html = dashboardHtml(webview, this.context.extensionUri, mode);
-    const target = { webview, mode, visible: true };
+    const target = {
+      webview,
+      mode,
+      visible: true,
+      generation: 0,
+      snapshot: null,
+      scope: { rangePreset: "today", source: "all", model: "all" },
+    };
     this.targets.add(target);
     webview.onDidReceiveMessage((message) =>
       this.handleMessage(message, target),
@@ -34,10 +41,22 @@ class DashboardHost {
   async handleMessage(message, target) {
     if (message?.type === "ready") {
       this.postSnapshot(target);
-      if (target.visible) return this.loadDetails?.({ reason: "webview-ready", target });
+      const state = message.state || {};
+      if (target.visible)
+        return this.loadDetails?.({
+          reason: "webview-ready",
+          target,
+          rangePreset: state.range,
+          range:
+            state.range === "custom"
+              ? { start: state.customStart, end: state.customEnd }
+              : undefined,
+          source: state.sourceFilter,
+          model: state.modelFilter,
+        });
       return undefined;
     }
-    if (message?.type === "refresh") return this.refreshSnapshot({ details: true, reason: "webview-refresh" });
+    if (message?.type === "refresh") return this.refreshSnapshot({ details: true, reason: "webview-refresh", target });
     if (message?.type === "range") return this.loadDetails?.({ reason: "webview-range", rangePreset: message.preset, range: message.range, target });
     if (message?.type === "filter") return this.loadDetails?.({ reason: "webview-filter", source: message.source, model: message.model, target });
     if (message?.type === "openDashboard") return this.openPanel();
@@ -61,31 +80,77 @@ class DashboardHost {
     this.loadDetails?.({ reason, target });
   }
   postSnapshot(target) {
-    const snapshot = this.getSnapshot();
+    const snapshot = target?.snapshot;
     if (snapshot)
       target.webview.postMessage({
         type: "snapshot",
         payload: viewModel(snapshot),
+        generation: target.generation,
       });
   }
-  broadcast(snapshot) {
-    const payload = viewModel(snapshot);
-    for (const target of this.targets) {
-      if (target.visible) target.webview.postMessage({ type: "snapshot", payload });
-    }
-  }
-  broadcastDetails(snapshot) {
-    const payload = viewModel(snapshot);
-    for (const target of this.targets) {
-      if (target.visible) target.webview.postMessage({ type: "details", payload });
-    }
+  postDetails(snapshot, target, generation) {
+    if (!target?.visible || !this.targets.has(target) || target.generation !== generation)
+      return false;
+    target.webview.postMessage({
+      type: "details",
+      payload: viewModel(snapshot),
+      generation,
+    });
+    return true;
   }
   hasTargets() { return [...this.targets].some((target) => target.visible); }
-  setRefreshing(value) {
-    for (const target of this.targets) {
-      if (target.visible)
-        target.webview.postMessage({ type: "refreshing", value: Boolean(value) });
+  visibleTargets() { return [...this.targets].filter((target) => target.visible); }
+  setRefreshing(value, target, generation) {
+    if (!target?.visible || !this.targets.has(target) || target.generation !== generation)
+      return false;
+    target.webview.postMessage({ type: "refreshing", value: Boolean(value), generation });
+    return true;
+  }
+
+  beginDetails(options = {}) {
+    const targets = options.target ? [options.target] : this.visibleTargets();
+    const requests = [];
+    for (const target of targets) {
+      if (!target?.visible || !this.targets.has(target)) continue;
+      const scope = { ...target.scope };
+      if (options.rangePreset) {
+        scope.rangePreset = options.rangePreset;
+        scope.range = options.range;
+      }
+      if (options.source) scope.source = options.source;
+      if (options.model) scope.model = options.model;
+      target.scope = scope;
+      const generation = ++target.generation;
+      this.setRefreshing(true, target, generation);
+      requests.push({ target, generation, scope: { ...scope } });
     }
+    return requests;
+  }
+
+  isCurrent(request) {
+    return Boolean(
+      request?.target?.visible &&
+      this.targets.has(request.target) &&
+      request.target.generation === request.generation,
+    );
+  }
+
+  commitDetails(request, snapshot) {
+    if (!this.isCurrent(request)) return false;
+    request.target.snapshot = snapshot;
+    this.postDetails(snapshot, request.target, request.generation);
+    this.setRefreshing(false, request.target, request.generation);
+    return true;
+  }
+
+  failDetails(request) {
+    if (!this.isCurrent(request)) return false;
+    request.target.webview.postMessage({
+      type: "detailsError",
+      generation: request.generation,
+    });
+    this.setRefreshing(false, request.target, request.generation);
+    return true;
   }
 
   openPanel() {

@@ -12,6 +12,7 @@ const { queryPayload, databasePagePayload } = require('./protocol/query');
 const { envelope, failure } = require('./protocol/envelope');
 const { getSessionsPage, getRequestsPage, getSessionRequestsPage } = require('./providers/codearts/pagination');
 const localProvider = require('./providers/codeartsLocal');
+const { sanitizeText } = require('./diagnostics-report');
 
 const cmd = process.argv[2] || 'snapshot';
 const rest = process.argv.slice(3);
@@ -29,6 +30,24 @@ function parseSetArgs(args) {
     else if (a === '--show-tools') out.showTools = args[++i] !== 'false';
   }
   return out;
+}
+
+function readArg(args, name, fallback = null) {
+  const index = args.indexOf(name);
+  return index >= 0 && index + 1 < args.length ? args[index + 1] : fallback;
+}
+
+function selfTestOptions(args = []) {
+  const dbPath = readArg(args, '--fixture-db');
+  if (!dbPath) throw new Error('self-test requires --fixture-db <path>; real user databases are not allowed');
+  const configDir = readArg(args, '--config-dir');
+  if (!configDir) throw new Error('self-test requires --config-dir <temporary-directory>');
+  const nowValue = Number(readArg(args, '--now-ms', process.env.CODEARTS_BAR_NOW_MS));
+  if (!Number.isFinite(nowValue) || nowValue <= 0) throw new Error('self-test requires --now-ms <unix-milliseconds>');
+  process.env.CODEARTS_BAR_DB = dbPath;
+  process.env.CODEARTS_BAR_CONFIG_DIR = configDir;
+  process.env.CODEARTS_BAR_NOW_MS = String(Math.trunc(nowValue));
+  return { dbPath, timestamp: Math.trunc(nowValue), disableUsageLogs: true, fixtureMode: true, disableEnvironmentProbes: true, useSavedSettings: false };
 }
 
 function usageFromBuckets(buckets = []) {
@@ -144,7 +163,8 @@ async function run() {
       return;
     }
     if (cmd === 'self-test') {
-      const snap = await getSnapshotWithCache();
+      const options = selfTestOptions(rest);
+      const snap = await getSnapshotWithCache(options);
       if (!snap.ok) throw new Error(snap.error);
       const checks = [
         ['has db path', Boolean(snap.dbPath)],
@@ -160,7 +180,7 @@ async function run() {
         console.log(`${ok ? 'ok' : 'fail'} - ${name}`);
         if (!ok) process.exitCode = 1;
       }
-      console.log(snapshotToText(snap));
+      console.log(`ok - fixture snapshot messages=${Number(snap.usage?.all?.messages || 0)} sessions=${Number(snap.sessionSummary?.total || 0)} requests=${Number(snap.requestLog?.length || 0)}`);
       return;
     }
     if (cmd === 'help' || cmd === '--help' || cmd === '-h') {
@@ -176,7 +196,8 @@ Usage:
   codearts-bar diagnose [--json]    诊断数据源/日志/缓存
   codearts-bar config show          查看配置
   codearts-bar config set --db <p> --daily-limit <n> --refresh-ms <n> --official-stats-ttl-ms <n>
-  codearts-bar self-test            验证本地数据读取`);
+  codearts-bar self-test --fixture-db <path> --config-dir <temp> --now-ms <ms>
+                                    使用隔离 fixture 验证数据读取`);
       return;
     }
     console.error(`Unknown command: ${cmd}`);
@@ -185,9 +206,11 @@ Usage:
     const snap = errorSnapshot(error);
     if (cmd === 'snapshot') console.log(JSON.stringify(snap, null, 2));
     else if (cmd === 'query') console.log(JSON.stringify(failure(error), null, 2));
-    else console.error(snap.error);
+    else console.error(sanitizeText(snap.error));
     process.exitCode = 1;
   }
 }
 
 run();
+
+module.exports = { readArg, selfTestOptions, usageFromBuckets };

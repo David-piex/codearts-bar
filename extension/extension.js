@@ -12,9 +12,7 @@ let statusItem;
 let timer;
 let lastSnapshot;
 let refreshPromise;
-let detailsPromise;
 let dashboardHost;
-let dashboardRange = { rangePreset: "today", source: "all", model: "all" };
 
 const T = {
   app: "\u7801\u9053 Bar",
@@ -74,7 +72,13 @@ function markdownDetails(snapshot) {
       `${T.app}\n\n${snapshot ? snapshot.error : T.loading}`,
     );
   const md = new vscode.MarkdownString(undefined, true);
-  md.isTrusted = true;
+  md.isTrusted = {
+    enabledCommands: [
+      "codeartsBar.refresh",
+      "codeartsBar.showDetails",
+      "codeartsBar.openDataFolder",
+    ],
+  };
   md.appendMarkdown(`**${T.app} - ${T.today} ${snapshot.status.label}**\n\n`);
   md.appendMarkdown(`${T.updated}: ${snapshot.updatedAt}\n\n`);
   md.appendMarkdown(
@@ -175,34 +179,39 @@ function updateStatus(snapshot) {
 }
 
 async function loadDashboardDetails(options = {}) {
-  const filterChanged = Boolean(options.rangePreset || options.source || options.model);
-  if (options.rangePreset) dashboardRange = { ...dashboardRange, rangePreset: options.rangePreset, range: options.range };
-  if (options.source || options.model) dashboardRange = { ...dashboardRange, source: options.source || dashboardRange.source || "all", model: options.model || dashboardRange.model || "all" };
-  if (detailsPromise) {
-    const current = await detailsPromise;
-    return filterChanged ? loadDashboardDetails({ reason: "filter-followup" }) : current;
-  }
-  if (!dashboardHost?.hasTargets()) return lastSnapshot;
+  const requests = dashboardHost?.beginDetails(options) || [];
+  if (!requests.length) return lastSnapshot;
   const c = config();
-  detailsPromise = (async () => {
+  const groups = new Map();
+  for (const request of requests) {
+    const key = JSON.stringify(request.scope);
+    const group = groups.get(key) || { scope: request.scope, requests: [] };
+    group.requests.push(request);
+    groups.set(key, group);
+  }
+  const results = await Promise.all([...groups.values()].map(async (group) => {
     try {
-      const details = await getExtensionDetails({ ...c, ...dashboardRange });
-      lastSnapshot = details;
-      updateStatus(lastSnapshot);
-      dashboardHost?.broadcastDetails(lastSnapshot);
-      return lastSnapshot;
+      const details = await getExtensionDetails({ ...c, ...group.scope });
+      for (const request of group.requests)
+        dashboardHost?.commitDetails(request, details);
+      return details;
     } catch (error) {
-      if (!lastSnapshot?.ok) lastSnapshot = errorSnapshot(error, c.dbPath);
-      return lastSnapshot;
+      for (const request of group.requests)
+        dashboardHost?.failDetails(request, error);
+      return null;
     }
-  })().finally(() => { detailsPromise = null; });
-  return detailsPromise;
+  }));
+  return results.find((result) => result?.ok) || lastSnapshot;
 }
 
 async function refresh(options = {}) {
-  if (refreshPromise) return refreshPromise;
+  if (refreshPromise) {
+    await refreshPromise;
+    return options.details === true || options.target
+      ? loadDashboardDetails(options)
+      : lastSnapshot;
+  }
   const c = config();
-  dashboardHost?.setRefreshing(true);
   refreshPromise = (async () => {
     try {
       lastSnapshot = await getExtensionSummary(c);
@@ -210,12 +219,10 @@ async function refresh(options = {}) {
       lastSnapshot = errorSnapshot(error, c.dbPath);
     }
     updateStatus(lastSnapshot);
-    dashboardHost?.broadcast(lastSnapshot);
     if (options.details === true || dashboardHost?.hasTargets()) await loadDashboardDetails(options);
     return lastSnapshot;
   })().finally(() => {
     refreshPromise = null;
-    dashboardHost?.setRefreshing(false);
   });
   return refreshPromise;
 }
@@ -305,11 +312,9 @@ async function deactivate() {
   if (timer) clearInterval(timer);
   timer = null;
   refreshPromise = null;
-  detailsPromise = null;
   await localProvider.closeSqlJsWorker?.();
   closeSettingsStore?.();
   dashboardHost = null;
-  dashboardRange = { rangePreset: "today", source: "all", model: "all" };
   lastSnapshot = null;
 }
 

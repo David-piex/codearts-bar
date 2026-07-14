@@ -36,7 +36,7 @@ function effectiveBucketOffsetMs(payload = {}) {
   if (Number.isFinite(explicit)) return explicit;
   const range = payload.range || {};
   const start = Number(payload.start ?? range.start ?? 0);
-  const end = Number(payload.end ?? range.end ?? payload.timestamp ?? Date.now());
+  const end = Number(payload.endExclusive ?? payload.end ?? range.endExclusive ?? range.end ?? payload.timestamp ?? Date.now());
   const reference = start > 0 && end > start ? start + (end - start) / 2 : end;
   return -new Date(reference).getTimezoneOffset() * 60 * 1000;
 }

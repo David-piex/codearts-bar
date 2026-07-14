@@ -470,20 +470,6 @@ body.view-switching {
   --cb-shadow-control: var(--shadow-control, 0 1px 0 rgba(255, 255, 255, .72) inset, 0 3px 8px rgba(27, 39, 61, .022));
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --cb-surface-panel: rgba(15, 23, 42, .72);
-    --cb-surface-card: rgba(15, 23, 42, .82);
-    --cb-surface-popover: rgba(15, 23, 42, .88);
-    --cb-border-soft: rgba(226, 232, 240, .12);
-    --cb-border-hairline: rgba(226, 232, 240, .08);
-    --cb-row-border: rgba(226, 232, 240, .07);
-    --cb-row-hover: rgba(125, 211, 252, .08);
-    --cb-row-selected: rgba(10, 132, 255, .18);
-    --cb-hover-fill: rgba(226, 232, 240, .08);
-  }
-}
-
 /* merged source: styles/base.css */
 /* 1.20.1 semantic base layer: keep the Electron shell feeling native and quiet */
 html {

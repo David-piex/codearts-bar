@@ -28,5 +28,5 @@
   }
   const api = { metricNumber, cacheHitDenominator, cacheHitRateRatio, cacheHitRatePercent, cacheHitBasis, cacheCoverageRatePercent, withCacheHitMetrics };
   root.CacheMetrics = api;
-  if(typeof module !== 'undefined' && module.exports && typeof __filename === 'string' && /cacheMetrics\.js$/i.test(__filename)) module.exports = api;
+  if(typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

@@ -2,10 +2,8 @@ function trendScopeKey(parts = {}){
   const bucketMs = Math.max(1, Number(parts.bucketMs || 3600000));
   const range = parts.range || {};
   const startRaw = Number(parts.start ?? range.start ?? 0) || 0;
-  const endRaw = Number(parts.end ?? range.end ?? 0) || 0;
-  const start = startRaw > 0 ? Math.floor(startRaw / bucketMs) * bucketMs : 0;
-  const end = endRaw > 0 ? Math.ceil(endRaw / bucketMs) * bucketMs : 0;
-  return `${parts.source || 'all'}|${parts.model || 'all'}|${bucketMs}|${start}|${end}`;
+  const endRaw = Number(parts.endExclusive ?? parts.end ?? range.endExclusive ?? range.end ?? 0) || 0;
+  return `${parts.source || 'all'}|${parts.model || 'all'}|${bucketMs}|${startRaw}|${endRaw}`;
 }
 function currentTrendScopeKey(s, dayMode = isDayRange()){
   const bucketMs = dayMode ? 86400000 : 3600000;
@@ -13,7 +11,7 @@ function currentTrendScopeKey(s, dayMode = isDayRange()){
     source: sourceFilter,
     model: modelFilter,
     start: sinceForRange(s),
-    end: untilForRange(s) || rangeMinute(Number(s?.timestamp || Date.now())),
+    endExclusive: untilForRange(s),
     bucketMs,
   });
 }
@@ -93,10 +91,10 @@ function bucketRows(rows, s){
   const cacheKey = `${rangeFilter}|${sourceFilter}|${modelFilter}|${customDateStart}|${customDateEnd}|${rangeBucketKey}|${dayMode ? 'day' : 'hour'}|${chartTrendSignature(s, dayMode)}|${rowsSignature(rows)}`;
   if(cacheMemo?.chartBuckets?.has(cacheKey)) return cacheMemo.chartBuckets.get(cacheKey);
   const start = dayMode ? dayStart(since) : Math.floor(since / bucketMs) * bucketMs;
-  const end = dayMode ? dayStart(now) + 86400000 : Math.ceil(now / bucketMs) * bucketMs;
+  const endExclusive = Math.max(start, now);
   const buckets = [];
   const bucketMap = new Map();
-  for(let t = start; t <= end; t += bucketMs){
+  for(let t = start; t < endExclusive; t += bucketMs){
     const b = { start: t, end: t + bucketMs, total: 0, input: 0, output: 0, cacheRead: 0, cacheWrite: 0, requests: 0, errors: 0, waitMs: 0, ttftMs: 0, firstContentMs: 0, queueMs: 0, speeds: [], latencies: [], ttfts: [], firstContents: [] };
     buckets.push(b);
     bucketMap.set(t, b);

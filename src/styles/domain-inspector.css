@@ -227,7 +227,6 @@
       vertical-align:middle;
     }
     .session-row.pinned td { background:linear-gradient(90deg,rgba(255,248,224,.55),rgba(255,255,255,0)); }
-    .session-row.selected td { background:#edf6ff !important; }
     .session-inspector {
       background:
         linear-gradient(180deg,rgba(255,255,255,.76),rgba(246,249,253,.92)),

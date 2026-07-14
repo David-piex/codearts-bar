@@ -66,12 +66,18 @@ function currentRequestPageOffset(page = requestTablePage){
   return Math.max(0, Number(page || 0)) * REQUEST_PAGE_SIZE;
 }
 function requestPagePayload(offset = currentRequestPageOffset(), limit = REQUEST_PAGE_SIZE){
+  const range = currentPageRangePayload();
   return {
     limit,
     offset,
     source: sourceFilter,
     model: modelFilter,
-    range: currentPageRangePayload(),
+    range,
+    rangeKey: normalizeRangeFilter(rangeFilter),
+    start: Number(range.start || 0),
+    end: Number(range.endExclusive ?? range.end ?? 0),
+    endExclusive: Number(range.endExclusive ?? range.end ?? 0),
+    generation: dashboardRequestGeneration,
     query: analyticsQuery,
   };
 }
@@ -123,10 +129,11 @@ async function refreshRequestPageCache(page = requestTablePage, opts = {}){
   if(requestPageLoading && !opts.force) return false;
   const token = ++requestPageLoadToken;
   requestPageLoading = true;
+  const payload = requestPagePayload(currentRequestPageOffset(page), REQUEST_PAGE_SIZE);
+  const ticket = captureDashboardRequest(payload);
   try {
-    const payload = requestPagePayload(currentRequestPageOffset(page), REQUEST_PAGE_SIZE);
     const data = await ipcRenderer.invoke('dashboard:getRequestsPage', payload);
-    if(token !== requestPageLoadToken) return false;
+    if(token !== requestPageLoadToken || !dashboardRequestIsCurrent(ticket)) return false;
     if(!data?.ok || !Array.isArray(data.items)) return false;
     requestPageCache = { key, items: data.items, total: Number(data.total || data.items.length), page: Number(page || 0), timestamp: Number(data.snapshotTimestamp || Date.now()) };
     snapshot.requestPage = { ...data, payload, snapshotTimestamp: requestPageCache.timestamp };
@@ -137,7 +144,7 @@ async function refreshRequestPageCache(page = requestTablePage, opts = {}){
     console.warn('[dashboard] request page failed', error);
     return false;
   } finally {
-    if(token === requestPageLoadToken) requestPageLoading = false;
+    if(token === requestPageLoadToken && dashboardRequestIsCurrent(ticket)) requestPageLoading = false;
   }
 }
 function scheduleRequestPageRefresh(s = snapshot || {}, page = requestTablePage){
@@ -172,19 +179,22 @@ function mergeRequestPageItems(items = []){
     seen.add(key);
     fresh.push(item);
   }
-  if(fresh.length) snapshot.requestLog = [...(snapshot.requestLog || []), ...fresh].sort((a, b) => (b.time || 0) - (a.time || 0));
+  if(fresh.length) snapshot.requestLog = [...(snapshot.requestLog || []), ...fresh].sort((a, b) => (b.time || 0) - (a.time || 0) || requestKeyFor(a).localeCompare(requestKeyFor(b)));
   return fresh;
 }
 async function loadRequestPage(offset, limit = REQUEST_PAGE_SIZE){
   if(requestPageLoading) return null;
   requestPageLoading = true;
+  const payload = requestPagePayload(offset, limit);
+  const ticket = captureDashboardRequest(payload);
   try {
-    return await ipcRenderer.invoke('dashboard:getRequestsPage', requestPagePayload(offset, limit));
+    const page = await ipcRenderer.invoke('dashboard:getRequestsPage', payload);
+    return dashboardRequestIsCurrent(ticket) ? page : null;
   } catch (error) {
     console.warn('[dashboard] request page failed', error);
     return null;
   } finally {
-    requestPageLoading = false;
+    if(dashboardRequestIsCurrent(ticket)) requestPageLoading = false;
   }
 }
 async function appendRequestRows(){

@@ -59,6 +59,23 @@ final class EmbeddedCliRuntime {
         return parent.resolve("cli-" + version).toAbsolutePath().normalize();
     }
 
+    private static Path runtimeRootForEntry(ClassLoader loader, Path entry) throws IOException {
+        String entryName = requiredString(readManifest(loader), "entry");
+        Path relative = Path.of(entryName.replace('\\', '/')).normalize();
+        if (relative.isAbsolute() || relative.getNameCount() == 0 || relative.startsWith("..")) {
+            throw new IOException("Invalid embedded CLI entry path");
+        }
+        Path root = entry.toAbsolutePath().normalize();
+        for (int index = 0; index < relative.getNameCount(); index++) {
+            root = root.getParent();
+            if (root == null) throw new IOException("Embedded CLI entry is outside its runtime root");
+        }
+        if (!safeTarget(root, entryName).equals(entry.toAbsolutePath().normalize())) {
+            throw new IOException("Embedded CLI entry does not match its manifest path");
+        }
+        return root;
+    }
+
     private static Path materialize(ClassLoader loader, Path parent, Path root) throws IOException {
         JsonObject manifest = readManifest(loader);
         if (Files.isSymbolicLink(parent) || Files.isSymbolicLink(root)) {
@@ -67,8 +84,7 @@ final class EmbeddedCliRuntime {
         Files.createDirectories(root);
 
         List<String> files = manifestFiles(manifest);
-        files.add("node_modules/sql.js/dist/sql-wasm.js");
-        files.add("node_modules/sql.js/dist/sql-wasm.wasm");
+        addSqlRuntimeFiles(files);
         JsonObject hashes = manifest.has("hashes") && manifest.get("hashes").isJsonObject()
                 ? manifest.getAsJsonObject("hashes") : null;
         if (hashes == null) throw new IOException("Embedded CLI manifest is missing hashes");
@@ -104,6 +120,11 @@ final class EmbeddedCliRuntime {
             files.add(item.getAsString());
         }
         return files;
+    }
+
+    private static void addSqlRuntimeFiles(List<String> files) {
+        if (!files.contains("node_modules/sql.js/dist/sql-wasm.js")) files.add("node_modules/sql.js/dist/sql-wasm.js");
+        if (!files.contains("node_modules/sql.js/dist/sql-wasm.wasm")) files.add("node_modules/sql.js/dist/sql-wasm.wasm");
     }
 
     private static String requiredString(JsonObject object, String key) throws IOException {
@@ -234,7 +255,7 @@ final class EmbeddedCliRuntime {
         if (cachedEntry == null || command == null || command.stream().noneMatch(cachedEntry.toString()::equals)) return false;
         try {
             ClassLoader loader = EmbeddedCliRuntime.class.getClassLoader();
-            Path root = cachedEntry.getParent().getParent();
+            Path root = runtimeRootForEntry(loader, cachedEntry);
             if (runtimeIsIntact(loader, root)) return false;
             Path entry = materialize(loader, root.getParent(), root);
             cachedEntry = entry;
@@ -249,8 +270,7 @@ final class EmbeddedCliRuntime {
                 ? manifest.getAsJsonObject("hashes") : null;
         if (hashes == null) return false;
         List<String> files = manifestFiles(manifest);
-        files.add("node_modules/sql.js/dist/sql-wasm.js");
-        files.add("node_modules/sql.js/dist/sql-wasm.wasm");
+        addSqlRuntimeFiles(files);
         for (String file : files) {
             Path target = safeTarget(root, file);
             if (!Files.isRegularFile(target, LinkOption.NOFOLLOW_LINKS)
@@ -260,10 +280,14 @@ final class EmbeddedCliRuntime {
     }
 
     static boolean repairAfterFailureForTest(ClassLoader loader, Path parent, Path entry) throws IOException {
-        Path root = entry.getParent().getParent();
+        Path root = runtimeRootForEntry(loader, entry);
         if (runtimeIsIntact(loader, root)) return false;
         materialize(loader, parent, root);
         return true;
+    }
+
+    static Path runtimeRootForTest(ClassLoader loader, Path entry) throws IOException {
+        return runtimeRootForEntry(loader, entry);
     }
 
     private static boolean cachedFilesUnchanged() {

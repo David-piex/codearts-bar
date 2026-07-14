@@ -110,7 +110,7 @@ function filterRows(s, opts = {}){
   const rows = (s.requestLog || []).filter((r) => {
     const time = Number(r.time || 0);
     if(since && time < since) return false;
-    if(until && time > until) return false;
+    if(until && time >= until) return false;
     if(source !== 'all' && sourceKey(r) !== source) return false;
     if(model !== 'all' && r.model !== model) return false;
     return true;
@@ -172,20 +172,9 @@ function summaryOnlyUsageForView(s){
   const end = untilForRange(s) || rangeMinute(Number(s?.timestamp || Date.now()));
   if(String(filter.source || 'all') !== String(sourceFilter || 'all')) return null;
   if(String(filter.model || 'all') !== String(modelFilter || 'all')) return null;
-  // The user-selected custom range is a fixed interval. The snapshot and the
-  // renderer can cross a refresh tick while the end value is being normalized,
-  // so the range key is the authoritative match for customTime. Only accept a
-  // summary snapshot that explicitly declares that scope.
   if(String(filter.rangeKey || '') !== currentRangeKey) return null;
-  if(currentRangeKey === 'customTime') return normalizeUsageMetric(s?.usage?.all || {});
-  // A custom range whose end is "now" advances between the IPC request and
-  // the first renderer pass. Keep the summary scoped to that same user range
-  // instead of falling back to the visible request page.
-  const startDelta = Math.abs(Number(filter.start || 0) - Number(start || 0));
-  const endDelta = Math.abs(Number(filter.end || 0) - Number(end || 0));
-  const movingNow = rangeFilter === 'customTime' && Number(customDateEnd || 0) >= Date.now() - 120000;
-  const tolerance = movingNow ? 120000 : 1000;
-  if(startDelta > tolerance || endDelta > tolerance) return null;
+  const filterEnd = Number(filter.endExclusive ?? filter.end ?? 0);
+  if(Number(filter.start || 0) !== Number(start || 0) || filterEnd !== Number(end || 0)) return null;
   return normalizeUsageMetric(s?.usage?.all || {});
 }
 function summaryUsageForView(rows, s){

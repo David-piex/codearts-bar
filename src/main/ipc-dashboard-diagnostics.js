@@ -3,13 +3,14 @@
 const crypto = require('node:crypto');
 const fs = require('node:fs');
 const pathModule = require('node:path');
+const { redactSensitiveText } = require('../core/sensitive-text');
 
 function hashText(value = '') {
   return crypto.createHash('sha1').update(String(value || '')).digest('hex').slice(0, 12);
 }
 
 function sanitizeText(value = '') {
-  return String(value || '')
+  return redactSensitiveText(String(value || ''))
     .replace(/[A-Za-z]:[\\/][^\s'",;]+/g, '[path]')
     .replace(/\/(?:[^/\s'",;]+\/)+[^/\s'",;]+/g, '[path]')
     .replace(/\\\\(?:[^\\\s'",;]+\\)+[^\\\s'",;]+/g, '[path]')

@@ -156,14 +156,14 @@ if (process.platform === 'win32') {
     assert.ok(jar, 'JetBrains plugin archive must contain the primary plugin JAR');
     const jarPath = path.join(jarDir, jar);
     const jarEntries = execFileSync('tar.exe', ['-tf', jarPath], { encoding: 'utf8' });
-    assert.match(jarEntries, /cli\/src\/bin\.js/);
+    assert.match(jarEntries, /cli\/src\/providers\/codearts\/jetbrains-cli\.js/);
     assert.match(jarEntries, /cli\/node_modules\/sql\.js\/dist\/sql-wasm\.wasm/);
     const jarExtractDir = path.join(extractDir, 'jar');
     fs.mkdirSync(jarExtractDir);
     execFileSync('tar.exe', ['-xf', jarPath, '-C', jarExtractDir]);
     const cliDir = path.join(jarExtractDir, 'cli');
     const manifest = JSON.parse(fs.readFileSync(path.join(cliDir, 'CLI_RUNTIME_MANIFEST.json'), 'utf8'));
-    assert.equal(manifest.entry, 'src/bin.js', 'embedded CLI manifest must use the executable entry');
+    assert.equal(manifest.entry, 'src/providers/codearts/jetbrains-cli.js', 'embedded CLI manifest must use the dedicated query entry');
     assert.match(manifest.contentHash, /^[0-9a-f]{64}$/, 'embedded CLI manifest must include its content hash');
     const hashes = Object.entries(manifest.hashes || {}).sort(([left], [right]) => left.localeCompare(right));
     assert.equal(hashes.length, (manifest.files || []).length + 2, 'embedded CLI manifest must hash every source and sql.js resource');

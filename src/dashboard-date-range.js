@@ -35,14 +35,12 @@ function composeDateTime(dateValue, timeValue, fallback){
   return base.getTime();
 }
 function normalizeCustomDateRange(s = snapshot){
-  const now = Date.now();
+  const now = typeof dashboardBoundaryTimestamp === 'function' ? dashboardBoundaryTimestamp() : Date.now();
   let start = Number(customDateStart || 0);
   let end = Number(customDateEnd || 0);
   if(!Number.isFinite(end) || end <= 0) end = now;
   end = Math.min(end, now);
   if(!Number.isFinite(start) || start <= 0) start = end - 86400000;
-  start = rangeMinute(start);
-  end = rangeMinute(end);
   if(start >= end) start = end - 86400000;
   if(start > end) [start, end] = [end, start];
   const maxSpan = 366 * 86400000;
@@ -56,8 +54,8 @@ function bucketTitle(b, s = snapshot){ const start = Number(b?.start); if(!valid
 function bucketAxisLabel(b, s = snapshot){ const start = Number(b?.start); if(!validTimestamp(start, s)) return '--'; const d = new Date(start); return isDayRange() ? d.toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' }) : d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false }); }
 function rangeLabel(range = rangeFilter){ range = normalizeRangeFilter(range); if(range === 'customTime'){ const r = normalizeCustomDateRange(); return `${dateLabel(r.start)} - ${dateLabel(r.end)}`; } return RANGE_LABELS[range] || range || TXT.unknown; }
 function isDayRange(range = rangeFilter){ range = normalizeRangeFilter(range); if(range === 'customTime'){ const r = normalizeCustomDateRange(); return r.end - r.start > 72 * 3600000; } return range === 'all' || ['7d', '14d', '30d', '60d', '90d', '180d', '365d'].includes(range); }
-function sinceForRange(s, range = rangeFilter){ range = normalizeRangeFilter(range); const rawNow = Number(s?.timestamp || Date.now()); if(range === 'customTime') return normalizeCustomDateRange(s).start; if(range === 'all') return 0; if(range === 'today') return dayStart(rawNow); const now = rangeMinute(rawNow); const days = Number(String(range).replace('d', '')) || 1; return now - days * 86400000; }
-function untilForRange(s, range = rangeFilter){ range = normalizeRangeFilter(range); if(range === 'customTime') return normalizeCustomDateRange(s).end; return 0; }
+function sinceForRange(s, range = rangeFilter){ const now = typeof dashboardBoundaryTimestamp === 'function' ? dashboardBoundaryTimestamp() : Date.now(); return dateRangeForFilter({ range, timestamp: now, customStart: customDateStart, customEnd: customDateEnd, customDays: customRangeDays }).start; }
+function untilForRange(s, range = rangeFilter){ const now = typeof dashboardBoundaryTimestamp === 'function' ? dashboardBoundaryTimestamp() : Date.now(); return dateRangeForFilter({ range, timestamp: now, customStart: customDateStart, customEnd: customDateEnd, customDays: customRangeDays }).end; }
 function ensureDateRangeDraft(){
   const r = normalizeCustomDateRange(snapshot || {});
   if(!dateRangeDraftStart) dateRangeDraftStart = r.start;
@@ -68,7 +66,7 @@ function dateRangeDraftValidation(){
   ensureDateRangeDraft();
   const start = Number(dateRangeDraftStart || 0);
   const end = Number(dateRangeDraftEnd || 0);
-  const now = Date.now();
+  const now = typeof rendererNow === 'function' ? rendererNow() : Date.now();
   if(!Number.isFinite(start) || !Number.isFinite(end) || start <= 0 || end <= 0) return TXT.dateRangeInvalid || 'Invalid date range';
   if(end <= start) return TXT.dateRangeOrderInvalid || 'End time must be later than start time';
   if(end > now + 60000) return TXT.dateRangeFutureInvalid || 'End time cannot be later than now';
@@ -76,8 +74,9 @@ function dateRangeDraftValidation(){
   return '';
 }
 function dateRangeForCurrentFilter(s = snapshot || {}){
-  const range = dateRangeForFilter({ range: rangeFilter, timestamp: s?.timestamp, customStart: customDateStart, customEnd: customDateEnd, customDays: customRangeDays });
-  return { start: range.start, end: range.end || rangeMinute(Number(s?.timestamp || Date.now())) };
+  const now = typeof dashboardBoundaryTimestamp === 'function' ? dashboardBoundaryTimestamp() : Date.now();
+  const range = dateRangeForFilter({ range: rangeFilter, timestamp: now, customStart: customDateStart, customEnd: customDateEnd, customDays: customRangeDays });
+  return { start: range.start, end: range.end, endExclusive: range.end };
 }
 function openDateRangePopover(){
   const r = dateRangeForCurrentFilter(snapshot || {});
@@ -90,7 +89,7 @@ function openDateRangePopover(){
   dateRangeOpen = true;
 }
 function setDateRangeQuick(key){
-  const now = rangeMinute(Number(snapshot?.timestamp || Date.now()));
+  const now = typeof rendererNow === 'function' ? rendererNow() : Date.now();
   let start = dayStart(now);
   let end = now;
   if(key !== 'today'){
@@ -105,7 +104,7 @@ function setDateRangeQuick(key){
 function dateRangeSameMinute(a, b){ return Math.abs(Number(a || 0) - Number(b || 0)) < 60000; }
 function dateRangeQuickActive(key){
   ensureDateRangeDraft();
-  const now = Number(snapshot?.timestamp || Date.now());
+  const now = typeof rendererNow === 'function' ? rendererNow() : Number(snapshot?.timestamp || Date.now());
   const start = Number(dateRangeDraftStart || 0);
   const end = Number(dateRangeDraftEnd || 0);
   if(key === 'today') return dayStart(start) === dayStart(now) && dateRangeSameMinute(end, now);
@@ -145,7 +144,7 @@ function dateRangeCalendarHtml(){
   month.setDate(1); month.setHours(0, 0, 0, 0);
   const startDay = new Date(month); startDay.setDate(1 - month.getDay());
   const days = [];
-  const today = dayStart(Number(snapshot?.timestamp || Date.now()));
+  const today = dayStart(typeof rendererNow === 'function' ? rendererNow() : Number(snapshot?.timestamp || Date.now()));
   const selectedStart = dayStart(dateRangeDraftStart);
   const selectedEnd = dayStart(dateRangeDraftEnd);
   for(let i = 0; i < 42; i++){

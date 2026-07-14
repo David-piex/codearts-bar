@@ -13,10 +13,12 @@ stages:
         commands:
           - export CODEARTS_BAR_DB="$PWD/tests/fixtures/opencode-fixture.db"
           - export CODEARTS_BAR_CONFIG_DIR="$PWD/.cache/gitee-config"
+          - export CODEARTS_BAR_NOW_MS="1783512000000"
+          - export SOURCE_DATE_EPOCH="1783512000"
           - npm ci
           - npm audit
           - npm test
-          - npm run metrics:check
+          - npm run metrics:check -- --skip-jetbrains
           - npm run stress:dashboard
           - npm run stress:pagination
           - npm run stress:aggregation

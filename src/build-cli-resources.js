@@ -6,8 +6,11 @@ const crypto = require('node:crypto');
 
 const root = path.resolve(__dirname, '..');
 const srcDir = path.join(root, 'src');
-const outDir = path.join(root, '.cache', 'cli-runtime');
-const entry = path.join(srcDir, 'bin.js');
+const outDir = path.resolve(process.env.CODEARTS_BAR_CLI_RUNTIME_DIR || path.join(root, '.cache', 'cli-runtime'));
+const configuredEntry = process.env.CODEARTS_BAR_CLI_ENTRY
+  ? path.resolve(root, process.env.CODEARTS_BAR_CLI_ENTRY)
+  : path.join(srcDir, 'bin.js');
+const entry = configuredEntry;
 const required = new Set();
 
 function readUtf8(file) {
@@ -67,9 +70,10 @@ function copySqlRuntime() {
   }
 }
 
-function writeManifest(files) {
+function writeManifest(files, options = {}) {
+  const sourceEntries = options.packagedFiles || files.map((file) => ({ rel: path.relative(root, file).replace(/\\/g, '/'), file }));
   const packagedFiles = [
-    ...files.map((file) => ({ rel: path.relative(root, file).replace(/\\/g, '/'), file })),
+    ...sourceEntries,
     ...['sql-wasm.js', 'sql-wasm.wasm'].map((name) => ({
       rel: `node_modules/sql.js/dist/${name}`,
       file: path.join(outDir, 'node_modules', 'sql.js', 'dist', name),
@@ -84,8 +88,8 @@ function writeManifest(files) {
   }
   const manifest = {
     contentHash: digest.digest('hex'),
-    entry: 'src/bin.js',
-    files: files.map((file) => path.relative(root, file).replace(/\\/g, '/')).sort(),
+    entry: options.entry || path.relative(root, entry).replace(/\\/g, '/'),
+    files: sourceEntries.map((item) => item.rel).sort(),
     hashes: Object.fromEntries(packagedFiles.map((item) => [
       item.rel,
       crypto.createHash('sha256').update(fs.readFileSync(item.file)).digest('hex'),
@@ -97,11 +101,33 @@ function writeManifest(files) {
 function build() {
   fs.rmSync(outDir, { recursive: true, force: true });
   fs.mkdirSync(outDir, { recursive: true });
-  scan(entry);
-  const files = [...required].sort();
-  for (const file of files) copyFilePreserveRoot(file);
+  let files;
+  let manifestOptions = {};
+  if (process.env.CODEARTS_BAR_CLI_BUNDLE === '1') {
+    const relativeEntry = path.relative(root, entry).replace(/\\/g, '/');
+    const bundleFile = path.join(outDir, ...relativeEntry.split('/'));
+    fs.mkdirSync(path.dirname(bundleFile), { recursive: true });
+    require('esbuild').buildSync({
+      entryPoints: [entry],
+      outfile: bundleFile,
+      bundle: true,
+      platform: 'node',
+      target: 'node18',
+      format: 'cjs',
+      external: ['sql.js'],
+      minify: true,
+      legalComments: 'none',
+      sourcemap: false,
+    });
+    files = [bundleFile];
+    manifestOptions = { entry: relativeEntry, packagedFiles: [{ rel: relativeEntry, file: bundleFile }] };
+  } else {
+    scan(entry);
+    files = [...required].sort();
+    for (const file of files) copyFilePreserveRoot(file);
+  }
   copySqlRuntime();
-  writeManifest(files);
+  writeManifest(files, manifestOptions);
   const total = [...files, path.join(outDir, 'node_modules', 'sql.js', 'dist', 'sql-wasm.js'), path.join(outDir, 'node_modules', 'sql.js', 'dist', 'sql-wasm.wasm')]
     .reduce((sum, file) => {
       try { return sum + fs.statSync(file).size; } catch { return sum; }

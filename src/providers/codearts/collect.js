@@ -1,7 +1,7 @@
 'use strict';
 
 const agg = require('../../core/aggregator');
-const { listDataSources, ensureReadableDb, validateTables, tagRows, placeholders } = require('./sources');
+const { listDataSources, ensureReadableDb, validateTables, tagRows, placeholders, jsonExtractExpr, messageModelExpr } = require('./sources');
 const { openNativeDbReadonly, openSqlJsDbReadonly, nativeAll, sqlJsAll, nativeAllParams, sqlJsAllParams, closeDb } = require('./sqlite');
 
 function chunked(list, size = 800) {
@@ -129,11 +129,18 @@ function querySessionsByIds(queryAll, db, source, sessionIds) {
   const sql = `select id, title, directory, version, time_created, time_updated, time_archived from session where id in (${placeholders(ids)})`;
   return tagRows(queryAll(db, sql, ids), source);
 }
-function queryMessagesForSessions(queryAll, db, source, sessionIds) {
+function queryMessagesForSessions(queryAll, db, source, sessionIds, payload = {}) {
   const ids = [...new Set(sessionIds.filter(Boolean))];
   if (!ids.length) return [];
-  const sql = `select id, session_id, time_created, time_updated, data from message where session_id in (${placeholders(ids)}) order by time_created desc`;
-  return tagRows(queryAll(db, sql, ids), source);
+  const where = [`session_id in (${placeholders(ids)})`];
+  const params = [...ids];
+  if (payload.model && payload.model !== 'all') {
+    where.push(`${jsonExtractExpr('data', '$.role')} = 'assistant'`);
+    where.push(`${messageModelExpr('data')} = ?`);
+    params.push(String(payload.model));
+  }
+  const sql = `select id, session_id, time_created, time_updated, data from message where ${where.join(' and ')} order by time_created desc`;
+  return tagRows(queryAll(db, sql, params), source);
 }
 function collectRowsNative(options = {}) {
   const sources = listDataSources(options);

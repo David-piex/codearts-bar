@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
+const { execFileSync } = require('node:child_process');
 const { parseStatsOutput } = require('../src/officialStats');
 const { buildQuota, dayStartMs, nextDayStartMs } = require('../src/quota');
 const { buildHealth, notificationEvents } = require('../src/health');
@@ -10,7 +11,7 @@ const { listProviders } = require('../src/providers');
 const localProvider = require('../src/providers/codeartsLocal');
 const agg = require('../src/core/aggregator');
 const cacheMetrics = require('../src/core/cacheMetrics');
-const { getSnapshotAsync, getSnapshotWithCache } = require('../src/codeartsData');
+const { getSnapshotAsync, getSnapshotWithCache, resolveNow } = require('../src/codeartsData');
 const { writeCache, closeSettingsStore } = require('../src/settings');
 const rollupCache = require('../src/providers/codearts/rollup-cache');
 const dashboardUsageRollup = require('../src/providers/codearts/usage-rollup');
@@ -18,6 +19,10 @@ const usageRollupCalc = require('../src/providers/codearts/usage-rollup-calc');
 const aggregationRuntime = require('../src/providers/codearts/aggregation-runtime');
 const aggregateCache = require('../src/providers/codearts/aggregate-cache');
 const atomicFile = require('../src/core/atomic-file');
+const sqlite = require('../src/providers/codearts/sqlite');
+const { DatabaseSync } = require('node:sqlite');
+
+const FIXTURE_NOW_MS = Date.UTC(2026, 6, 8, 0, 0, 0);
 
 function testOfficialStatsParser() {
   const text = fs.readFileSync(path.join(__dirname, 'fixtures', 'codearts-stats.txt'), 'utf8');
@@ -177,9 +182,10 @@ function testLocalDayTrendBuckets() {
     { timeCreated: Date.parse('2026-07-12T15:30:00.000Z'), total: 20, input: 12, output: 8, messages: 1 },
     { timeCreated: Date.parse('2026-07-12T16:30:00.000Z'), total: 30, input: 18, output: 12, messages: 1 },
   ];
+  const endExclusive = rows[2].timeCreated + 1;
   const buckets = usageRollupCalc.trendBucketsFromRows(rows, {
     start: rows[0].timeCreated,
-    end: rows[2].timeCreated,
+    endExclusive,
     bucketMs: day,
     bucketOffsetMs: shanghaiOffset,
   });
@@ -191,19 +197,19 @@ function testLocalDayTrendBuckets() {
 
   const normalized = aggregationRuntime.normalizeTrendRange({
     start: rows[0].timeCreated,
-    end: rows[2].timeCreated,
+    endExclusive,
     bucketMs: day,
     bucketOffsetMs: shanghaiOffset,
   });
   assert.equal(normalized.bucketOffsetMs, shanghaiOffset);
-  const cachePayload = { start: rows[0].timeCreated, end: rows[2].timeCreated, bucketMs: day };
+  const cachePayload = { start: rows[0].timeCreated, endExclusive, bucketMs: day };
   const shanghaiKey = aggregateCache.aggregateCacheKey('trend', 'unit', { ...cachePayload, bucketOffsetMs: shanghaiOffset }, []);
   const utcKey = aggregateCache.aggregateCacheKey('trend', 'unit', { ...cachePayload, bucketOffsetMs: 0 }, []);
   assert.notEqual(shanghaiKey, utcKey);
 
   const dense = aggregationRuntime.densifyBuckets([buckets[0], buckets[1]], {
     start: localMidnight,
-    end: localMidnight + 4 * day - 1,
+    endExclusive: localMidnight + 4 * day,
     bucketMs: day,
     bucketOffsetMs: shanghaiOffset,
   });
@@ -216,11 +222,57 @@ function testLocalDayTrendBuckets() {
 
   const tooWide = aggregationRuntime.densifyBuckets(buckets, {
     start: localMidnight,
-    end: localMidnight + 500 * day,
+    endExclusive: localMidnight + 500 * day,
     bucketMs: day,
     bucketOffsetMs: shanghaiOffset,
   });
   assert.equal(tooWide, buckets);
+}
+function testCalendarDstTrendBuckets() {
+  const script = `const r=require('./src/providers/codearts/aggregation-runtime');
+const start=Date.parse(process.argv[1]), end=Date.parse(process.argv[2]);
+const range=r.normalizeTrendRange({start,end,bucket:'day'});
+const items=[{start:start,total:1,messages:1},{start:end-3600000,total:2,messages:1}];
+const days=r.densifyBuckets(r.rebucketCalendarDays(items,range),range);
+process.stdout.write(JSON.stringify({calendarRebucket:range.calendarRebucket,queryBucketMs:range.queryBucketMs,days:days.length,total:days.reduce((s,x)=>s+x.total,0)}));`;
+  const cases = [
+    ['Europe/Berlin', '2026-03-27T00:00:00Z', '2026-04-02T00:00:00Z', 3600000],
+    ['Australia/Lord_Howe', '2026-04-01T00:00:00Z', '2026-04-10T00:00:00Z', 1800000],
+  ];
+  for (const [tz, start, end, bucketMs] of cases) {
+    const output = execFileSync(process.execPath, ['-e', script, start, end], { cwd: path.join(__dirname, '..'), env: { ...process.env, TZ: tz }, encoding: 'utf8' });
+    const result = JSON.parse(output);
+    assert.equal(result.calendarRebucket, true, `${tz} must use calendar rebucketing`);
+    assert.equal(result.queryBucketMs, bucketMs, `${tz} must use a transition-safe source bucket`);
+    assert.equal(result.total, 3);
+    assert.ok(result.days >= 6);
+  }
+}
+function testRollupExclusiveEndBoundaries() {
+  const hour = 3_600_000;
+  const endExclusive = Date.UTC(2026, 6, 13, 0, 0, 0);
+  const rows = [
+    { id: 'inside', timeCreated: endExclusive - 1, timeUpdated: endExclusive - 1, total: 7, input: 4, output: 3, messages: 1 },
+    { id: 'boundary', timeCreated: endExclusive, timeUpdated: endExclusive, total: 101, input: 100, output: 1, messages: 1 },
+  ];
+  const filtered = usageRollupCalc.filterRowsForPayload(rows, { range: { start: endExclusive - hour, endExclusive } });
+  assert.deepEqual(filtered.map((row) => row.id), ['inside']);
+  const trend = usageRollupCalc.trendBucketsFromRows(rows, { start: endExclusive - hour, endExclusive, bucketMs: hour });
+  assert.equal(trend.reduce((sum, bucket) => sum + bucket.total, 0), 7);
+  const sessions = usageRollupCalc.sessionSummaryPartFromRollup({
+    source: { id: 'unit', label: 'Unit' },
+    sessions: rows.map((row) => ({ id: row.id, timeUpdated: row.timeUpdated })),
+  }, { range: { start: endExclusive - hour, endExclusive }, timestamp: endExclusive });
+  assert.equal(sessions.total, 1);
+  const compactRows = [
+    { start: endExclusive - hour, end: endExclusive, total: 7, messages: 1 },
+    { start: endExclusive, end: endExclusive + hour, total: 101, messages: 1 },
+  ];
+  assert.deepEqual(usageRollupCalc.compactRowsInRange(compactRows, endExclusive - hour, endExclusive).map((row) => row.total), [7]);
+  assert.equal(usageRollupCalc.bucketBoundarySafe(endExclusive, endExclusive - 1, endExclusive, 'end', hour), true);
+  const dense = aggregationRuntime.densifyBuckets([], { start: endExclusive - 2 * hour, endExclusive, bucketMs: hour, bucketOffsetMs: 0 });
+  assert.equal(dense.length, 2);
+  assert.equal(dense.at(-1).start, endExclusive - hour);
 }
 function testRollupSidecarCache() {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'codearts-bar-rollup-'));
@@ -395,12 +447,12 @@ async function testRenameSessionFixture() {
   const dbPath = path.join(tmpDir, 'opencode-fixture.db');
   fs.copyFileSync(sourceDb, dbPath);
   try {
-    const result = await localProvider.renameSession({ dbPath, id: 'ses_multi', title: 'Renamed session' });
+    const result = await localProvider.renameSession({ dbPath, id: 'ses_multi', title: 'Renamed session', timestamp: FIXTURE_NOW_MS });
     assert.equal(result.ok, true);
     const previous = process.env.CODEARTS_BAR_FORCE_SQLJS;
     process.env.CODEARTS_BAR_FORCE_SQLJS = '1';
     try {
-      const snap = await getSnapshotAsync({ dbPath, dailyLimit: 1000, windowHours: 24 });
+      const snap = await getSnapshotAsync({ dbPath, dailyLimit: 1000, windowHours: 24, timestamp: FIXTURE_NOW_MS, disableUsageLogs: true });
       const renamed = snap.sessions.find((session) => session.id === 'ses_multi');
       assert.equal(renamed.title, 'Renamed session');
     } finally {
@@ -416,7 +468,7 @@ async function testSqliteFixtureSqlJsFallback() {
   const previous = process.env.CODEARTS_BAR_FORCE_SQLJS;
   process.env.CODEARTS_BAR_FORCE_SQLJS = '1';
   try {
-    const snap = await getSnapshotAsync({ dbPath, dailyLimit: 1000, windowHours: 24 });
+    const snap = await getSnapshotAsync({ dbPath, dailyLimit: 1000, windowHours: 24, timestamp: FIXTURE_NOW_MS, disableUsageLogs: true });
     assert.equal(snap.adapter, 'sql.js');
     assert.equal(snap.usage.all.total, 220);
     assert.equal(snap.models[0].model, 'fixture-model');
@@ -518,6 +570,156 @@ async function testProviderDbAggregates() {
   }
 }
 
+async function testSessionWritesNeverFallBackToSqlJs() {
+  const sourceDb = path.join(__dirname, 'fixtures', 'opencode-fixture.db');
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'codearts-bar-write-lock-'));
+  const dbPath = path.join(tmpDir, 'opencode-fixture.db');
+  fs.copyFileSync(sourceDb, dbPath);
+  const lockDb = new DatabaseSync(dbPath);
+  try {
+    lockDb.exec('begin immediate');
+    await assert.rejects(
+      () => localProvider.renameSession({
+        dbPath,
+        id: 'ses_multi',
+        title: 'Must not be written by sql.js',
+        timestamp: FIXTURE_NOW_MS,
+        busyTimeoutMs: 0,
+        busyRetryDelaysMs: [0, 0],
+      }),
+      (error) => error?.code === 'SQLITE_WRITE_BUSY' && error?.attempts === 3 && /未修改数据库/.test(error.message),
+    );
+    lockDb.exec('rollback');
+    const row = lockDb.prepare('select title from session where id = ?').get('ses_multi');
+    assert.equal(row.title, 'Multi Turn Session');
+    assert.equal(fs.readdirSync(tmpDir).some((name) => name.includes('.bak-')), false);
+    const actionsSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'providers', 'codearts', 'session-actions.js'), 'utf8');
+    assert.doesNotMatch(actionsSource, /openSqlJsDbReadonly|database\.export|\.bak-/);
+  } finally {
+    try { lockDb.exec('rollback'); } catch {}
+    lockDb.close();
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+}
+
+async function testSqlJsReadsCommittedWal() {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'codearts-bar-wal-snapshot-'));
+  const dbPath = path.join(tmpDir, 'wal-fixture.db');
+  const writer = new DatabaseSync(dbPath);
+  let sqlDb;
+  try {
+    writer.exec(`
+      create table message (id text primary key, session_id text, time_created integer, time_updated integer, data text);
+      pragma journal_mode = wal;
+      pragma wal_autocheckpoint = 0;
+    `);
+    writer.prepare('insert into message (id, session_id, time_created, time_updated, data) values (?, ?, ?, ?, ?)')
+      .run('wal-only', 'session-wal', FIXTURE_NOW_MS - 1, FIXTURE_NOW_MS - 1, JSON.stringify({ role: 'assistant', tokens: { total: 17 } }));
+    assert.equal(fs.existsSync(`${dbPath}-wal`), true);
+    sqlDb = await sqlite.openSqlJsDbReadonly(dbPath);
+    const rows = sqlite.sqlJsAll(sqlDb, "select id, json_extract(data, '$.tokens.total') as total from message order by id");
+    assert.deepEqual(rows.map((row) => ({ id: row.id, total: row.total })), [{ id: 'wal-only', total: 17 }]);
+  } finally {
+    sqlite.closeDb(sqlDb);
+    writer.close();
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+}
+
+async function testExactJsonFiltersAndExclusiveRange() {
+  const sourceDb = path.join(__dirname, 'fixtures', 'opencode-fixture.db');
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'codearts-bar-json-filter-'));
+  const dbPath = path.join(tmpDir, 'opencode-fixture.db');
+  fs.copyFileSync(sourceDb, dbPath);
+  const db = new DatabaseSync(dbPath);
+  const boundary = Date.UTC(2026, 6, 8, 0, 0, 0);
+  const insert = db.prepare('insert into message (id, session_id, time_created, time_updated, data) values (?, ?, ?, ?, ?)');
+  try {
+    insert.run('nested-gpt4', 'ses_multi', boundary - 4, boundary - 3, JSON.stringify({ role: 'assistant', model: { modelID: 'gpt-4' }, tokens: { total: 3 }, error: false }));
+    insert.run('exact-gpt4', 'ses_multi', boundary - 3, boundary - 2, JSON.stringify({ role: 'assistant', modelID: 'gpt-4', tokens: { total: 1 }, error: null }));
+    insert.run('prefix-gpt4o', 'ses_multi', boundary - 2, boundary - 1, JSON.stringify({ role: 'assistant', modelID: 'gpt-4o', tokens: { total: 2 }, error: { message: 'failed' } }));
+    insert.run('boundary-gpt4', 'ses_multi', boundary, boundary, JSON.stringify({ role: 'assistant', model: { modelID: 'gpt-4' }, tokens: { total: 4 }, error: 'failed at boundary' }));
+    insert.run('not-assistant', 'ses_multi', boundary - 1, boundary - 1, JSON.stringify({ role: 'user', modelID: 'gpt-4', note: { role: 'assistant' }, tokens: { total: 8 }, error: { message: 'ignore' } }));
+    insert.run('malformed-json', 'ses_multi', boundary - 1, boundary - 1, '{"role":"assistant",');
+    db.prepare('insert into part (id, message_id, session_id, time_created, time_updated, data) values (?, ?, ?, ?, ?, ?)')
+      .run('malformed-part', 'exact-gpt4', 'ses_multi', boundary - 2, boundary - 1, '{bad');
+  } finally {
+    db.close();
+  }
+
+  const previous = process.env.CODEARTS_BAR_FORCE_SQLJS;
+  try {
+    for (const forceSqlJs of [false, true]) {
+      if (forceSqlJs) process.env.CODEARTS_BAR_FORCE_SQLJS = '1';
+      else delete process.env.CODEARTS_BAR_FORCE_SQLJS;
+      const exact = await localProvider.getRequestsPage({
+        dbPath,
+        source: 'all',
+        model: 'gpt-4',
+        range: { start: boundary - 10, endExclusive: boundary },
+        limit: 20,
+      });
+      assert.deepEqual(exact.items.map((item) => item.id), ['exact-gpt4', 'nested-gpt4']);
+      const errors = await localProvider.getRequestsPage({ dbPath, source: 'all', errorsOnly: true, range: { start: boundary - 10, end: boundary }, limit: 20 });
+      assert.deepEqual(errors.items.map((item) => item.id), ['prefix-gpt4o']);
+      const successes = await localProvider.getRequestsPage({ dbPath, source: 'all', error: false, range: { start: boundary - 10, end: boundary }, limit: 20 });
+      assert.deepEqual(successes.items.map((item) => item.id), ['exact-gpt4', 'nested-gpt4']);
+      const aggregate = await localProvider.getSourceStats({
+        dbPath,
+        source: 'all',
+        model: 'gpt-4',
+        range: { start: boundary - 10, endExclusive: boundary },
+        disableAggregateCache: true,
+      });
+      assert.equal(aggregate.items[0].requests, 2);
+      assert.equal(aggregate.items[0].total, 4);
+      assert.equal(aggregate.items[0].errors, 0);
+      const modelSessions = await localProvider.getSessionsPage({ dbPath, source: 'all', status: 'all', model: 'gpt-4', limit: 20, offset: 0 });
+      assert.ok(modelSessions.items.some((item) => item.id === 'ses_multi'));
+      assert.ok(modelSessions.items.every((item) => (item.usage?.models || []).every((model) => model.model === 'gpt-4')));
+      assert.ok(modelSessions.items.every((item) => item.usage?.topModel == null || item.usage.topModel.model === 'gpt-4'));
+    }
+  } finally {
+    if (previous == null) delete process.env.CODEARTS_BAR_FORCE_SQLJS;
+    else process.env.CODEARTS_BAR_FORCE_SQLJS = previous;
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+}
+
+async function testSnapshotClockAndFixtureIsolation() {
+  const dbPath = path.join(__dirname, 'fixtures', 'opencode-fixture.db');
+  const explicit = FIXTURE_NOW_MS + 1234;
+  const originalScanUsageLogs = localProvider.scanUsageLogs;
+  const originalDetectProcesses = localProvider.detectProcesses;
+  const originalReadCodeArtsConfig = localProvider.readCodeArtsConfig;
+  const previousNow = process.env.CODEARTS_BAR_NOW_MS;
+  localProvider.scanUsageLogs = () => { throw new Error('real usage logs must not be read in fixture mode'); };
+  localProvider.detectProcesses = () => { throw new Error('real process paths must not be read in fixture mode'); };
+  localProvider.readCodeArtsConfig = () => { throw new Error('real CodeArts config must not be read in fixture mode'); };
+  try {
+    const byTimestamp = await getSnapshotAsync({ dbPath, timestamp: explicit, fixtureMode: true });
+    assert.equal(byTimestamp.timestamp, explicit);
+    assert.equal(byTimestamp.performance.ttftEvents, 0);
+    assert.equal(byTimestamp.queue.events, 0);
+    assert.deepEqual(byTimestamp.process, {});
+    assert.equal(byTimestamp.codeartsConfig.officialQuota.status, 'environment_probes_disabled');
+    assert.equal(Object.prototype.hasOwnProperty.call(byTimestamp.codeartsConfig, 'path'), false);
+    const byClock = await getSnapshotAsync({ dbPath, clock: { now: () => explicit + 1 }, disableUsageLogs: true, disableEnvironmentProbes: true });
+    assert.equal(byClock.timestamp, explicit + 1);
+    process.env.CODEARTS_BAR_NOW_MS = String(explicit + 2);
+    assert.equal(resolveNow(), explicit + 2);
+    assert.equal(localProvider.resolveTimestamp({ timestamp: 0 }), 0);
+    const byEnvironment = await getSnapshotAsync({ dbPath, disableUsageLogs: true, disableEnvironmentProbes: true });
+    assert.equal(byEnvironment.timestamp, explicit + 2);
+  } finally {
+    localProvider.scanUsageLogs = originalScanUsageLogs;
+    localProvider.detectProcesses = originalDetectProcesses;
+    localProvider.readCodeArtsConfig = originalReadCodeArtsConfig;
+    if (previousNow == null) delete process.env.CODEARTS_BAR_NOW_MS;
+    else process.env.CODEARTS_BAR_NOW_MS = previousNow;
+  }
+}
+
 async function testDashboardUsageRollupCache() {
   const sourceDb = path.join(__dirname, 'fixtures', 'opencode-fixture.db');
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'codearts-bar-dashboard-rollup-'));
@@ -597,6 +799,20 @@ async function testDashboardUsageRollupCache() {
     assert.equal(sessionFast.ok, true);
     assert.equal(sessionFast.total, first.sessionSummary.total);
     assert.equal(sessionFast.perf.usageRollup.sessionHits, 1);
+
+    const deletedId = built.rows[0].id;
+    const writable = new DatabaseSync(dbPath);
+    try {
+      writable.prepare('delete from part where message_id = ?').run(deletedId);
+      writable.prepare('delete from message where id = ?').run(deletedId);
+    } finally {
+      writable.close();
+    }
+    const afterDelete = await dashboardUsageRollup.buildAndWriteUsageRollupForSource({ id: 'custom', label: 'Custom', dbPath }, { adapter: 'sql.js' });
+    assert.equal(afterDelete.usageRollup.status, 'incremental-rebuilt');
+    assert.equal(afterDelete.rows.some((row) => row.id === deletedId), false);
+    assert.equal(afterDelete.usageRollup.rowCount, built.rows.length - 1);
+    assert.ok(dashboardUsageRollup.usageRollupStats().incrementalDeletedRows >= 1);
   } finally {
     if (previousForce == null) delete process.env.CODEARTS_BAR_FORCE_SQLJS; else process.env.CODEARTS_BAR_FORCE_SQLJS = previousForce;
     if (previousConfigDir == null) delete process.env.CODEARTS_BAR_CONFIG_DIR; else process.env.CODEARTS_BAR_CONFIG_DIR = previousConfigDir;
@@ -615,6 +831,8 @@ async function testDashboardUsageRollupCache() {
   testCacheMetricsFormula();
   testCacheMetricPipelineConsistency();
   testLocalDayTrendBuckets();
+  testCalendarDstTrendBuckets();
+  testRollupExclusiveEndBoundaries();
   testRollupSidecarCache();
   testUsageRollupStats();
   testSlowAggregateStats();
@@ -624,6 +842,10 @@ async function testDashboardUsageRollupCache() {
   testErrorBalanceFixture();
   testHealth();
   await testSqliteFixtureSqlJsFallback();
+  await testSqlJsReadsCommittedWal();
+  await testSessionWritesNeverFallBackToSqlJs();
+  await testExactJsonFiltersAndExclusiveRange();
+  await testSnapshotClockAndFixtureIsolation();
   await testProviderDbPagination();
   await testProviderDbAggregates();
   await testDashboardUsageRollupCache();

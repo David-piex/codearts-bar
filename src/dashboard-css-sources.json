@@ -7,5 +7,6 @@
   "styles/domain-chart.css",
   "styles/domain-responsive.css",
   "styles/domain-native.css",
-  "styles/domain-semantic.css"
+  "styles/domain-semantic.css",
+  "styles/domain-workbench.css"
 ]

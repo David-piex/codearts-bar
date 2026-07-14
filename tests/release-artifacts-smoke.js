@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { cleanManagedReleaseDir, isManagedReleaseEntry } = require('../src/release-artifacts');
+const { atomicReplaceReleaseDir, cleanManagedReleaseDir, isManagedReleaseEntry } = require('../src/release-artifacts');
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'codearts-bar-release-clean-'));
 try {
@@ -31,6 +31,37 @@ try {
   assert.equal(fs.existsSync(path.join(dir, 'keep-me.txt')), true);
   assert.equal(isManagedReleaseEntry('notes.txt'), false);
   assert.equal(isManagedReleaseEntry('codearts-bar-cli', true), true);
+
+  const parent = fs.mkdtempSync(path.join(os.tmpdir(), 'codearts-bar-release-atomic-'));
+  try {
+    const release = path.join(parent, 'release');
+    const staging = path.join(parent, '.release-staging');
+    fs.mkdirSync(release);
+    fs.mkdirSync(staging);
+    fs.writeFileSync(path.join(release, 'old.txt'), 'old');
+    fs.writeFileSync(path.join(staging, 'new.txt'), 'new');
+    atomicReplaceReleaseDir(staging, release);
+    assert.equal(fs.readFileSync(path.join(release, 'new.txt'), 'utf8'), 'new');
+    assert.equal(fs.existsSync(path.join(release, 'old.txt')), false);
+
+    const rollbackStaging = path.join(parent, '.release-rollback');
+    const occupiedBackup = path.join(parent, 'occupied-backup');
+    fs.mkdirSync(rollbackStaging);
+    fs.writeFileSync(path.join(rollbackStaging, 'bad.txt'), 'bad');
+    fs.mkdirSync(occupiedBackup);
+    const originalRename = fs.renameSync;
+    let calls = 0;
+    fs.renameSync = (source, target) => {
+      calls += 1;
+      if (calls === 2) throw Object.assign(new Error('simulated publish failure'), { code: 'EACCES' });
+      return originalRename(source, target);
+    };
+    try {
+      assert.throws(() => atomicReplaceReleaseDir(rollbackStaging, release, { backupDir: occupiedBackup }), /simulated publish failure/);
+    } finally { fs.renameSync = originalRename; }
+    assert.equal(fs.readFileSync(path.join(release, 'new.txt'), 'utf8'), 'new', 'failed publish must restore the previous release');
+    assert.equal(fs.existsSync(rollbackStaging), true, 'failed staging must remain available to the caller until cleanup');
+  } finally { fs.rmSync(parent, { recursive: true, force: true }); }
   console.log('ok - managed release cleanup');
 } finally {
   fs.rmSync(dir, { recursive: true, force: true });

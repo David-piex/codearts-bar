@@ -3,5 +3,6 @@
   "domains": ["styles/domain-inspector.css", "styles/domain-controls.css", "styles/domain-analytics.css", "styles/domain-sessions.css", "styles/domain-chart.css"],
   "responsive": ["styles/domain-responsive.css"],
   "native": ["styles/domain-native.css"],
-  "overrides": ["styles/domain-semantic.css"]
+  "semantic": ["styles/domain-semantic.css"],
+  "workbench": ["styles/domain-workbench.css"]
 }

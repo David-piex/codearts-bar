@@ -100,12 +100,15 @@ function viewModel(snapshot) {
         total: finite(item.usage?.total) || 0,
         model: item.usage?.topModel?.model || "",
       })),
+    sessionTotal: finite(snapshot.sessionTotal) ?? (snapshot.sessions || []).length,
+    sessionTotalExact: snapshot.sessionTotalExact !== false,
     requests: (snapshot.requests || []).slice(0, 40).map((item) => ({
       id: item.id || "", time: finite(item.time), sessionTitle: item.sessionTitle || "\u672a\u547d\u540d\u4f1a\u8bdd",
       source: item.source || "", sourceLabel: item.sourceLabel || item.source || "", provider: item.provider || "", model: item.model || "",
       status: item.status ?? "", ok: item.ok !== false, total: finite(item.total) || 0, input: finite(item.input) || 0,
       output: finite(item.output) || 0, cacheRead: finite(item.cacheRead) || 0, cacheWrite: finite(item.cacheWrite) || 0, latencyMs: finite(item.latencyMs),
     })),
+    requestTotal: finite(snapshot.requestTotal) ?? (snapshot.requests || []).length,
     performance: {
       latencyAvg: finite(performance.latency?.avg),
       latencyP95: finite(performance.latency?.p95),

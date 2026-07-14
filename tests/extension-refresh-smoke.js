@@ -44,6 +44,8 @@ const data = require(path.join(root, "src", "extension-data.js"));
   assert.ok(Array.isArray(details.sourceStats));
   assert.ok(Array.isArray(details.sessions));
   assert.ok(details.sessions.length <= 8);
+  assert.ok(details.requestTotal >= details.requests.length);
+  assert.ok(details.sessionTotal >= details.sessions.length);
   assert.ok(detailsMs < 1000, `extension detail aggregate should stay below 1000ms, got ${detailsMs.toFixed(1)}ms`);
   const customEnd = Date.now() - 60000;
   const customStart = customEnd - 7 * 86400000;

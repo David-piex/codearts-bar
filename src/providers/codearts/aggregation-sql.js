@@ -1,7 +1,7 @@
 'use strict';
 
 const agg = require('../../core/aggregator');
-const { assistantWhere, sessionWhere } = require('./sources');
+const { assistantWhere, sessionWhere, resolveTimestamp } = require('./sources');
 
 const {
   safeNumber,
@@ -162,7 +162,7 @@ function modelStatsForSourceSql({ source, db, tables, queryAll, payload }) {
 function sessionSummaryForSourceSql({ source, db, queryAll, payload }) {
   const basePayload = { ...payload, status: 'all' };
   const { where, params } = sessionWhere(basePayload);
-  const weekAgo = safeNumber(payload.timestamp || Date.now()) - 7 * 86400000;
+  const weekAgo = resolveTimestamp(payload) - 7 * 86400000;
   const totalRow = queryAll(db, `select
       count(*) as total,
       sum(case when time_archived is null then 1 else 0 end) as active,
@@ -339,7 +339,7 @@ function aggregateBundleRowsForSourceSql({ db, tables, queryAll, payload, window
       null as latencyMax,
       max(latency) as latencyP95
     from token_rows
-    where time_created >= ${trendStart} and time_created <= ${trendEnd}
+    where time_created >= ${trendStart} and time_created < ${trendEnd}
     group by ${bucketExpression}`;
   return queryAll(db, sql, params);
 }

@@ -21,7 +21,7 @@ function extensionRange(options = {}, timestamp = Date.now()) {
   if (end > timestamp + 60000) throw new Error('结束时间不能晚于当前时间');
   if (preset === 'custom' && end - start > 366 * DAY_MS) throw new Error('时间范围最多支持 366 天');
   const bucketMs = end - start <= 48 * HOUR_MS ? HOUR_MS : DAY_MS;
-  return { preset, start, end, bucketMs };
+  return { preset, start, end, endExclusive: end, bucketMs };
 }
 
 function scopedUsage(items = []) {
@@ -119,14 +119,23 @@ async function getExtensionDetails(options = {}) {
   const timestamp = Date.now();
   const selectedRange = extensionRange(options, timestamp);
   const scope = { source: options.source || 'all', model: options.model || 'all' };
-  const rangePayload = { start: selectedRange.start, end: selectedRange.end };
+  const rangePayload = { start: selectedRange.start, endExclusive: selectedRange.endExclusive };
   const [aggregates, sessionsPage, requestsPage] = await Promise.all([
     localProvider.getDashboardAggregates({ ...config, ...scope, timestamp, range: rangePayload, bucketMs: selectedRange.bucketMs }),
-    localProvider.getSessionsPage({ ...config, limit: 12, offset: 0, source: scope.source, status: 'active', range: rangePayload }),
+    localProvider.getSessionsPage({ ...config, limit: 12, offset: 0, ...scope, status: 'active', range: rangePayload }),
     localProvider.getRequestsPage({ ...config, ...scope, limit: 40, offset: 0, range: rangePayload }),
   ]);
   if (!aggregates?.ok) throw new Error(aggregates?.error || '无法读取 CodeArts 聚合数据');
   const rangeUsage = scopedUsage(aggregates.sourceStats || []);
+  const sessions = (sessionsPage?.items || []).map((item) => sessionView(item, timestamp));
+  const requests = (requestsPage?.items || []).map((item) => ({
+    id: item.id || '', time: item.time || item.createdAt || 0,
+    sessionTitle: redactSensitiveText(item.sessionTitle || '未命名会话'),
+    source: item.source || '', sourceLabel: item.sourceLabel || item.source || '',
+    provider: item.provider || '', model: item.model || '', status: item.status,
+    ok: item.ok !== false, total: Number(item.total || 0), input: Number(item.input || 0), output: Number(item.output || 0),
+    cacheRead: Number(item.cacheRead || 0), cacheWrite: Number(item.cacheWrite || 0), latencyMs: item.latencyMs,
+  }));
   return applyDerived({
     ok: true,
     timestamp,
@@ -138,17 +147,11 @@ async function getExtensionDetails(options = {}) {
     usage: { ...(aggregates.usage || {}), range: rangeUsage },
     trends: { hourly24h: selectedRange.bucketMs === HOUR_MS ? aggregates.buckets || [] : [], daily14d: selectedRange.bucketMs === DAY_MS ? aggregates.buckets || [] : [], range: aggregates.buckets || [] },
     models: (aggregates.modelStats || []).slice(0, 12),
-    sessions: (sessionsPage?.items || [])
-      .filter((item) => scope.model === 'all' || (item.usage?.models || []).some((model) => model.model === scope.model || model.name === scope.model))
-      .map((item) => sessionView(item, timestamp)),
-    requests: (requestsPage?.items || []).map((item) => ({
-      id: item.id || '', time: item.time || item.createdAt || 0,
-      sessionTitle: redactSensitiveText(item.sessionTitle || '未命名会话'),
-      source: item.source || '', sourceLabel: item.sourceLabel || item.source || '',
-      provider: item.provider || '', model: item.model || '', status: item.status,
-      ok: item.ok !== false, total: Number(item.total || 0), input: Number(item.input || 0), output: Number(item.output || 0),
-      cacheRead: Number(item.cacheRead || 0), cacheWrite: Number(item.cacheWrite || 0), latencyMs: item.latencyMs,
-    })),
+    sessions,
+    sessionTotal: Number(sessionsPage?.total || sessions.length),
+    sessionTotalExact: true,
+    requests,
+    requestTotal: Number(requestsPage?.total || requests.length),
     capabilities: extensionCapabilities(),
     performance: emptyPerformance(),
     queue: { window: {} },

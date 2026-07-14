@@ -171,16 +171,86 @@ function normalizeTrendRange(payload = {}) {
   const day = 24 * hour;
   const bucketMs = Math.max(60 * 1000, Number(payload.bucketMs || (payload.bucket === 'day' ? day : hour)) || hour);
   const startValue = payload.start ?? payload.range?.start ?? (payload.bucket === 'day' ? timestamp - 14 * day : timestamp - 24 * hour);
-  const endValue = payload.end ?? payload.range?.end ?? timestamp;
+  const endValue = payload.endExclusive ?? payload.end ?? payload.range?.endExclusive ?? payload.range?.end ?? timestamp;
   const start = Number(startValue);
   const end = Number(endValue);
   const reference = Number.isFinite(start) && Number.isFinite(end) ? start + (end - start) / 2 : timestamp;
   const localOffset = -new Date(reference).getTimezoneOffset() * 60 * 1000;
   const requestedOffset = Number(payload.bucketOffsetMs);
-  const bucketOffsetMs = Number.isFinite(requestedOffset)
+  const hasExplicitOffset = Number.isFinite(requestedOffset);
+  const bucketOffsetMs = hasExplicitOffset
     ? Math.max(-day, Math.min(day, requestedOffset))
     : localOffset;
-  return { timestamp, start, end, bucketMs, bucketOffsetMs };
+  const endExclusive = end;
+  // Compact rollups remain the bounded path for very wide/all-time charts;
+  // calendar rebucketing is needed for normal date windows where DST can
+  // otherwise omit or duplicate a local day.
+  const calendarRebucket = !hasExplicitOffset && bucketMs >= day && (endExclusive - start) <= 400 * day && hasLocalOffsetTransition(start, endExclusive);
+  const transitionBucketMs = calendarRebucket && hasHalfHourOffsetTransition(start, endExclusive) ? 30 * 60 * 1000 : hour;
+  return {
+    timestamp, start, end, endExclusive, bucketMs, bucketOffsetMs,
+    calendarRebucket,
+    queryBucketMs: calendarRebucket ? transitionBucketMs : bucketMs,
+    queryBucketOffsetMs: calendarRebucket ? 0 : bucketOffsetMs,
+  };
+}
+function localOffsetMs(timestamp) { return -new Date(timestamp).getTimezoneOffset() * 60 * 1000; }
+function hasLocalOffsetTransition(start, end) {
+  if (!(Number.isFinite(start) && Number.isFinite(end)) || end <= start) return false;
+  const step = 6 * 60 * 60 * 1000;
+  let previous = localOffsetMs(start);
+  for (let at = start + step; at < end; at += step) {
+    const current = localOffsetMs(at);
+    if (current !== previous) return true;
+    previous = current;
+  }
+  return localOffsetMs(end - 1) !== previous;
+}
+function hasHalfHourOffsetTransition(start, end) {
+  if (!(Number.isFinite(start) && Number.isFinite(end)) || end <= start) return false;
+  const step = 6 * 60 * 60 * 1000;
+  let previous = localOffsetMs(start);
+  for (let at = start + step; at < end; at += step) {
+    const current = localOffsetMs(at);
+    if (Math.abs(current - previous) % (60 * 60 * 1000) !== 0) return true;
+    previous = current;
+  }
+  const current = localOffsetMs(end - 1);
+  return Math.abs(current - previous) % (60 * 60 * 1000) !== 0;
+}
+function localDayStartMs(timestamp) {
+  const date = new Date(timestamp);
+  date.setHours(0, 0, 0, 0);
+  return date.getTime();
+}
+function nextLocalDayStartMs(timestamp) {
+  const date = new Date(timestamp);
+  date.setHours(0, 0, 0, 0);
+  date.setDate(date.getDate() + 1);
+  return date.getTime();
+}
+function rebucketCalendarDays(items = [], trendRange = {}) {
+  const start = Number(trendRange.start || 0);
+  const endExclusive = Number(trendRange.endExclusive ?? trendRange.end ?? 0);
+  if (!(start > 0) || !(endExclusive > start)) return items;
+  const map = new Map();
+  for (const item of items || []) {
+    const key = localDayStartMs(Number(item.start || 0));
+    const prev = map.get(key) || { start: key, end: nextLocalDayStartMs(key), total: 0, input: 0, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0, messages: 0, errors: 0, latencyAvg: null, latencyP95: null, _latencyWeighted: 0, _latencySamples: 0 };
+    addUsage(prev, item);
+    if (Number.isFinite(item.latencyAvg) && Number(item.messages || 0) > 0) {
+      prev._latencyWeighted += item.latencyAvg * Number(item.messages || 0);
+      prev._latencySamples += Number(item.messages || 0);
+    }
+    prev.latencyP95 = Math.max(prev.latencyP95 || 0, item.latencyP95 || 0) || null;
+    map.set(key, prev);
+  }
+  return [...map.values()].sort((a, b) => a.start - b.start).map((item) => {
+    item.latencyAvg = item._latencySamples ? item._latencyWeighted / item._latencySamples : null;
+    delete item._latencyWeighted; delete item._latencySamples;
+    item.label = new Date(item.start).toLocaleString('zh-CN', { hour12: false });
+    return agg.cacheMetrics.withCacheHitMetrics(item);
+  });
 }
 function mergeSummaryParts(parts, payload = {}) {
   const usage = { today: emptyUsage(), window: emptyUsage(), week: emptyUsage(), all: emptyUsage() };
@@ -261,10 +331,24 @@ function densifyBuckets(items, trendRange = {}, maxBuckets = 400) {
   const bucketMs = Math.max(60000, Number(trendRange.bucketMs || 3600000));
   const offset = Number(trendRange.bucketOffsetMs || 0);
   const start = Number(trendRange.start || 0);
-  const end = Number(trendRange.end || 0);
-  if (!(start > 0) || !(end >= start)) return items || [];
+  const endExclusive = Number(trendRange.endExclusive ?? trendRange.end ?? 0);
+  if (!(start > 0) || !(endExclusive > start)) return items || [];
+  if (trendRange.calendarRebucket) {
+    const first = localDayStartMs(start);
+    const last = localDayStartMs(endExclusive - 1);
+    const dense = [];
+    const byStart = new Map((items || []).map((item) => [Number(item.start || 0), item]));
+    for (let cursor = first, count = 0; cursor <= last && count < maxBuckets; cursor = nextLocalDayStartMs(cursor), count += 1) {
+      dense.push(byStart.get(cursor) || agg.cacheMetrics.withCacheHitMetrics({
+        start: cursor, end: nextLocalDayStartMs(cursor), total: 0, input: 0, output: 0, reasoning: 0,
+        cacheRead: 0, cacheWrite: 0, messages: 0, errors: 0, latencyAvg: null, latencyP95: null,
+        label: new Date(cursor).toLocaleString('zh-CN', { hour12: false }),
+      }));
+    }
+    return dense;
+  }
   const first = Math.floor((start + offset) / bucketMs) * bucketMs - offset;
-  const last = Math.floor((end + offset) / bucketMs) * bucketMs - offset;
+  const last = Math.floor((endExclusive - 1 + offset) / bucketMs) * bucketMs - offset;
   const count = Math.floor((last - first) / bucketMs) + 1;
   if (count <= 0 || count > maxBuckets) return items || [];
   const byStart = new Map((items || []).map((item) => [Number(item.start || 0), item]));
@@ -331,6 +415,7 @@ module.exports = {
   sourceList,
   timeWindows,
   normalizeTrendRange,
+  rebucketCalendarDays,
   mergeSummaryParts,
   summaryFromDashboardBundle,
   trendFromDashboardBundle,

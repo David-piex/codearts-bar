@@ -7,7 +7,7 @@ const path = require("node:path");
 const { spawn } = require("node:child_process");
 
 const root = path.join(__dirname, "..");
-const distDir = path.join(root, "dist");
+const distDir = path.resolve(process.env.CODEARTS_BAR_DIST_DIR || path.join(root, "dist"));
 const pkg = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
 
 if (process.env.CODEARTS_BAR_SKIP_RELEASE_SMOKE === "1") {
@@ -102,6 +102,8 @@ function waitForPackageReady({ child, resultFile, timeoutMs = 45000 }) {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "codearts-bar-release-smoke-"));
   const resultFile = path.join(tmpDir, "package-ready.json");
   const userData = path.join(tmpDir, "userData");
+  const isolatedHome = path.join(tmpDir, "home");
+  const fixtureDb = path.join(root, "tests", "fixtures", "opencode-fixture.db");
   const start = Date.now();
   let child = null;
   try {
@@ -115,6 +117,13 @@ function waitForPackageReady({ child, resultFile, timeoutMs = 45000 }) {
         CODEARTS_BAR_PACKAGE_SMOKE: "1",
         CODEARTS_BAR_PACKAGE_SMOKE_RESULT: resultFile,
         CODEARTS_BAR_SMOKE_USER_DATA: userData,
+        CODEARTS_BAR_DB: fixtureDb,
+        CODEARTS_BAR_CONFIG_DIR: path.join(tmpDir, "config"),
+        CODEARTS_BAR_NOW_MS: process.env.CODEARTS_BAR_NOW_MS || "1783512000000",
+        HOME: isolatedHome,
+        USERPROFILE: isolatedHome,
+        APPDATA: path.join(isolatedHome, "AppData", "Roaming"),
+        LOCALAPPDATA: path.join(isolatedHome, "AppData", "Local"),
       },
     });
     const { result } = await waitForPackageReady({ child, resultFile });

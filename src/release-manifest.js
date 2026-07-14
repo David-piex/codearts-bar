@@ -25,6 +25,40 @@ function existingArtifacts(releaseDir, names = []) {
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
+function requireArtifacts(releaseDir, names = []) {
+  const required = [...new Set((names || []).map((name) => String(name || '').trim()).filter(Boolean))];
+  const missing = [];
+  const invalid = [];
+  for (const name of required) {
+    if (path.basename(name) !== name) {
+      invalid.push(name);
+      continue;
+    }
+    const file = path.join(releaseDir, name);
+    let stat = null;
+    try { stat = fs.statSync(file); } catch {}
+    if (!stat || !stat.isFile()) missing.push(name);
+    else if (stat.size <= 0) invalid.push(name);
+  }
+  if (missing.length || invalid.length) {
+    const details = [
+      missing.length ? `missing: ${missing.join(', ')}` : '',
+      invalid.length ? `invalid/empty: ${invalid.join(', ')}` : '',
+    ].filter(Boolean).join('; ');
+    throw new Error(`Release artifact validation failed (${details})`);
+  }
+  return required.map((name) => artifactInfo(path.join(releaseDir, name))).sort((a, b) => a.name.localeCompare(b.name));
+}
+
+function generatedAtFromEnvironment(env = process.env) {
+  if (env.SOURCE_DATE_EPOCH != null && env.SOURCE_DATE_EPOCH !== '') {
+    const seconds = Number(env.SOURCE_DATE_EPOCH);
+    if (!Number.isFinite(seconds) || seconds < 0) throw new Error('SOURCE_DATE_EPOCH must be a non-negative integer');
+    return new Date(Math.trunc(seconds) * 1000).toISOString();
+  }
+  return new Date().toISOString();
+}
+
 function sha256SumsText(artifacts = []) {
   return artifacts.map((item) => `${item.sha256}  ${item.name}`).join('\n') + (artifacts.length ? '\n' : '');
 }
@@ -59,9 +93,10 @@ function writeReleaseManifest(options = {}) {
   const version = String(options.version || '').trim();
   if (!version) throw new Error('writeReleaseManifest requires version');
   fs.mkdirSync(releaseDir, { recursive: true });
-  const generatedAt = options.generatedAt || new Date().toISOString();
+  const generatedAt = options.generatedAt || generatedAtFromEnvironment(options.env || process.env);
   const artifactNames = options.artifactNames || [];
-  const artifacts = existingArtifacts(releaseDir, artifactNames);
+  if (!artifactNames.length) throw new Error('writeReleaseManifest requires artifactNames');
+  const artifacts = requireArtifacts(releaseDir, artifactNames);
   const latest = { version, generatedAt, artifacts };
   fs.writeFileSync(path.join(releaseDir, 'latest.json'), JSON.stringify(latest, null, 2), 'utf8');
   fs.writeFileSync(path.join(releaseDir, 'SHA256SUMS.txt'), sha256SumsText(artifacts), 'utf8');
@@ -69,11 +104,48 @@ function writeReleaseManifest(options = {}) {
   return latest;
 }
 
+function parseSha256Sums(text = '') {
+  const out = new Map();
+  for (const line of String(text).split(/\r?\n/)) {
+    if (!line.trim()) continue;
+    const match = line.match(/^([0-9a-f]{64})  (.+)$/i);
+    if (!match) throw new Error(`Invalid SHA256SUMS line: ${line}`);
+    if (out.has(match[2])) throw new Error(`Duplicate SHA256SUMS entry: ${match[2]}`);
+    out.set(match[2], match[1].toLowerCase());
+  }
+  return out;
+}
+
+function verifyReleaseManifest(options = {}) {
+  const releaseDir = path.resolve(options.releaseDir || 'release');
+  const artifactNames = [...new Set(options.artifactNames || [])].sort((a, b) => a.localeCompare(b));
+  const expectedVersion = options.version == null ? null : String(options.version).trim();
+  const latestFile = path.join(releaseDir, 'latest.json');
+  const sumsFile = path.join(releaseDir, 'SHA256SUMS.txt');
+  if (!fs.existsSync(latestFile) || !fs.existsSync(sumsFile)) throw new Error('Release manifest files are missing');
+  const latest = JSON.parse(fs.readFileSync(latestFile, 'utf8').replace(/^\uFEFF/, ''));
+  if (expectedVersion && latest.version !== expectedVersion) throw new Error(`latest.json version mismatch: expected ${expectedVersion}, got ${latest.version || '<missing>'}`);
+  const sums = parseSha256Sums(fs.readFileSync(sumsFile, 'utf8'));
+  const listed = (latest.artifacts || []).map((item) => item.name).sort((a, b) => a.localeCompare(b));
+  if (JSON.stringify(listed) !== JSON.stringify(artifactNames)) throw new Error('latest.json artifact set does not match required release artifacts');
+  if (sums.size !== artifactNames.length) throw new Error('SHA256SUMS artifact count does not match required release artifacts');
+  for (const item of requireArtifacts(releaseDir, artifactNames)) {
+    const latestItem = latest.artifacts.find((entry) => entry.name === item.name);
+    if (!latestItem || latestItem.size !== item.size || latestItem.sha256 !== item.sha256) throw new Error(`latest.json integrity mismatch for ${item.name}`);
+    if (sums.get(item.name) !== item.sha256) throw new Error(`SHA256SUMS integrity mismatch for ${item.name}`);
+  }
+  return latest;
+}
+
 module.exports = {
   artifactInfo,
   existingArtifacts,
+  generatedAtFromEnvironment,
   releaseNotesText,
+  requireArtifacts,
+  parseSha256Sums,
   sha256,
   sha256SumsText,
   writeReleaseManifest,
+  verifyReleaseManifest,
 };

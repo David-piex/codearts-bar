@@ -33,8 +33,6 @@ function normalizeCustomRange(startValue, endValue, timestamp = Date.now()) {
   if (!Number.isFinite(end) || end <= 0) end = now;
   if (!Number.isFinite(start) || start <= 0) start = end - DAY_MS;
   end = Math.min(end, now);
-  start = floorToMinute(start);
-  end = floorToMinute(end);
   if (start > end) [start, end] = [end, start];
   if (start >= end) start = end - DAY_MS;
   if (end - start > 366 * DAY_MS) start = end - 366 * DAY_MS;
@@ -45,11 +43,10 @@ function dateRangeForFilter({ range, timestamp, customStart, customEnd, customDa
   const normalized = normalizeRangeFilterValue(range, customDays);
   const now = Number(timestamp) || Date.now();
   if (normalized === 'customTime') return normalizeCustomRange(customStart, customEnd, now);
-  if (normalized === 'all') return { start: 0, end: 0 };
-  if (normalized === 'today') return { start: localDayStart(now), end: 0 };
+  if (normalized === 'all') return { start: 0, end: now };
+  if (normalized === 'today') return { start: localDayStart(now), end: now };
   const days = Number(normalized.replace('d', '')) || 1;
-  const minuteNow = floorToMinute(now);
-  return { start: minuteNow - days * DAY_MS, end: 0 };
+  return { start: now - days * DAY_MS, end: now };
 }
 
 if (typeof module !== 'undefined' && module.exports) {

@@ -75,13 +75,19 @@ function currentSessionPageOffset(page = sessionTablePage){
   return Math.max(0, Number(page || 0)) * SESSION_PAGE_SIZE;
 }
 function sessionPagePayload(offset = currentSessionPageOffset(), limit = SESSION_PAGE_SIZE){
+  const range = currentPageRangePayload();
   return {
     limit,
     offset,
     source: sourceFilter,
     status: sessionStatusFilter,
     project: sessionProjectFilter,
-    range: currentPageRangePayload(),
+    range,
+    rangeKey: normalizeRangeFilter(rangeFilter),
+    start: Number(range.start || 0),
+    end: Number(range.endExclusive ?? range.end ?? 0),
+    endExclusive: Number(range.endExclusive ?? range.end ?? 0),
+    generation: dashboardRequestGeneration,
     query: sessionQuery,
   };
 }
@@ -138,7 +144,7 @@ function mergeSessionPageIntoSnapshot(items = []){
   if(!snapshot?.ok || !Array.isArray(items) || !items.length) return;
   const map = new Map((snapshot.sessions || []).map((item) => [sessionKeyFor(item), item]));
   for(const item of items) map.set(sessionKeyFor(item), item);
-  snapshot.sessions = [...map.values()].sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+  snapshot.sessions = [...map.values()].sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0) || sessionKeyFor(a).localeCompare(sessionKeyFor(b)));
 }
 function patchSessionTableRowsChunked(items = [], total = items.length, page = sessionTablePage){
   const tbody = document.querySelector('.session-scroll tbody');
@@ -187,9 +193,11 @@ async function refreshSessionPageCache(page = sessionTablePage, opts = {}){
   if(sessionPageLoading && !opts.force) return false;
   const token = ++sessionPageLoadToken;
   sessionPageLoading = true;
+  const payload = sessionPagePayload(currentSessionPageOffset(page), SESSION_PAGE_SIZE);
+  const ticket = captureDashboardRequest(payload);
   try {
-    const data = await ipcRenderer.invoke('dashboard:getSessionsPage', sessionPagePayload(currentSessionPageOffset(page), SESSION_PAGE_SIZE));
-    if(token !== sessionPageLoadToken) return false;
+    const data = await ipcRenderer.invoke('dashboard:getSessionsPage', payload);
+    if(token !== sessionPageLoadToken || !dashboardRequestIsCurrent(ticket)) return false;
     if(!data?.ok || !Array.isArray(data.items)) return false;
     sessionPageCache = { key, items: data.items, total: Number(data.total || data.items.length), page: Number(page || 0), timestamp: Number(data.snapshotTimestamp || Date.now()) };
     mergeSessionPageIntoSnapshot(data.items);
@@ -198,7 +206,7 @@ async function refreshSessionPageCache(page = sessionTablePage, opts = {}){
     console.warn('[dashboard] session page failed', error);
     return false;
   } finally {
-    if(token === sessionPageLoadToken) sessionPageLoading = false;
+    if(token === sessionPageLoadToken && dashboardRequestIsCurrent(ticket)) sessionPageLoading = false;
   }
 }
 function scheduleSessionPageRefresh(s = snapshot || {}, page = sessionTablePage){
@@ -252,19 +260,22 @@ function mergeSessionPageItems(items = []){
     seen.add(key);
     fresh.push(item);
   }
-  if(fresh.length) snapshot.sessions = [...(snapshot.sessions || []), ...fresh].sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+  if(fresh.length) snapshot.sessions = [...(snapshot.sessions || []), ...fresh].sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0) || sessionKeyFor(a).localeCompare(sessionKeyFor(b)));
   return fresh;
 }
 async function loadSessionPage(offset, limit = SESSION_PAGE_SIZE){
   if(sessionPageLoading) return null;
   sessionPageLoading = true;
+  const payload = sessionPagePayload(offset, limit);
+  const ticket = captureDashboardRequest(payload);
   try {
-    return await ipcRenderer.invoke('dashboard:getSessionsPage', sessionPagePayload(offset, limit));
+    const page = await ipcRenderer.invoke('dashboard:getSessionsPage', payload);
+    return dashboardRequestIsCurrent(ticket) ? page : null;
   } catch (error) {
     console.warn('[dashboard] session page failed', error);
     return null;
   } finally {
-    sessionPageLoading = false;
+    if(dashboardRequestIsCurrent(ticket)) sessionPageLoading = false;
   }
 }
 async function appendSessionRows(){

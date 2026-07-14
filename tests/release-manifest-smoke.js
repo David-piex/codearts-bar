@@ -5,7 +5,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const crypto = require("node:crypto");
-const { writeReleaseManifest } = require("../src/release-manifest");
+const { verifyReleaseManifest, writeReleaseManifest } = require("../src/release-manifest");
 
 function hash(text) {
   return crypto.createHash("sha256").update(Buffer.from(text)).digest("hex");
@@ -25,11 +25,19 @@ try {
     fs.writeFileSync(path.join(tmpDir, name), content);
   }
 
-  const latest = writeReleaseManifest({
+  assert.throws(() => writeReleaseManifest({
     releaseDir: tmpDir,
     version: "9.9.9",
     generatedAt: "2026-07-09T00:00:00.000Z",
     artifactNames: [...Object.keys(files), "missing-artifact.exe"],
+  }), /missing: missing-artifact\.exe/);
+  assert.equal(fs.existsSync(path.join(tmpDir, "latest.json")), false, "manifest files must not be written after incomplete artifact validation");
+
+  const latest = writeReleaseManifest({
+    releaseDir: tmpDir,
+    version: "9.9.9",
+    generatedAt: "2026-07-09T00:00:00.000Z",
+    artifactNames: Object.keys(files),
   });
 
   assert.equal(latest.version, "9.9.9");
@@ -51,6 +59,21 @@ try {
   assert.match(notes, /SHA256SUMS\.txt/);
   assert.match(notes, /codearts-bar-status\.vsix/);
   assert.match(notes, /codearts-bar-jetbrains-9\.9\.9\.zip/);
+
+  verifyReleaseManifest({ releaseDir: tmpDir, version: "9.9.9", artifactNames: Object.keys(files) });
+  assert.throws(() => verifyReleaseManifest({ releaseDir: tmpDir, version: "9.9.8", artifactNames: Object.keys(files) }), /version mismatch/);
+  fs.appendFileSync(path.join(tmpDir, "SHA256SUMS.txt"), `${hash("cli-fixture")}  codearts-bar-cli.zip\n`);
+  assert.throws(() => verifyReleaseManifest({ releaseDir: tmpDir, version: "9.9.9", artifactNames: Object.keys(files) }), /Duplicate SHA256SUMS entry/);
+  writeReleaseManifest({ releaseDir: tmpDir, version: "9.9.9", generatedAt: "2026-07-09T00:00:00.000Z", artifactNames: Object.keys(files) });
+  fs.writeFileSync(path.join(tmpDir, "codearts-bar-cli.zip"), "tampered");
+  assert.throws(() => verifyReleaseManifest({ releaseDir: tmpDir, artifactNames: Object.keys(files) }), /integrity mismatch/);
+
+  const epochDir = fs.mkdtempSync(path.join(os.tmpdir(), "codearts-bar-release-epoch-"));
+  try {
+    fs.writeFileSync(path.join(epochDir, "artifact.bin"), "same-content");
+    const deterministic = writeReleaseManifest({ releaseDir: epochDir, version: "1.0.0", artifactNames: ["artifact.bin"], env: { SOURCE_DATE_EPOCH: "0" } });
+    assert.equal(deterministic.generatedAt, "1970-01-01T00:00:00.000Z");
+  } finally { fs.rmSync(epochDir, { recursive: true, force: true }); }
 
   console.log("ok - release manifest smoke");
 } finally {

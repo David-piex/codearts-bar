@@ -1,6 +1,11 @@
 const ipcRenderer = window.codeartsApi;
 if(!ipcRenderer || typeof ipcRenderer.invoke !== 'function') throw new Error('Dashboard preload API unavailable');
 
+function rendererNow(){
+  const injected = Number(window.codeartsTestNowMs || 0);
+  return Number.isFinite(injected) && injected > 0 ? injected : Date.now();
+}
+
 function serializeRendererError(error){
   if(error instanceof Error) return { name: error.name || 'Error', message: error.message || String(error), stack: error.stack || '' };
   if(error && typeof error === 'object'){
@@ -45,12 +50,16 @@ let snapshot = null;
 let copyResetTimer = null;
 let autoRefreshTimer = null;
 let refreshInFlight = null;
+let refreshInFlightScope = '';
+let dashboardRequestGeneration = 0;
+let dashboardScopeTimestamp = rendererNow();
+let lastRealtimeSnapshotTimestamp = 0;
 let sourceFilter = localStorage.getItem('statsSource') || 'all';
 let modelFilter = localStorage.getItem('statsModel') || 'all';
 let rangeFilter = localStorage.getItem('statsRange') || 'today';
 let customRangeDays = Math.max(2, Math.min(365, Number(localStorage.getItem('customRangeDays') || '60') || 60));
-let customDateStart = Number(localStorage.getItem('customDateStart') || 0) || (Date.now() - 86400000);
-let customDateEnd = Number(localStorage.getItem('customDateEnd') || 0) || Date.now();
+let customDateStart = Number(localStorage.getItem('customDateStart') || 0) || (rendererNow() - 86400000);
+let customDateEnd = Number(localStorage.getItem('customDateEnd') || 0) || rendererNow();
 let dateRangeOpen = false;
 let dateRangeDraftStart = 0;
 let dateRangeDraftEnd = 0;

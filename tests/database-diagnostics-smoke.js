@@ -75,7 +75,7 @@ try {
     },
     appendLog: () => {},
     logPath: () => path.join(tmpHome, "codearts-bar.log"),
-    getCrashState: () => null,
+    getCrashState: () => ({ issues: [{ code: "renderer_error", detail: "Authorization: Bearer should-not-leak" }] }),
     recordRendererError: () => {},
     getLastSnapshot: () => null,
     getLastDashboardSnapshot: () => null,
@@ -112,6 +112,11 @@ try {
   assert.equal(diagnosticsPayload.summary.aggregateCache.hits, 1);
   assert.equal(diagnosticsPayload.summary.aggregateCache.limit, 64);
   assert.equal(diagnosticsPayload.performance.slowAggregates.count, 2);
+  for (const key of ["database", "runtime", "logPath", "userData", "distPath"]) {
+    assert.equal(Object.prototype.hasOwnProperty.call(diagnosticsPayload, key), false, `diagnostics IPC must not expose raw ${key}`);
+  }
+  assert.doesNotMatch(JSON.stringify(diagnosticsPayload), new RegExp(tmpHome.replace(/[\\^$.*+?()[\]{}|]/g, "\\$&")));
+  assert.doesNotMatch(JSON.stringify(diagnosticsPayload), /should-not-leak/);
   assert.equal(diagnosticsPayload.summary.slowAggregates.count, 2);
   assert.equal(diagnosticsPayload.summary.slowAggregates.failed, 1);
   assert.equal(diagnosticsPayload.summary.slowAggregates.maxMs, 768.2);

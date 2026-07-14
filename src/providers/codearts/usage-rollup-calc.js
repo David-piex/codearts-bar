@@ -167,7 +167,7 @@ function filterRowsForPayload(rows = [], payload = {}) {
   return rows.filter((row) => {
     const time = toNumber(row.timeCreated);
     if (range.start && time < range.start) return false;
-    if (range.end && time > range.end) return false;
+    if (range.end && time >= range.end) return false;
     return true;
   });
 }
@@ -186,11 +186,12 @@ function bucketBoundarySafe(boundary, minTime, maxTime, mode = 'start', bucketMs
   const value = toNumber(boundary);
   if (!value) return true;
   if (mode === 'start' && (!minTime || value <= minTime)) return true;
-  if (mode === 'end' && (!maxTime || value >= maxTime)) return true;
+  if (mode === 'end' && (!maxTime || value > maxTime)) return true;
   if (mode === 'start') return value % bucketMs === 0;
-  return (value + 1) % bucketMs === 0;
+  return value % bucketMs === 0;
 }
 function compactRollupIsSafeForDashboard(compact, { payload = {}, windows = {}, trendRange = {} } = {}) {
+  if (trendRange.calendarRebucket) return false;
   if (!compact || !Array.isArray(compact.hourly) || !compact.hourly.length) return false;
   const bucketMs = Math.max(60000, toNumber(compact.bucketMs, HOUR_MS));
   if (bucketMs !== HOUR_MS) return false;
@@ -201,7 +202,7 @@ function compactRollupIsSafeForDashboard(compact, { payload = {}, windows = {}, 
   const maxTime = toNumber(compact.maxTime);
   const range = normalizeRange(payload.range || {});
   const starts = [range.start, windows.dayStartMs, windows.windowStartMs, windows.weekStartMs, trendRange.start];
-  const ends = [range.end, trendRange.end];
+  const ends = [range.end, trendRange.endExclusive ?? trendRange.end];
   return starts.every((value) => bucketBoundarySafe(value, minTime, maxTime, 'start', bucketMs))
     && ends.every((value) => bucketBoundarySafe(value, minTime, maxTime, 'end', bucketMs));
 }
@@ -211,7 +212,7 @@ function compactRowsInRange(rows = [], start = 0, end = 0) {
   return rows.filter((row) => {
     const rowStart = toNumber(row.start);
     if (s && rowStart < s) return false;
-    if (e && rowStart > e) return false;
+    if (e && rowStart >= e) return false;
     return true;
   });
 }
@@ -227,7 +228,7 @@ function trendBucketsFromCompact(compact, trendRange = {}) {
   const sourceBucketMs = Math.max(60000, toNumber(compact.bucketMs, HOUR_MS));
   const bucketMs = Math.max(sourceBucketMs, toNumber(trendRange.bucketMs, sourceBucketMs));
   const start = toNumber(trendRange.start);
-  const end = toNumber(trendRange.end);
+  const end = toNumber(trendRange.endExclusive ?? trendRange.end);
   const bucketOffsetMs = toNumber(trendRange.bucketOffsetMs);
   const map = new Map();
   for (const row of compactRowsInRange(compact.hourly || [], start, end)) {
@@ -300,7 +301,7 @@ function sessionSummaryPartFromRollup(rollup, payload = {}) {
   const sessions = normalizeSessionRows(rollup.sessions || []).filter((row) => {
     const updated = toNumber(row.timeUpdated);
     if (range.start && updated < range.start) return false;
-    if (range.end && updated > range.end) return false;
+    if (range.end && updated >= range.end) return false;
     if (project && row.directory !== project) return false;
     return true;
   });
@@ -333,13 +334,13 @@ function sessionSummaryPartFromRollup(rollup, payload = {}) {
 function trendBucketsFromRows(rows = [], trendRange = {}) {
   const bucketMs = Math.max(60000, toNumber(trendRange.bucketMs, 3600000));
   const start = toNumber(trendRange.start);
-  const end = toNumber(trendRange.end);
+  const end = toNumber(trendRange.endExclusive ?? trendRange.end);
   const bucketOffsetMs = toNumber(trendRange.bucketOffsetMs);
   const map = new Map();
   for (const row of rows) {
     const time = toNumber(row.timeCreated);
     if (start && time < start) continue;
-    if (end && time > end) continue;
+    if (end && time >= end) continue;
     const bucket = Math.floor((time + bucketOffsetMs) / bucketMs) * bucketMs - bucketOffsetMs;
     const prev = map.get(bucket) || {
       start: bucket,

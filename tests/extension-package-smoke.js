@@ -10,6 +10,7 @@ const extensionDir = path.join(root, ".cache", "extension-staging");
 const extensionPkg = JSON.parse(fs.readFileSync(path.join(extensionDir, "package.json"), "utf8").replace(/^\uFEFF/, ""));
 const providerDir = path.join(root, "src", "providers", "codearts");
 const coreDir = path.join(root, "src", "core");
+const protocolDir = path.join(root, "src", "protocol");
 assert.ok(extensionPkg.files.includes("extension-data.js"), "extension package should include staged data loader");
 assert.ok(fs.existsSync(path.join(extensionDir, "extension-data.js")), "prepared extension should contain extension-data.js");
 const requiredProviderFiles = fs.readdirSync(providerDir)
@@ -20,8 +21,12 @@ const requiredCoreFiles = fs.readdirSync(coreDir)
   .filter((name) => name.endsWith(".js") && name !== "chart-axis.js")
   .map((name) => `core/${name}`)
   .sort();
+const requiredProtocolFiles = fs.readdirSync(protocolDir)
+  .filter((name) => name.endsWith(".js"))
+  .map((name) => `protocol/${name}`)
+  .sort();
 
-for (const file of [...requiredCoreFiles, ...requiredProviderFiles]) {
+for (const file of [...requiredCoreFiles, ...requiredProviderFiles, ...requiredProtocolFiles]) {
   assert.ok(extensionPkg.files.includes(file), `extension files whitelist should include ${file}`);
   const stagedFile = path.join(extensionDir, file);
   const sourceFile = path.join(root, 'src', file);
@@ -63,10 +68,11 @@ for (const file of sharedRuntimeFiles) {
   );
 }
 
-const vsix = path.join(root, "release", "codearts-bar-status.vsix");
-if (fs.existsSync(vsix)) {
+const vsix = process.env.CODEARTS_BAR_VSIX ? path.resolve(process.env.CODEARTS_BAR_VSIX) : "";
+if (vsix) {
+  assert.ok(fs.existsSync(vsix), `VSIX smoke target does not exist: ${vsix}`);
   const entries = execFileSync("tar.exe", ["-tf", vsix], { encoding: "utf8" }).split(/\r?\n/).filter(Boolean);
-  for (const file of [...requiredCoreFiles, ...requiredProviderFiles]) {
+  for (const file of [...requiredCoreFiles, ...requiredProviderFiles, ...requiredProtocolFiles]) {
     assert.ok(entries.includes(`extension/${file}`), `VSIX should contain extension/${file}`);
   }
   const unpackDir = fs.mkdtempSync(path.join(require("node:os").tmpdir(), "codearts-vsix-smoke-"));
@@ -78,4 +84,4 @@ if (fs.existsSync(vsix)) {
   }
 }
 
-console.log(`ok - extension package smoke core=${requiredCoreFiles.length} providers=${requiredProviderFiles.length}`);
+console.log(`ok - extension package smoke core=${requiredCoreFiles.length} providers=${requiredProviderFiles.length} protocol=${requiredProtocolFiles.length}`);
