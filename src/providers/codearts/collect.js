@@ -63,7 +63,7 @@ function requestRowsFromMessages(messages, sessions, parts) {
   return (messages || [])
     .map((row) => {
       const data = agg.parseJsonSafe(row.data, {});
-      if (data.role !== 'assistant') return null;
+      if (!agg.isMeaningfulAssistant(row, partMap)) return null;
       const token = agg.tokenForMessage(row, partMap);
       const perf = agg.messagePerf(row, partMap, new Map()) || {};
       const session = sessionMap.get(`${row.source || ''}:${row.session_id || ''}`) || {};
@@ -135,6 +135,11 @@ function queryMessagesForSessions(queryAll, db, source, sessionIds, payload = {}
   if (!ids.length) return [];
   const where = [`session_id in (${placeholders(ids)})`];
   const params = [...ids];
+  const range = payload.range || {};
+  const start = Number(range.start || 0);
+  const end = Number(range.endExclusive ?? range.end ?? 0);
+  if (Number.isFinite(start) && start > 0) { where.push('time_created >= ?'); params.push(start); }
+  if (Number.isFinite(end) && end > 0) { where.push('time_created < ?'); params.push(end); }
   if (payload.model && payload.model !== 'all') {
     where.push(`${jsonExtractExpr('data', '$.role')} = 'assistant'`);
     where.push(`${messageModelExpr('data')} = ?`);

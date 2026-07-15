@@ -33,6 +33,10 @@ for (const file of required) {
 }
 const dashboardSource = fs.readFileSync(path.join(pluginRoot, 'src/main/java/com/codearts/bar/toolwindow/CodeArtsDashboardPanel.java'), 'utf8');
 const uiSource = fs.readFileSync(path.join(pluginRoot, 'src/main/java/com/codearts/bar/toolwindow/DashboardUi.java'), 'utf8');
+const gradleBuildSource = fs.readFileSync(path.join(pluginRoot, 'build.gradle.kts'), 'utf8');
+const gradleRunnerSource = fs.readFileSync(path.join(root, 'src/run-jetbrains-gradle.js'), 'utf8');
+assert.match(gradleBuildSource, /gradleProperty\("codeartsBarVersion"\)/, 'JetBrains version must participate in the Gradle configuration-cache key');
+assert.match(gradleRunnerSource, /-PcodeartsBarVersion=\$\{packageVersion\}/, 'JetBrains builds must receive the current package version explicitly');
 assert.match(dashboardSource, /disposed \|\| generation != analyticsQueryGeneration\.get\(\)/, 'analytics callbacks must ignore disposed panels');
 assert.match(dashboardSource, /UsageSnapshot baseSnapshot = service\.getSnapshot\(\);[\s\S]*renderReadFailure\(baseSnapshot\.error\(\)\)/, 'base data-source errors must take priority over analytics range errors');
 assert.match(dashboardSource, /current = snapshot;\s*if \(!snapshot\.ok\(\)\)/, 'failed snapshots must become the authoritative dashboard state');

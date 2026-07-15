@@ -890,13 +890,13 @@ final class CodeArtsDashboardPanel extends SimpleToolWindowPanel implements Disp
         requestDetailVisible = true;
         requestDetailTitle.setText(empty(row.model(), empty(row.provider(), "请求详情")));
         String detailMeta = date(row.time()) + " · " + sourceLabel(row.source()) + " · "
-                + (row.success() ? "成功" : "错误 " + row.status()) + " · 总耗时 " + duration((double) row.latencyMs());
+                + row.displayStatus() + " · 总耗时 " + duration((double) row.latencyMs());
         requestDetailMeta.setText(detailMeta);
         requestDetailMeta.setToolTipText(detailMeta);
         requestInput.setText(tokens(row.input()));
         requestOutput.setText(tokens(row.output()));
         requestReasoning.setText(tokens(row.reasoning()));
-        requestCache.setText(tokens(row.cacheRead()));
+        requestCache.setText(tokens(row.cacheRead()) + " / " + tokens(row.cacheWrite()));
         requestTtft.setText(duration(row.ttftMs()));
         requestSpeed.setText(row.outputTokensPerSec() == null ? "--" : new DecimalFormat("0.0/s").format(row.outputTokensPerSec()));
         requestContentLayout.show(requestContentDeck, "detail");
@@ -1327,7 +1327,7 @@ final class CodeArtsDashboardPanel extends SimpleToolWindowPanel implements Disp
 
         JPanel facts = groupedGrid(3, 2,
                 fact("输入", requestInput), fact("输出", requestOutput),
-                fact("推理", requestReasoning), fact("缓存命中", requestCache),
+                fact("推理", requestReasoning), fact("缓存命中 / 创建", requestCache),
                 fact("TTFT", requestTtft), fact("输出速度", requestSpeed));
         requestDetailPanel.add(facts, BorderLayout.CENTER);
     }

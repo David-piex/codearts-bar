@@ -5,10 +5,17 @@ const { spawnSync } = require('node:child_process');
 
 const root = path.resolve(__dirname, '..');
 const projectDir = path.join(root, 'jetbrains-plugin');
+const packageVersion = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8').replace(/^\uFEFF/, '')).version;
+if (!/^[0-9A-Za-z][0-9A-Za-z.+-]*$/u.test(String(packageVersion || ''))) {
+  throw new Error(`Invalid package version for JetBrains build: ${packageVersion}`);
+}
 const wrapperName = process.platform === 'win32' ? 'gradlew.bat' : './gradlew';
 const wrapper = path.join(projectDir, process.platform === 'win32' ? 'gradlew.bat' : 'gradlew');
 if (!fs.existsSync(wrapper)) throw new Error(`Missing Gradle wrapper: ${wrapper}`);
-const gradleArgs = process.argv.slice(2).length ? process.argv.slice(2) : ['buildPlugin'];
+const requestedArgs = process.argv.slice(2).length ? process.argv.slice(2) : ['buildPlugin'];
+const gradleArgs = requestedArgs.some((arg) => String(arg).startsWith('-PcodeartsBarVersion='))
+  ? requestedArgs
+  : [`-PcodeartsBarVersion=${packageVersion}`, ...requestedArgs];
 function usableJavaHome(candidate) {
   if (!candidate) return false;
   const java = path.join(candidate, 'bin', process.platform === 'win32' ? 'java.exe' : 'java');

@@ -21,7 +21,11 @@ public record UsageSnapshot(
     public record ModelUsage(String name, String provider, String model, long total, long input, long output, long reasoning, long cacheRead, long requests, long errors, Double cacheHitRate, Double latencyAvg, Double latencyP95) {}
     public record SourceInfo(String label, String adapter, String dbPath, long total, long requests, long errors, Double latencyAvg, Double latencyP95) {}
     public record SessionInfo(String id, String title, String directory, String source, long updatedAt, long ageMs, long total, long input, long output, long requests, String model, long errors, Double cacheHitRate) {}
-    public record RequestInfo(String id, String sessionTitle, String source, String provider, String model, long time, int status, boolean success, long total, long input, long output, long reasoning, long cacheRead, long latencyMs, Double ttftMs, Double outputTokensPerSec) {}
+    public record RequestInfo(String id, String sessionTitle, String source, String provider, String model, long time, Integer status, boolean success, long total, long input, long output, long reasoning, long cacheRead, long cacheWrite, long latencyMs, Double ttftMs, Double outputTokensPerSec) {
+        public String displayStatus() {
+            return success ? "成功" : status == null || status <= 0 ? "错误" : "错误 " + status;
+        }
+    }
     public record AnalyticsData(UsageWindow usage, List<TrendPoint> trend, List<ModelUsage> models, List<SourceInfo> sources) {}
     public record Performance(long samples, long errors, Double errorRate, Double latencyAvg, Double latencyP95, Double ttftAvg, Double ttftP95, Double firstContentAvg, Double outputTokensPerSec) {}
     public record QueueStats(long samples, Double avgMs, Double p95Ms, Double maxMs) {}
@@ -108,7 +112,7 @@ public record UsageSnapshot(
         return new AnalyticsData(data.usage(), List.copyOf(daily), data.models(), data.sources());
     }
     private static List<SessionInfo> sessions(JsonArray a) { List<SessionInfo> out=new ArrayList<>(); for(JsonElement e:a){if(!e.isJsonObject())continue;JsonObject x=e.getAsJsonObject(),u=object(x,"usage"),top=object(u,"topModel");out.add(new SessionInfo(string(x,"id"),string(x,"title"),string(x,"directory"),first(string(x,"source"),string(x,"sourceLabel")),number(x,"updatedAt"),number(x,"age"),number(u,"total"),number(u,"input"),number(u,"output"),numberEither(u,"modelCalls","messages"),string(top,"model"),number(u,"errors"),decimalOrNull(u,"cacheHitRate")));}return List.copyOf(out); }
-    private static List<RequestInfo> requests(JsonArray a) { List<RequestInfo> out=new ArrayList<>(); for(JsonElement e:a){if(!e.isJsonObject())continue;JsonObject x=e.getAsJsonObject();out.add(new RequestInfo(string(x,"id"),string(x,"sessionTitle"),first(string(x,"sourceLabel"),string(x,"source")),string(x,"provider"),string(x,"model"),numberEither(x,"time","createdAt"),(int)number(x,"status"),bool(x,"ok",true),number(x,"total"),number(x,"input"),number(x,"output"),number(x,"reasoning"),number(x,"cacheRead"),number(x,"latencyMs"),decimalOrNull(x,"ttftMs"),decimalOrNull(x,"outputTokensPerSec")));}return List.copyOf(out); }
+    private static List<RequestInfo> requests(JsonArray a) { List<RequestInfo> out=new ArrayList<>(); for(JsonElement e:a){if(!e.isJsonObject())continue;JsonObject x=e.getAsJsonObject();out.add(new RequestInfo(string(x,"id"),string(x,"sessionTitle"),first(string(x,"sourceLabel"),string(x,"source")),string(x,"provider"),string(x,"model"),numberEither(x,"time","createdAt"),integerOrNull(x,"status"),bool(x,"ok",true),number(x,"total"),number(x,"input"),number(x,"output"),number(x,"reasoning"),number(x,"cacheRead"),number(x,"cacheWrite"),number(x,"latencyMs"),decimalOrNull(x,"ttftMs"),decimalOrNull(x,"outputTokensPerSec")));}return List.copyOf(out); }
     private static Performance performance(JsonObject x) { JsonObject latency=object(x,"latency"),ttft=object(x,"ttft"),content=object(x,"firstContentApprox"),rate=object(x,"outputTokensPerSec");return new Performance(number(x,"samples"),number(x,"errors"),decimalOrNull(x,"errorRate"),decimalOrNull(latency,"avg"),decimalOrNull(latency,"p95"),decimalOrNull(ttft,"avg"),decimalOrNull(ttft,"p95"),decimalOrNull(content,"avg"),decimalOrNull(rate,"avg")); }
     private static QueueStats queue(JsonObject x) { return new QueueStats(number(x,"samples"),decimalOrNull(x,"avg"),decimalOrNull(x,"p95"),decimalOrNull(x,"max")); }
     private static JsonObject object(JsonObject o,String k){JsonElement v=o==null?null:o.get(k);return v!=null&&v.isJsonObject()?v.getAsJsonObject():new JsonObject();}
@@ -117,6 +121,7 @@ public record UsageSnapshot(
     private static long number(JsonObject o,String k){JsonElement v=o==null?null:o.get(k);try{return v==null||v.isJsonNull()?0:v.getAsLong();}catch(Exception e){return 0;}}
     private static long numberEither(JsonObject o,String a,String b){return o.has(a)?number(o,a):number(o,b);}
     private static Long longOrNull(JsonObject o,String k){JsonElement v=o==null?null:o.get(k);try{return v==null||v.isJsonNull()?null:v.getAsLong();}catch(Exception e){return null;}}
+    private static Integer integerOrNull(JsonObject o,String k){Long v=longOrNull(o,k);return v==null||v<Integer.MIN_VALUE||v>Integer.MAX_VALUE?null:v.intValue();}
     private static Double decimalOrNull(JsonObject o,String k){JsonElement v=o==null?null:o.get(k);try{return v==null||v.isJsonNull()?null:v.getAsDouble();}catch(Exception e){return null;}}
     private static double decimal(JsonObject o,String k){Double v=decimalOrNull(o,k);return v==null?0:v;}
     private static boolean bool(JsonObject o,String k,boolean f){JsonElement v=o==null?null:o.get(k);try{return v==null||v.isJsonNull()?f:v.getAsBoolean();}catch(Exception e){return f;}}

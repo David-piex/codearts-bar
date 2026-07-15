@@ -25,6 +25,23 @@ function rowsDataSignature(s){
 }
 function requestCountForSnapshot(s){ return Number(s?.requestTotal || (Array.isArray(s?.requestLog) ? s.requestLog.length : 0) || 0); }
 function isLargeRequestSnapshot(s, limit = 5000){ return requestCountForSnapshot(s) > limit || (Array.isArray(s?.requestLog) && s.requestLog.length > limit); }
+function requestRowsAreComplete(s){
+  const rows = Array.isArray(s?.requestLog) ? s.requestLog : [];
+  if(s?.requestLogSampled === true) return false;
+  if(s?.requestLogComplete === true) return true;
+  const total = Number(s?.requestTotal || 0);
+  return !total || total <= rows.length;
+}
+function analyticsAggregateReady(s){
+  if(!s?.ok) return false;
+  try {
+    if(s.aggregateScope) return s.aggregateScope === currentTrendScopeKey(s, isDayRange());
+  } catch { return false; }
+  return Boolean(s.sourceStatsScope?.complete)
+    && sourceFilter === 'all'
+    && modelFilter === 'all'
+    && rangeFilter === 'all';
+}
 function normalizeUsageMetric(st = {}){
   return {
     total: Number(st.total || 0),
@@ -177,6 +194,25 @@ function summaryOnlyUsageForView(s){
   if(Number(filter.start || 0) !== Number(start || 0) || filterEnd !== Number(end || 0)) return null;
   return normalizeUsageMetric(s?.usage?.all || {});
 }
+
+function aggregateModelStatsForView(s){
+  const items = Array.isArray(s?.models) ? s.models : [];
+  if(!items.length) return null;
+  if(!s?.aggregateScope){
+    return analyticsAggregateReady(s)
+      ? items.map((item) => ({ key: item.model || item.key || item.name || 'unknown', items: [], stats: normalizeUsageMetric(item) })).sort((a, b) => b.stats.total - a.stats.total)
+      : null;
+  }
+  try {
+    const scope = currentTrendScopeKey(s, isDayRange());
+    if(s.aggregateScope !== scope) return null;
+  } catch { return null; }
+  return items.map((item) => ({
+    key: item.model || item.key || item.name || 'unknown',
+    items: [],
+    stats: normalizeUsageMetric(item),
+  })).sort((a, b) => b.stats.total - a.stats.total);
+}
 function summaryUsageForView(rows, s){
   const aggregate = currentAggregateUsage(s);
   if(aggregate) return aggregate;
@@ -188,6 +224,7 @@ function summaryUsageForView(rows, s){
     if(rangeFilter === '7d') return normalizeUsageMetric(exactUsageFromSnapshot(s, 'week'));
     if(rangeFilter === 'all') return normalizeUsageMetric(exactUsageFromSnapshot(s, 'all'));
   }
+  if(!requestRowsAreComplete(s)) return { incomplete: true, total: 0, input: 0, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0, requests: 0, errors: 0, latencies: [], ttfts: [], firstContents: [], speeds: [] };
   return sumReq(rows);
 }
 
@@ -197,7 +234,12 @@ function groupBy(rows, fn){ const map = new Map(); for(const r of rows){ const k
 
 function exactUsageFromSnapshot(s, key){ const u = s.usage || {}; if(key === 'today') return u.today || {}; if(key === 'window') return u.window || {}; if(key === 'week') return u.week || {}; return u.all || {}; }
 
-function periodTotal(s, key){ if(sourceFilter === 'all' && modelFilter === 'all') return exactUsageFromSnapshot(s, key); const range = key === 'today' ? 'today' : key === 'window' ? '1d' : key === 'week' ? '7d' : 'all'; return sumReq(filterRows(s, { range })); }
+function periodTotal(s, key){
+  if(sourceFilter === 'all' && modelFilter === 'all') return exactUsageFromSnapshot(s, key);
+  if(!requestRowsAreComplete(s)) return { unavailable: true };
+  const range = key === 'today' ? 'today' : key === 'window' ? '1d' : key === 'week' ? '7d' : 'all';
+  return sumReq(filterRows(s, { range }));
+}
 
 function queueForRange(s){ if(!s.queue) return {}; if(rangeFilter === 'customTime') return s.queue.all || {}; if(rangeFilter === 'today') return s.queue.today || {}; if(rangeFilter === '1d') return s.queue.window || {}; if(rangeFilter === '7d') return s.queue.week || {}; return s.queue.all || {}; }
 

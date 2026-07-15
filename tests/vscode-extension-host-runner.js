@@ -8,6 +8,10 @@ const { runTests } = require('@vscode/test-electron');
 (async () => {
   const root = path.resolve(__dirname, '..');
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'codearts-vscode-host-'));
+  const homeDir = path.join(tempDir, 'home');
+  fs.mkdirSync(path.join(homeDir, '.vscode'), { recursive: true });
+  fs.mkdirSync(path.join(homeDir, 'AppData', 'Roaming'), { recursive: true });
+  fs.mkdirSync(path.join(homeDir, 'AppData', 'Local'), { recursive: true });
   const resultFile = path.join(tempDir, 'result.json');
   const fixtureDb = path.join(root, 'tests', 'fixtures', 'opencode-fixture.db');
   try {
@@ -23,10 +27,10 @@ const { runTests } = require('@vscode/test-electron');
         CODEARTS_BAR_CONFIG_DIR: path.join(tempDir, 'config'),
         CODEARTS_BAR_NOW_MS: '1783512000000',
         CODEARTS_BAR_DISABLE_USAGE_LOGS: '1',
-        HOME: path.join(tempDir, 'home'),
-        USERPROFILE: path.join(tempDir, 'home'),
-        APPDATA: path.join(tempDir, 'home', 'AppData', 'Roaming'),
-        LOCALAPPDATA: path.join(tempDir, 'home', 'AppData', 'Local'),
+        HOME: homeDir,
+        USERPROFILE: homeDir,
+        APPDATA: path.join(homeDir, 'AppData', 'Roaming'),
+        LOCALAPPDATA: path.join(homeDir, 'AppData', 'Local'),
       },
     });
     const result = JSON.parse(fs.readFileSync(resultFile, 'utf8'));

@@ -29,11 +29,14 @@ const {
   dashboardPartFromUsageRollup,
 } = require('./usage-rollup-calc');
 
-const MESSAGE_TOKEN_CACHE_KIND = 'message-token-cache-v1';
-const COMPACT_USAGE_ROLLUP_KIND = 'usage-compact-hourly-v1';
-const SESSION_SUMMARY_ROLLUP_KIND = 'session-summary-v1';
+// The row eligibility and latency schema changed; old caches must not be mixed
+// with the current analytics contract.
+const MESSAGE_TOKEN_CACHE_KIND = 'message-token-cache-v2';
+const COMPACT_USAGE_ROLLUP_KIND = 'usage-compact-hourly-v2';
+const SESSION_SUMMARY_ROLLUP_KIND = 'session-summary-v2';
 const HOUR_MS = 60 * 60 * 1000;
 const pendingBuilds = new Map();
+const normalizedPayloads = new WeakMap();
 const rollupStats = {
   compactHits: 0,
   sessionHits: 0,
@@ -54,6 +57,14 @@ const rollupStats = {
   buildMsTotal: 0,
   buildMsMax: 0,
 };
+
+function normalizedRows(payload, key, rows, normalize) {
+  if (!payload || typeof payload !== 'object') return normalize(rows);
+  let cached = normalizedPayloads.get(payload);
+  if (!cached) { cached = {}; normalizedPayloads.set(payload, cached); }
+  if (!cached[key]) cached[key] = normalize(rows);
+  return cached[key];
+}
 const recentBuilds = [];
 
 function hashPath(value = '') {
@@ -116,6 +127,7 @@ function canUseUsageRollup(payload = {}) {
   if (payload.disableUsageRollup || payload.noUsageRollup) return false;
   if (payload.query || payload.sessionId) return false;
   if (payload.model && payload.model !== 'all') return false;
+  if (payload.error !== undefined || payload.hasError !== undefined || payload.errorsOnly !== undefined) return false;
   return true;
 }
 
@@ -123,6 +135,7 @@ function canUseSessionSummaryRollup(payload = {}) {
   if (process.env.CODEARTS_BAR_DISABLE_USAGE_ROLLUP === '1') return false;
   if (payload.disableUsageRollup || payload.noUsageRollup) return false;
   if (payload.query || payload.sessionId) return false;
+  if (payload.model && payload.model !== 'all') return false;
   return true;
 }
 
@@ -135,7 +148,7 @@ function buildUsageRollupForSource(args, payload = {}) {
 }
 
 function currentUsageMessageIds(args) {
-  const { where, params } = assistantWhere({});
+  const { where, params } = assistantWhere({}, { hasPart: args.tables.includes('part'), excludePlaceholders: true, outerAlias: 'message' });
   return new Set(args.queryAll(args.db, `select id from message where ${where}`, params)
     .map((row) => String(row.id || ''))
     .filter(Boolean));
@@ -166,7 +179,7 @@ function readUsageRollupForSource(source, options = {}) {
     ok: true,
     ...cached.payload,
     source: cached.payload.source || { id: source.id, label: source.label, dbPath: source.dbPath },
-    rows: normalizeTokenRows(cached.payload.rows),
+    rows: normalizedRows(cached.payload, 'tokenRows', cached.payload.rows, normalizeTokenRows),
     usageRollup: {
       status: 'hit',
       path: cached.path,
@@ -194,8 +207,8 @@ function readCompactUsageRollupForSource(source, options = {}) {
     ...cached.payload,
     source: cached.payload.source || { id: source.id, label: source.label, dbPath: source.dbPath },
     bucketMs: Math.max(60000, toNumber(cached.payload.bucketMs, HOUR_MS)),
-    hourly: normalizeCompactRows(cached.payload.hourly),
-    hourlyModels: normalizeCompactRows(cached.payload.hourlyModels || []),
+    hourly: normalizedRows(cached.payload, 'compactHourly', cached.payload.hourly, normalizeCompactRows),
+    hourlyModels: normalizedRows(cached.payload, 'compactModels', cached.payload.hourlyModels || [], normalizeCompactRows),
     usageRollup: {
       status: 'compact-hit',
       path: cached.path,
@@ -222,7 +235,7 @@ function readSessionSummaryRollupForSource(source, options = {}) {
     ok: true,
     ...cached.payload,
     source: cached.payload.source || { id: source.id, label: source.label, dbPath: source.dbPath },
-    sessions: normalizeSessionRows(cached.payload.sessions),
+    sessions: normalizedRows(cached.payload, 'sessions', cached.payload.sessions, normalizeSessionRows),
     usageRollup: {
       status: 'session-hit',
       path: cached.path,

@@ -1,5 +1,5 @@
 /* Final native workbench layer. Loaded last to keep product-wide visual policy explicit. */
-/* 1.16.32 native workbench finish: opaque surfaces, hairlines and one accent. */
+/* 1.16.33 native workbench finish: opaque surfaces, hairlines and one accent. */
 :root {
   --radius-sm: 6px;
   --radius-md: 8px;
@@ -210,6 +210,16 @@ body::after {
   border-radius: 6px;
   background: #f5f6f8;
   box-shadow: none;
+}
+
+.usage-total-provenance {
+  display: inline-block;
+  margin-left: 8px;
+  color: #8a93a1;
+  font-size: 10px;
+  font-weight: 560;
+  letter-spacing: 0;
+  white-space: nowrap;
 }
 
 .usage-total-request {
@@ -610,6 +620,11 @@ body::after {
     padding: 12px 0 0;
     border-top: 1px solid var(--cb-border-hairline);
     border-left: 0;
+  }
+
+  .usage-total-provenance {
+    display: block;
+    margin: 3px 0 0;
   }
 
   .usage-total-strip {

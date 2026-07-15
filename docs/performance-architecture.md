@@ -1,127 +1,119 @@
-# Performance Architecture
+# CodeArts Bar 性能架构
 
-本文档记录 CodeArts Bar 当前的性能策略和后续优化方向。
+最后更新：2026-07-15
 
-## 当前性能路径
+适用版本：`1.16.33`
 
-### 启动和刷新
+## 目标
 
-Dashboard 首屏优先使用轻量路径：
+性能架构同时解决三个问题：统计必须完整、交互必须稳定、客户端不能因为完整历史而加载无限列表。任何优化都不能改变数据含义或隐私边界。
 
-- `dashboard:getAggregates`：summary、trend、source stats、model stats、session summary。
-- `dashboard:getRequestsPage`：请求表分页。
-- `dashboard:getSessionsPage`：会话列表分页。
-- `dashboard:getSessionRequestsPage`：按 `sessionId + source + limit + offset` 读取当前会话请求明细。
+## 数据路径
 
-完整 snapshot 仍保留给 CLI `snapshot`、诊断和显式 full refresh，避免托盘启动时一次性构建 requestLog / sessions / trends / tools。
+```text
+SQLite / WAL snapshot / usage logs
+        ↓
+source discovery + readonly adapter
+        ↓
+meaningful assistant filtering
+        ↓
+message/part Token normalization
+        ↓
+SQL aggregate / usage rollup / pagination
+        ↓
+query protocol
+        ↓
+Electron / VS Code / JetBrains / CLI
+```
 
-### Renderer 局部渲染
+### 合格请求
 
-- 使用分析页通过固定 slot 更新 summary、filters、chart、table、advanced。
-- 来源 / 模型 / 日期切换优先 patch slot，不重建整个 `app.innerHTML`。
-- 日期时间输入只更新弹层草稿，不替换输入框节点，避免闪烁和焦点丢失。
-- 会话页点击会话优先 patch inspector，勾选只 patch bulk toolbar。
-- 选中会话只轻量预取请求页，不阻塞 inspector；复制摘要、Markdown 或请求 JSON 前会确保请求页已加载。
-- snapshot 时间戳变化时清空会话请求页缓存，避免旧请求明细污染新数据。
+统计对象是有意义的 assistant 请求。以下条件同时成立时视为 placeholder 并排除：
 
-### CSS Compositor Budget
+- Token 为 0；
+- 没有错误；
+- 没有完成时间；
+- 没有 `step-finish` part。
 
-窗口 resize、zoom、视图切换期间，`body.is-resizing`、`body.is-zooming`、`body.view-switching` 会降低渲染成本：
+错误请求和只有 part usage 的有效请求必须保留。JS 聚合、native SQL、sql.js、分页和 rollup 使用同一口径。
 
-- 临时关闭高成本 `backdrop-filter`。
-- 降低深阴影。
-- 禁用过渡和入场动画。
-- 对表格、详情和高级区域应用 `contain` / `content-visibility`。
+### 完整聚合与列表样本
 
-这保证 macOS 原生质感和 Electron 性能之间有明确预算，而不是每个卡片都无限堆玻璃和阴影。
+- summary、trend、model、source 和 provider 统计来自完整合格请求集合。
+- Dashboard 请求/会话历史走数据库分页。
+- snapshot 的 `requestLog` 允许截断，但必须带 `historicalRequestTotal`、complete/sampled 和 scope 元数据。
+- 客户端不得用截断列表重新计算完整模型或来源统计。
 
-## 性能验证命令
+### P95
+
+- P95 使用真实第 95 百分位，不以最大值代替。
+- 模型和趋势跨数据源合并时保留内部 latency 样本，再计算合并后的 percentile。
+- 内部样本不进入客户端 payload。
+
+## Canonical 与筛选视图
+
+性能路径明确分开两类数据：
+
+| 数据 | 来源 | 是否跟随历史/来源/模型筛选 |
+|---|---|---|
+| `status` / `quota` / 当前 health | canonical 当前全来源摘要 | 否 |
+| `usage.range` / trend / model / source | 当前查询 scope | 是 |
+| 请求/会话页 | 数据库分页 scope | 是 |
+
+这样刷新历史范围时不会把过去某天的 Token 当成“今日软上限”，也不会让实时刷新覆盖用户当前筛选。
+
+## 聚合和缓存
+
+- `node:sqlite` 是可用时的首选只读 adapter，`sql.js` 是兼容 fallback。
+- SQL 路径负责 summary、趋势、模型、来源和 session summary。
+- usage rollup 保存完整 Token/session 汇总和紧凑小时 bucket。
+- rollup miss 可直查 SQL，并在后台重建；缓存命中不能改变 scope 或完整性。
+- sidecar 文件按文件签名在进程内复用解析结果；数据库指纹或 sidecar 变化会立即使缓存失效。
+- 纯 token 摘要不复制延迟样本；趋势与模型仍保留原始样本并计算精确 P95。
+- 慢查询和 fallback 只记录脱敏诊断。
+
+## 分页
+
+- 单源分页直接在数据库执行 `limit/offset`。
+- 多源分页使用 k-way merge，每个源分批读取，跳过 offset 后只 hydrate 当前页。
+- Request 和 Session 都返回 total、hasMore、strategy 和必要诊断。
+- 完整历史分页不依赖 snapshot 列表长度。
+
+## Renderer 与刷新
+
+- 首屏先加载轻量摘要，再异步补趋势、模型和分页内容。
+- 固定 slot 局部更新，避免筛选或实时刷新重建整个界面。
+- generation/scope key 阻止旧请求覆盖新筛选。
+- resize、zoom 和视图切换期间降低 blur、阴影和动画成本，canvas 尺寸不变时跳过重绘。
+
+## IDE 与 CLI runtime
+
+- VS Code 详情查询同时保留 canonical 当前摘要和 filtered range。
+- JetBrains 将 dashboard 当前状态与 analytics 历史查询分开。
+- JetBrains 单文件 CLI 使用精简但等价的协议/脱敏路径，并由 `<125000` 字节门禁保护。
+- Query Protocol v1 是跨端稳定边界；客户端应忽略新增字段，但不能忽略 scope 和完整性语义。
+
+## 跨平台构建
+
+macOS/Linux workflow 当前包含：
+
+1. `npm ci` 与 `npm test`；
+2. renderer、CLI、app resources 构建；
+3. 无签名 Electron artifact；
+4. asar/resource smoke；
+5. artifact 上传。
+
+该 workflow 证明构建就绪度，不等同于签名、公证或完整实机回归。
+
+## 验证入口
 
 ```powershell
 npm test
-npm run stress:dashboard
-.\node_modules\.bin\electron.cmd .cache\electron-layout-probe.js
-.\node_modules\.bin\electron.cmd .cache\electron-deep-performance-probe.js
-.\node_modules\.bin\electron.cmd .cache\electron-zoom-settle-probe.js
+npm run stress:pagination
+npm run stress:aggregation
+npm run e2e:electron
+npm run e2e:vscode
+node tests/jetbrains-cli-runtime-smoke.js
 ```
 
-日期筛选闪烁探针：
-
-```powershell
-.\node_modules\.bin\electron.cmd .cache\electron-date-flicker-probe.js
-```
-
-期望结果：
-
-```json
-{
-  "afterTime": {
-    "sameControl": true,
-    "samePopover": true,
-    "sameInput": true,
-    "value": "09:00",
-    "open": true
-  },
-  "afterQuick": {
-    "samePopover": true,
-    "sameEndInput": true,
-    "activeQuick": true
-  }
-}
-```
-
-## Slot Module Split
-
-`src/dashboard/dashboard-slots.js` is now a compatibility anchor. Runtime slot logic is split into smaller modules:
-
-- `src/dashboard/slots/slot-core.js`: shared slot HTML cache and base patch helpers.
-- `src/dashboard/slots/analytics-slots.js`: analytics summary, filters, chart, table and advanced slot patching.
-- `src/dashboard/slots/data-page-core.js`: shared pagination UI, page notes, loading state and range payload helpers.
-- `src/dashboard/slots/request-page-slot.js`: request DB page cache, table row patching and incremental request append.
-- `src/dashboard/slots/session-page-slot.js`: session DB page cache, table row patching and chunked session hydration.
-- `src/dashboard/slots/session-slots.js`: session overview, toolbar, table, inspector and modal patching.
-- `src/dashboard/slots/perf-panel-slot.js`: developer performance panel.
-
-The old `data-page-slots.js` monolith is now a small compatibility note. Request and session pagination can evolve independently without growing one large renderer slot file again.
-
-## Event Module Split
-
-`src/dashboard/dashboard-events.js` is now a small dispatcher. Runtime event logic is split into smaller modules:
-
-- `src/dashboard/events/chrome-events.js`: refresh, logs, layout mode, compact pane and workspace switching.
-- `src/dashboard/events/session-events.js`: saved views, filters, bulk actions, pin/archive/open/copy and session selection.
-- `src/dashboard/events/analytics-events.js`: request selection/actions, chart series, cache drill-down, source and table switching.
-- `src/dashboard/events/form-events.js`: select/change/input handling and debounced query rendering.
-- `src/dashboard/events/date-events.js`: date range popover and no-flicker draft editing.
-- `src/dashboard/events/window-events.js`: resize, zoom and window interaction state.
-
-The dispatcher keeps one click listener and executes handlers in a stable order, so split modules do not compete for the same DOM event.
-
-## Aggregation Module Split
-
-`src/providers/codearts/aggregation.js` is now focused on public aggregation entrypoints. Shared runtime and DB worker logic is split out:
-
-- `src/providers/codearts/aggregation-runtime.js`: aggregate cache timing, 300ms slow aggregate logging, source selection, trend range normalization, and merge helpers.
-- `src/providers/codearts/aggregation-workers.js`: native/sql.js DB adapter loops plus fallback workers for summary, model stats and session summary.
-- `src/providers/codearts/aggregation-sql-expressions.js`: token JSON path expressions, assistant token CTEs, usage select columns and row-to-usage helpers.
-- `src/providers/codearts/aggregation.js`: summary, trend, source stats, model stats, session summary, dashboard bundle and database health entrypoints.
-- `src/providers/codearts/aggregation-sql.js`: SQL query functions for summary, trend, source stats, model stats, session summary, aggregate bundle and token rows.
-
-This keeps the hot-path behavior unchanged while making future cold-path optimization easier to test. Full aggregation stress currently covers 10k / 50k / 100k messages for both `node:sqlite` and `sql.js`, and slow cold queries continue to print `[codearts-bar] slow aggregate ...` logs above the 300ms threshold.
-
-## Usage Rollup Module Split
-
-`src/providers/codearts/usage-rollup.js` is now focused on sidecar cache reads/writes, build scheduling and diagnostics stats. Pure row math moved out:
-
-- `src/providers/codearts/usage-rollup-calc.js`: token/session row normalization, compact hourly buckets, range filtering, trend/model/session rollup summaries, and dashboard bundle parts.
-- `src/providers/codearts/usage-rollup.js`: read/write compact/token/session sidecars, schedule background builds, expose hit/build stats and preserve public exports.
-
-The split keeps the 100k hot dashboard bundle path in the tens of milliseconds while making future cold-path rollup work easier to isolate.
-
-## Next Optimization
-
-1. Productize diagnostics for sqlite adapter, sidecar state, DB health and missing resources.
-2. Continue optimizing 50k / 100k cold aggregation and first sidecar build.
-3. Continue polishing resize / maximize compositor cost with real Electron probes.
-4. Add optional native-probe baselines for packaged builds and large real-world databases.
-5. Prepare packaged-build smoke checks for diagnostics, tray menu and installer update flow.
+当前剩余的主要性能风险是首次大数据库聚合和 rollup 构建，而不是热路径分页或局部渲染。`1.16.33` 的新基线见 `performance-stress-results.md`，后续结论不能沿用更早版本数字。

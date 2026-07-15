@@ -12,6 +12,20 @@ const mainSource = fs.readFileSync(path.join(root, "src", "main.js"), "utf8");
 const windowSource = fs.readFileSync(path.join(root, "src", "main", "window.js"), "utf8");
 const runtimeBuild = require(path.join(root, "electron-builder.runtime.js"));
 
+function findPackagedResources(dir) {
+  if (!fs.existsSync(dir)) return null;
+  const queue = [dir];
+  while (queue.length) {
+    const current = queue.shift();
+    for (const entry of fs.readdirSync(current, { withFileTypes: true })) {
+      const file = path.join(current, entry.name);
+      if (entry.isDirectory()) queue.push(file);
+      else if (entry.name === "app.asar" && /[\\/](?:resources|Resources)[\\/]app\.asar$/i.test(file)) return path.dirname(file);
+    }
+  }
+  return null;
+}
+
 assert.equal(pkg.main, "src/main.js", "Electron package entry should be src/main.js");
 assert.match(mainSource, /CODEARTS_BAR_PACKAGE_SMOKE/, "main process should expose package smoke startup hook");
 assert.match(mainSource, /CODEARTS_BAR_SMOKE_USER_DATA/, "package smoke should support isolated userData");
@@ -54,13 +68,14 @@ if (fs.existsSync(generatedCliDir)) {
   assert.equal(fs.existsSync(path.join(generatedCliDir, "node_modules", "sql.js", "dist", "sql-wasm.wasm")), true, "generated CLI runtime should include sql-wasm.wasm");
 }
 
-const sqlResourceDir = path.join(distDir, "win-unpacked", "resources", "cli", "node_modules", "sql.js", "dist");
+const packagedResources = findPackagedResources(distDir);
+const sqlResourceDir = packagedResources ? path.join(packagedResources, "cli", "node_modules", "sql.js", "dist") : "";
 if (fs.existsSync(sqlResourceDir)) {
   const files = fs.readdirSync(sqlResourceDir).filter((name) => fs.statSync(path.join(sqlResourceDir, name)).isFile()).sort();
   assert.deepEqual(files, ["sql-wasm.js", "sql-wasm.wasm"], "packaged CLI sql.js runtime should only contain wasm runtime files");
 }
 
-const cliSrcDir = path.join(distDir, "win-unpacked", "resources", "cli", "src");
+const cliSrcDir = packagedResources ? path.join(packagedResources, "cli", "src") : "";
 if (fs.existsSync(cliSrcDir)) {
   assert.equal(fs.existsSync(path.join(cliSrcDir, "cli.js")), true, "packaged CLI should contain cli.js");
   assert.equal(fs.existsSync(path.join(cliSrcDir, "dashboard-renderer.js")), false, "packaged CLI must not contain dashboard renderer");

@@ -14,12 +14,25 @@ class UsageSnapshotTest {
           "status":{"usagePercent":41.3,"level":"ok","label":"41%"},"usage":{"today":{"total":82600,"input":50000,"output":32000,"messages":52,"cacheHitRate":12.5},"window":{"total":143200},"week":{"total":200000},"all":{"total":300000}},
           "trends":{"hourly24h":[{"start":1,"total":5}],"daily14d":[]},"models":[{"name":"provider / model","provider":"provider","model":"model","total":100,"messages":2}],
           "sources":[{"key":"local","total":100,"requests":2}],"sessions":[{"id":"s1","title":"Session","usage":{"total":100,"modelCalls":2,"topModel":{"model":"model"}}}],
-          "requests":[{"id":"r1","ok":true,"total":100,"status":200}],"health":{"level":"ok","label":"OK","message":"healthy"},"quota":{"primary":{"used":82600,"limit":200000,"percent":41.3}}}}
+          "requests":[{"id":"r1","ok":true,"total":100,"status":200,"cacheRead":30,"cacheWrite":12}],"health":{"level":"ok","label":"OK","message":"healthy"},"quota":{"primary":{"used":82600,"limit":200000,"percent":41.3}}}}
           """;
         UsageSnapshot snapshot=UsageSnapshot.fromJson(JsonParser.parseString(json).getAsJsonObject());
         assertTrue(snapshot.ok()); assertEquals(1,snapshot.protocolVersion()); assertEquals(82600,snapshot.todayTokens()); assertEquals(52,snapshot.requestCount());
         assertEquals(1,snapshot.hourlyTrend().size()); assertEquals("model",snapshot.sessions().getFirst().model()); assertEquals(1,snapshot.requests().size()); assertEquals("OK",snapshot.health().label());
         assertEquals("", snapshot.sessions().getFirst().source());
+        assertEquals(12, snapshot.requests().getFirst().cacheWrite());
+        assertEquals(200, snapshot.requests().getFirst().status());
+        assertEquals("成功", snapshot.requests().getFirst().displayStatus());
+    }
+
+    @Test void omitsNonNumericRequestStatusInsteadOfRenderingErrorZero() {
+        String json = """
+          {"items":[{"id":"r1","ok":false,"status":"error","cacheWrite":17}]}
+          """;
+        var request = UsageSnapshot.requestItems(JsonParser.parseString(json).getAsJsonObject()).getFirst();
+        assertNull(request.status());
+        assertEquals(17, request.cacheWrite());
+        assertEquals("错误", request.displayStatus());
     }
 
     @Test void keepsMachineSourceIdForPagedSessionQueries() {

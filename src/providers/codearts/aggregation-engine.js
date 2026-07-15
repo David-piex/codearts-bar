@@ -86,7 +86,7 @@ async function getTrendBucketsSqlJs(payload = {}) {
     const { start, end, bucketMs, bucketOffsetMs, timestamp } = normalized;
     const buckets = [];
     const result = await runSqlJsAggregate(payload, ({ source, db, tables, queryAll }) => {
-      const rows = queryAssistantRows(queryAll, db, source, payload, start, end);
+      const rows = queryAssistantRows(queryAll, db, source, payload, start, end, tables);
       const { partMap } = tokenUsageForRows(queryAll, db, source, tables, rows);
       return agg.trendStats(rows, partMap, start, normalized.queryBucketMs, normalized.queryBucketOffsetMs);
     });
@@ -176,10 +176,31 @@ function mergeDashboardAggregateBundle(items = [], payload = {}, errors = []) {
   const trendRange = normalizeTrendRange(payload);
   const summary = mergeSummaryParts(items.map((x) => x.summary), payload);
   const sessionSummary = mergeSessionSummaries(items.map((x) => x.sessionSummary).filter(Boolean), payload, errors);
-  const mergedTrendBuckets = mergeBuckets(items.flatMap((x) => x.trendBuckets || []), trendRange.queryBucketMs || trendRange.bucketMs);
-  const buckets = densifyBuckets(trendRange.calendarRebucket ? rebucketCalendarDays(mergedTrendBuckets, trendRange) : mergedTrendBuckets, trendRange);
+  const single = items.length === 1 ? items[0] : null;
+  const hideLatencySamples = (item = {}) => {
+    const samples = Array.isArray(item._latencyValues) ? item._latencyValues : [];
+    const { _latencyValues: _hidden, ...out } = item;
+    Object.defineProperty(out, '_latencyValues', { value: samples, enumerable: false, configurable: true });
+    return out;
+  };
+  let mergedTrendBuckets;
+  if (single) {
+    const sourceBuckets = single.trendBuckets || [];
+    mergedTrendBuckets = trendRange.calendarRebucket
+      ? rebucketCalendarDays(sourceBuckets, trendRange)
+      : sourceBuckets.map(hideLatencySamples);
+  } else {
+    const combined = mergeBuckets(items.flatMap((x) => x.trendBuckets || []), trendRange.queryBucketMs || trendRange.bucketMs);
+    mergedTrendBuckets = trendRange.calendarRebucket ? rebucketCalendarDays(combined, trendRange) : combined;
+  }
+  const buckets = densifyBuckets(mergedTrendBuckets, trendRange);
   const sourceStats = items.map((x) => x.sourceStat).filter(Boolean).sort((a, b) => b.total - a.total);
-  const modelStats = mergeModelStats(items.map((x) => x.modelStats || []));
+  const modelStats = single
+    ? (single.modelStats || []).map((item) => {
+      const { source, sourceLabel: _sourceLabel, _latencyValues: _hidden, ...model } = item;
+      return agg.cacheMetrics.withCacheHitMetrics({ ...model, sources: source ? [source] : [] });
+    }).sort((a, b) => b.total - a.total)
+    : mergeModelStats(items.map((x) => x.modelStats || []));
   const rollups = items.map((x) => x.usageRollup).filter(Boolean);
   const out = {
     ok: true,

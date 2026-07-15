@@ -11,6 +11,7 @@ npm-debug.log*
 .cache/
 .codeartsdoer/
 .agents/
+.idea/
 dist/
 release/
 upstream-CodexBar/

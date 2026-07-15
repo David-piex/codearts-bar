@@ -1,11 +1,19 @@
 # CodeArts Bar 性能压测结果
 
-最后更新：2026-07-10  
-定位：开源开发者工具基线压测，不包含账号、付费、云同步等商业闭环。
+文档更新：2026-07-15
 
----
+当前代码版本：`1.16.33`
 
-## 1. 聚合压测
+## 采样环境
+
+- Windows 11 Pro `10.0.26200`
+- Intel Core i7-1165G7，4 核 8 线程
+- 16 GB RAM
+- Node.js `24.17.0`，Electron `43.1.0`
+- Windows x64，Asia/Shanghai
+- 单次本地采样；冷路径会受磁盘、杀毒软件、系统负载和 JIT 影响
+
+## 聚合压力测试
 
 命令：
 
@@ -13,77 +21,64 @@
 npm run stress:aggregation:full
 ```
 
-覆盖：
+测试覆盖 10k/50k/100k assistant messages、1250/6250/12500 sessions、native 与 SQL.js、冷查询、dashboard 聚合包、sidecar 构建和热命中。P95 使用原始延迟样本，不以最大值代替。
 
-- 10k messages / 1,250 sessions
-- 50k messages / 6,250 sessions
-- 100k messages / 12,500 sessions
-- `node:sqlite` 冷路径
-- `sql.js` 冷路径
-- sidecar / usage rollup 热路径
-- 慢聚合日志阈值：300ms
+| 数据量 | native 冷路径最大值 | SQL.js 冷路径最大值 | dashboard 首次 native / SQL.js | sidecar build | native 热路径最大值 | SQL.js 热路径最大值 |
+|---:|---:|---:|---:|---:|---:|---:|
+| 10k | 572.1ms | 2549.4ms | 332.5ms / 858.1ms | 512.5ms | 39.1ms | 58.5ms |
+| 50k | 4025.3ms | 9870.8ms | 1542.1ms / 3146.3ms | 1638.6ms | 50.1ms | 87.1ms |
+| 100k | 6331.0ms | 17963.9ms | 4668.4ms / 7968.5ms | 4693.7ms | 140.2ms | 165.2ms |
 
-| 数据量 | node:sqlite 冷路径最大耗时 | sql.js 冷路径最大耗时 | sidecar build | node:sqlite 热路径最大耗时 | sql.js 热路径最大耗时 |
-|---:|---:|---:|---:|---:|---:|
-| 10k messages | 313.0ms | 423.2ms | 268.5ms | 21.4ms | 17.3ms |
-| 50k messages | 1568.2ms | 1978.6ms | 1371.0ms | 31.2ms | 25.6ms |
-| 100k messages | 2921.4ms | 4033.9ms | 3030.2ms | 46.6ms | 33.2ms |
+“冷路径最大值”是 summary、trend、model、session summary、dashboard bundle 五项中的最大值，不等于用户每次打开窗口都要等待该时长。Electron 首屏先读摘要，完整聚合和 sidecar 在后台完成。100k 热路径仍低于测试规定的 500ms 门禁。
 
-结论：
+当前主要成本：
 
-- 热路径已经足够开源首发：100k 数据下 sidecar 命中后仍在几十毫秒级。
-- 冷路径会明显变慢，尤其是 `sql.js` 100k 首次聚合超过 4s。
-- 因此开源版应优先保证：
-  - 首屏先用轻量 snapshot / DB page 渲染。
-  - 聚合请求避开 resize、source 切换、日期筛选等交互高峰。
-  - 诊断中心展示 sidecar / rollup 状态和慢聚合记录。
+1. 首次 SQL.js 需要读取 SQLite/WAL 快照并执行 JSON 提取。
+2. 精确模型与趋势 P95 必须读取有效延迟样本。
+3. sidecar 首次生成需要扫描完整合格请求集合。
 
----
+本轮已经移除的重复成本：
 
-## 2. Electron 真实窗口交互基线
+- dashboard bundle 只读取一次规范化 token rows；
+- 纯 token 摘要不再复制或排序延迟样本；
+- 单数据源不再二次合并已经精确计算的 P95；
+- sidecar JSON 与规范化 rows 在文件签名不变时进程内复用；
+- 数据库指纹、sidecar mtime/ctime/size 变化或损坏会使缓存失效。
+
+## Electron 交互
 
 命令：
 
 ```powershell
 npm run e2e:electron
+npm run screenshot:electron
 ```
 
-最近一次结果：
+本轮自动化覆盖标准/窄/宽窗口、会话管理、日期弹层、30 天快捷范围、自定义日期、分页、来源切换、实时刷新和滚动保持。
 
 ```text
-resizePerf=116ms
-sourceSwitch=8ms
+resizePerf=92ms
+sourceSwitch=18ms
 requestPage=2ms
 sessionPage=2ms
 ```
 
-覆盖：
+另外，5,200 请求与 900 会话的 renderer 压力场景为 `276.3ms`；双来源 k-way 深分页测试通过。
 
-- 最大化 / resize 后页面仍可用。
-- resize 性能记录包含 `resizeStart`、`domPatch`、`chartRedraw` 或 `sameSizeSkip`、`resizeEnd`。
-- 同尺寸 resize 保留 canvas 节点并跳过 chart redraw。
-- 桌面端 / CLI source 切换保留 summary / chart / table slot。
-- 请求表、会话表分页只渲染当前页。
-- 日期范围弹层在最大化后不越界，非法时间不触发 DB page 查询。
+## 跨端与体积
 
----
+- VS Code 1.128.1 扩展宿主：激活 `326ms`，刷新 `1ms`。
+- JetBrains CLI bundle：`124,392B`，低于 `125,000B` 门禁。
+- JetBrains Plugin Verifier：IntelliJ 2024.2、2024.3、2025.1、2025.2 均为 Compatible。
 
-## 3. 当前优化策略
+## 正确性门禁
 
-已落地：
+- placeholder 在 JS、SQL、rollup 和分页路径中一致排除；
+- 零 token 错误、显式完成和 `step-finish` 请求保留；
+- nested/top-level、camelCase/snake_case、OpenAI/Anthropic token aliases 对齐；
+- trend/model/multi-source P95 使用真实 percentile；
+- snapshot 样本与完整历史总数、scope 明确分离；
+- canonical quota 不被历史筛选覆盖；
+- native、SQL.js、rollup 与非 rollup 的真实数据库结果一致。
 
-- resize 期间降低阴影、blur、动画和 hover 成本。
-- chart canvas 尺寸没变时跳过 redraw。
-- resize 静默期未结束时推迟稳定绘制，记录 `resizeQuietWait`。
-- source 切换只局部刷新 summary / chart / table。
-- request / session 分页支持 `20 / 50 / 100`、跳页、越界修正、空页回退。
-- 大数据 `range=all` chart bucket 计算避免 `Math.min(...largeArray)`。
-- 聚合请求在 renderer 侧避开 resize / zoom / view-switching 交互高峰。
-
-后续优先级：
-
-1. 继续优化冷路径 SQL / rollup 构建时间。
-2. 对 50k / 100k 真实用户数据库补充端到端首屏压测。
-3. 把慢聚合、rollup miss、sidecar rebuild 做成更清晰的诊断提示。
-4. 继续减少主进程同步聚合对窗口交互的影响。
-
+后续重新采样必须同时记录环境、版本、冷热状态和正确性断言；不能只比较一个更快但统计口径不同的数字。

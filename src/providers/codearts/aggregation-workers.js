@@ -21,13 +21,13 @@ const {
 const { queryPartsForMessages } = require('./collect');
 const { sourceList, timeWindows } = require('./aggregation-runtime');
 
-function queryAssistantRows(queryAll, db, source, payload = {}, start, end) {
+function queryAssistantRows(queryAll, db, source, payload = {}, start, end, tables = []) {
   const payloadRange = payload.range || {};
   const range = {
     start: start ?? payloadRange.start ?? 0,
     endExclusive: end ?? payloadRange.endExclusive ?? payloadRange.end ?? 0,
   };
-  const { where, params } = assistantWhere({ ...payload, range });
+  const { where, params } = assistantWhere({ ...payload, range }, { hasPart: tables.includes('part'), excludePlaceholders: true, outerAlias: 'message' });
   return tagRows(queryAll(db, `select id, session_id, time_created, time_updated, data from message where ${where} order by time_created asc`, params), source);
 }
 function tokenUsageForRows(queryAll, db, source, tables, messages) {
@@ -73,7 +73,7 @@ function summaryWorker(payload = {}) {
   const windows = timeWindows(payload);
   return ({ source, db, tables, queryAll }) => {
     const range = payload.range || {};
-    const allRows = queryAssistantRows(queryAll, db, source, payload, range.start || 0, range.endExclusive ?? range.end ?? 0);
+    const allRows = queryAssistantRows(queryAll, db, source, payload, range.start || 0, range.endExclusive ?? range.end ?? 0, tables);
     const { partMap } = tokenUsageForRows(queryAll, db, source, tables, allRows);
     const sumSince = (since) => agg.sumTokens(allRows.filter((m) => Number(m.time_created || 0) >= since), partMap);
     const usage = {
@@ -88,7 +88,7 @@ function summaryWorker(payload = {}) {
 function modelStatsWorker(payload = {}) {
   const range = payload.range || {};
   return ({ source, db, tables, queryAll }) => {
-    const rows = queryAssistantRows(queryAll, db, source, payload, range.start || 0, range.endExclusive ?? range.end ?? 0);
+    const rows = queryAssistantRows(queryAll, db, source, payload, range.start || 0, range.endExclusive ?? range.end ?? 0, tables);
     const { partMap } = tokenUsageForRows(queryAll, db, source, tables, rows);
     return agg.modelStats(rows, 0, partMap).map((x) => ({ ...x, source: source.id, sourceLabel: source.label }));
   };

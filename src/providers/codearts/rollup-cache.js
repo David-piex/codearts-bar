@@ -9,6 +9,8 @@ const { writeJsonAtomic } = require('../../core/atomic-file');
 
 const ROLLUP_CACHE_SCHEMA_VERSION = 1;
 const DEFAULT_KIND = 'usage-rollup';
+const PARSED_CACHE_LIMIT = 8;
+const parsedEnvelopes = new Map();
 
 function safeKind(kind = DEFAULT_KIND) {
   return String(kind || DEFAULT_KIND).replace(/[^a-z0-9._-]+/gi, '-').slice(0, 64) || DEFAULT_KIND;
@@ -50,6 +52,21 @@ function validationFailure(reason, target, extra = {}) {
   return { ok: false, reason, path: target, ...extra };
 }
 
+function cacheFileSignature(target) {
+  try {
+    const stat = fs.statSync(target, { bigint: true });
+    return `${stat.size}:${stat.mtimeNs}:${stat.ctimeNs}`;
+  } catch {
+    return '';
+  }
+}
+
+function rememberEnvelope(target, signature, envelope) {
+  parsedEnvelopes.delete(target);
+  parsedEnvelopes.set(target, { signature, envelope });
+  while (parsedEnvelopes.size > PARSED_CACHE_LIMIT) parsedEnvelopes.delete(parsedEnvelopes.keys().next().value);
+}
+
 function validateRollupEnvelope(envelope, dbPath, options = {}) {
   const target = rollupCachePath(dbPath, options.kind || envelope?.kind || DEFAULT_KIND);
   const expectedKind = safeKind(options.kind || envelope?.kind || DEFAULT_KIND);
@@ -87,11 +104,18 @@ function validateRollupEnvelope(envelope, dbPath, options = {}) {
 function readRollupCache(dbPath, options = {}) {
   const target = rollupCachePath(dbPath, options.kind || DEFAULT_KIND);
   if (!fs.existsSync(target)) return validationFailure('missing', target);
-  let envelope;
-  try {
-    envelope = JSON.parse(fs.readFileSync(target, 'utf8').replace(/^\uFEFF/, ''));
-  } catch (error) {
-    return validationFailure('corrupt', target);
+  const signature = cacheFileSignature(target);
+  let envelope = parsedEnvelopes.get(target)?.signature === signature
+    ? parsedEnvelopes.get(target).envelope
+    : null;
+  if (!envelope) {
+    try {
+      envelope = JSON.parse(fs.readFileSync(target, 'utf8').replace(/^\uFEFF/, ''));
+      rememberEnvelope(target, signature, envelope);
+    } catch (error) {
+      parsedEnvelopes.delete(target);
+      return validationFailure('corrupt', target);
+    }
   }
   return validateRollupEnvelope(envelope, dbPath, options);
 }
@@ -102,12 +126,14 @@ function writeRollupCache(dbPath, payload, options = {}) {
   const target = rollupCachePath(dbPath, kind);
   const envelope = buildRollupEnvelope(dbPath, payload, { ...options, kind, clonePayload: options.clonePayload ?? false });
   writeJsonAtomic(target, envelope, { compact: true, newline: false });
+  rememberEnvelope(target, cacheFileSignature(target), envelope);
   return validateRollupEnvelope(envelope, dbPath, { ...options, kind, clonePayload: options.clonePayload ?? false });
 }
 
 function deleteRollupCache(dbPath, options = {}) {
   const target = rollupCachePath(dbPath, options.kind || DEFAULT_KIND);
   try { fs.rmSync(target, { force: true }); } catch {}
+  parsedEnvelopes.delete(target);
   return target;
 }
 

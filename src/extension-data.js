@@ -59,6 +59,12 @@ function emptyPerformance() {
   return { window: { latency: {}, ttft: {}, firstContentApprox: {}, outputTokensPerSec: {}, errorRate: 0 } };
 }
 
+function currentUsageOptions(config, timestamp) {
+  const current = { ...config, source: 'all', model: 'all', timestamp };
+  for (const key of ['range', 'rangePreset', 'start', 'end', 'endExclusive']) delete current[key];
+  return current;
+}
+
 function applyDerived(snapshot, config) {
   const today = snapshot.usage?.today || {};
   const percent = config.dailyLimit > 0 ? Math.min(999, Math.max(0, (Number(today.total || 0) / config.dailyLimit) * 100)) : 0;
@@ -120,12 +126,15 @@ async function getExtensionDetails(options = {}) {
   const selectedRange = extensionRange(options, timestamp);
   const scope = { source: options.source || 'all', model: options.model || 'all' };
   const rangePayload = { start: selectedRange.start, endExclusive: selectedRange.endExclusive };
-  const [aggregates, sessionsPage, requestsPage] = await Promise.all([
+  const [currentSummary, aggregates, sessionsPage, requestsPage] = await Promise.all([
+    localProvider.getSummary(currentUsageOptions(config, timestamp)),
     localProvider.getDashboardAggregates({ ...config, ...scope, timestamp, range: rangePayload, bucketMs: selectedRange.bucketMs }),
     localProvider.getSessionsPage({ ...config, limit: 12, offset: 0, ...scope, status: 'active', range: rangePayload }),
     localProvider.getRequestsPage({ ...config, ...scope, limit: 40, offset: 0, range: rangePayload }),
   ]);
+  if (!currentSummary?.ok || !currentSummary.usage) throw new Error(currentSummary?.error || '无法读取当前 CodeArts 使用摘要');
   if (!aggregates?.ok) throw new Error(aggregates?.error || '无法读取 CodeArts 聚合数据');
+  const currentUsage = currentSummary.usage;
   const rangeUsage = scopedUsage(aggregates.sourceStats || []);
   const sessions = (sessionsPage?.items || []).map((item) => sessionView(item, timestamp));
   const requests = (requestsPage?.items || []).map((item) => ({
@@ -144,9 +153,9 @@ async function getExtensionDetails(options = {}) {
     dbPath: localProvider.resolveDbPath(config),
     sources: aggregates.sources || [],
     sourceStats: aggregates.sourceStats || [],
-    usage: { ...(aggregates.usage || {}), range: rangeUsage },
+    usage: { ...currentUsage, range: rangeUsage },
     trends: { hourly24h: selectedRange.bucketMs === HOUR_MS ? aggregates.buckets || [] : [], daily14d: selectedRange.bucketMs === DAY_MS ? aggregates.buckets || [] : [], range: aggregates.buckets || [] },
-    models: (aggregates.modelStats || []).slice(0, 12),
+    models: aggregates.modelStats || [],
     sessions,
     sessionTotal: Number(sessionsPage?.total || sessions.length),
     sessionTotalExact: true,

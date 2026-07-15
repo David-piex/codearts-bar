@@ -1,46 +1,7 @@
 'use strict';
 
 const agg = require('../../core/aggregator');
-const { jsonExtractExpr, jsonTypeExpr, messageErrorExpr } = require('./sources');
-
-const TOKEN_PATHS = {
-  input: [
-    '$.tokens.input', '$.tokens.inputTokens', '$.tokens.input_tokens',
-    '$.tokens.prompt_tokens', '$.tokens.promptTokens',
-    '$.usage.input', '$.usage.inputTokens', '$.usage.input_tokens',
-    '$.usage.prompt_tokens', '$.usage.promptTokens',
-  ],
-  output: [
-    '$.tokens.output', '$.tokens.outputTokens', '$.tokens.output_tokens',
-    '$.tokens.completion_tokens', '$.tokens.completionTokens',
-    '$.usage.output', '$.usage.outputTokens', '$.usage.output_tokens',
-    '$.usage.completion_tokens', '$.usage.completionTokens',
-  ],
-  reasoning: [
-    '$.tokens.reasoning', '$.tokens.reasoningTokens', '$.tokens.reasoning_tokens',
-    '$.usage.reasoning', '$.usage.reasoningTokens', '$.usage.reasoning_tokens',
-  ],
-  cacheRead: [
-    '$.tokens.cache.read', '$.tokens.cache.cache_read',
-    '$.tokens.cacheRead', '$.tokens.cache_read',
-    '$.tokens.cached_tokens', '$.tokens.cache_read_tokens',
-    '$.usage.cache.read', '$.usage.cache.cache_read',
-    '$.usage.cacheRead', '$.usage.cache_read',
-    '$.usage.cached_tokens', '$.usage.cache_read_tokens',
-  ],
-  cacheWrite: [
-    '$.tokens.cache.write', '$.tokens.cache.cache_write',
-    '$.tokens.cacheWrite', '$.tokens.cache_write',
-    '$.tokens.cache_creation_input_tokens', '$.tokens.cache_write_tokens',
-    '$.usage.cache.write', '$.usage.cache.cache_write',
-    '$.usage.cacheWrite', '$.usage.cache_write',
-    '$.usage.cache_creation_input_tokens', '$.usage.cache_write_tokens',
-  ],
-  total: [
-    '$.tokens.total', '$.tokens.totalTokens', '$.tokens.total_tokens',
-    '$.usage.total', '$.usage.totalTokens', '$.usage.total_tokens',
-  ],
-};
+const { jsonExtractExpr, jsonTypeExpr, messageErrorExpr, MESSAGE_TOKEN_PATHS: TOKEN_PATHS } = require('./sources');
 
 function safeNumber(value, fallback = 0) {
   const n = Number(value);
@@ -96,7 +57,8 @@ function assistantTokenCtes(tables = [], whereSql = '1=1', options = {}) {
       group by p.message_id
     )`);
   }
-  ctes.push(`assistant_tokens${mat}(
+  const tokenCteName = options.excludePlaceholders ? 'assistant_token_values' : 'assistant_tokens';
+  ctes.push(`${tokenCteName}${mat}(
     select
       m.id,
       m.session_id,
@@ -113,10 +75,23 @@ function assistantTokenCtes(tables = [], whereSql = '1=1', options = {}) {
       coalesce(json_extract(m.data, '$.providerID'), json_extract(m.data, '$.model.providerID'), 'unknown') as provider,
       coalesce(json_extract(m.data, '$.modelID'), json_extract(m.data, '$.model.modelID'), 'unknown') as model,
       ${timeExpr('m', '$.time.created', 'time_created')} as message_created,
-      ${timeExpr('m', '$.time.completed', 'time_updated')} as message_completed
+      ${timeExpr('m', '$.time.completed', 'time_updated')} as message_completed,
+      coalesce(cast(${jsonExtractExpr('m.data', '$.time.completed')} as real), 0) as message_completed_explicit,
+      ${hasPart ? `case when exists (
+        select 1 from part finish_part
+        where finish_part.message_id = m.id
+          and ${jsonExtractExpr('finish_part.data', '$.type')} = 'step-finish'
+      ) then 1 else 0 end` : '0'} as has_step_finish
     from filtered_messages m
     ${hasPart ? 'left join part_tokens pt on pt.message_id = m.id' : ''}
   )`);
+  if (options.excludePlaceholders) {
+    ctes.push(`assistant_tokens${mat}(
+      select * from assistant_token_values
+      where total > 0 or input > 0 or output > 0 or reasoning > 0 or cacheRead > 0 or cacheWrite > 0
+        or error <> 0 or message_completed_explicit > 0 or has_step_finish <> 0
+    )`);
+  }
   return `with ${ctes.join(',\n')}`;
 }
 

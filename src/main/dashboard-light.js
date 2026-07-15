@@ -14,11 +14,51 @@ function usageStatusFromSummary(usage = {}, settings = loadSettings()) {
   return { label: `${Math.round(usagePercent)}%`, usagePercent, level: usagePercent >= 90 ? 'danger' : usagePercent >= 70 ? 'warning' : 'ok' };
 }
 
-function applyUsageDerivedFields(snap, settings = loadSettings(), timestamp = Number(snap?.timestamp || Date.now())) {
+function isCanonicalSnapshotScope(snapshot = {}) {
+  const scope = snapshot?.usageScope || snapshot?.queryScope || snapshot?.summaryFilter;
+  if (!scope) return false;
+  return String(scope.source || 'all') === 'all'
+    && String(scope.model || 'all') === 'all'
+    && String(scope.rangeKey || '') === ''
+    && Number(scope.start || 0) === 0
+    && Number(scope.endExclusive ?? scope.end ?? 0) === 0;
+}
+
+function canonicalDerivedFields(canonicalSnapshot, settings = loadSettings(), timestamp = Date.now()) {
+  if (!canonicalSnapshot?.ok || !canonicalSnapshot.usage || !isCanonicalSnapshotScope(canonicalSnapshot)) return null;
+  // The usage values come from the canonical all-source snapshot, while reset
+  // countdowns are anchored to the current refresh timestamp.
+  const canonicalTimestamp = Number(timestamp || Date.now());
+  const dailyLimit = Number(settings.dailyLimit || process.env.CODEARTS_BAR_DAILY_LIMIT || 200000);
+  const windowHours = Number(settings.windowHours || process.env.CODEARTS_BAR_WINDOW_HOURS || 24);
+  const quota = buildQuota(canonicalSnapshot, { timestamp: canonicalTimestamp, dailyLimit, windowHours });
+  const status = {
+    ...(canonicalSnapshot.status || {}),
+    ...usageStatusFromSummary(canonicalSnapshot.usage, settings),
+    resetAt: quota.primary.resetAt,
+    resetInMs: quota.primary.resetInMs,
+    remaining: quota.primary.remaining,
+  };
+  const health = buildHealth({ ...canonicalSnapshot, quota, status }, settings);
+  return { quota, status, health, config: { ...(canonicalSnapshot.config || {}), dailyLimit, windowHours } };
+}
+
+function applyUsageDerivedFields(snap, settings = loadSettings(), timestamp = Number(snap?.timestamp || Date.now()), options = {}) {
   if (!snap || !snap.ok || !snap.usage) return snap;
   const dailyLimit = Number(settings.dailyLimit || process.env.CODEARTS_BAR_DAILY_LIMIT || 200000);
   const windowHours = Number(settings.windowHours || process.env.CODEARTS_BAR_WINDOW_HOURS || 24);
   snap.config = { ...(snap.config || {}), dailyLimit, windowHours };
+  const canonical = options.canonicalSnapshot && options.canonicalSnapshot !== snap
+    ? canonicalDerivedFields(options.canonicalSnapshot, settings, timestamp)
+    : null;
+  if (canonical) {
+    // Filtered/range snapshots may change their usage and trend fields, but
+    // the top-level quota and status always describe the live canonical view.
+    snap.quota = canonical.quota;
+    snap.status = canonical.status;
+    snap.health = canonical.health;
+    return snap;
+  }
   snap.quota = buildQuota(snap, { timestamp, dailyLimit, windowHours });
   snap.status = {
     ...(snap.status || {}),
@@ -218,11 +258,12 @@ function lightUpdatedAt(ts = Date.now()) {
   catch { return String(ts); }
 }
 
-function makeLightSnapshotFromAggregates(aggregates = {}, payload = {}) {
+function makeLightSnapshotFromAggregates(aggregates = {}, payload = {}, options = {}) {
   const settings = loadSettings();
   const timestamp = Number(payload.timestamp || aggregates.timestamp || Date.now());
   const usage = aggregates.usage || { today: {}, window: {}, week: {}, all: {} };
   const bucketMs = Number(aggregates.bucketMs || payload.bucketMs || 3600000);
+  const aggregateUsageScope = usageScopeForPayload(payload);
   const snap = {
     ok: true,
     app: '码道 Bar',
@@ -231,11 +272,13 @@ function makeLightSnapshotFromAggregates(aggregates = {}, payload = {}) {
     dbPath: localProvider.resolveDbPath ? localProvider.resolveDbPath(settings) : '',
     sources: aggregates.sources || [],
     usage,
-    queryScope: usageScopeForPayload(payload),
-    usageScope: usageScopeForPayload(payload),
+    queryScope: aggregateUsageScope,
+    usageScope: aggregateUsageScope,
     status: usageStatusFromSummary(usage, settings),
-    models: Array.isArray(aggregates.modelStats) ? aggregates.modelStats.slice(0, 12) : [],
+    models: Array.isArray(aggregates.modelStats) ? aggregates.modelStats : [],
+    modelsScope: { ...aggregateUsageScope, complete: true },
     sourceStats: Array.isArray(aggregates.sourceStats) ? aggregates.sourceStats : [],
+    sourceStatsScope: { ...aggregateUsageScope, complete: true },
     trends: {},
     trendsSource: 'db-light',
     sessionSummary: aggregates.sessionSummary || { total: 0, active: 0, archived: 0, visible: 0 },
@@ -259,11 +302,11 @@ function makeLightSnapshotFromAggregates(aggregates = {}, payload = {}) {
   }
   if (aggregates.sourceErrors?.length) snap.sourceErrors = aggregates.sourceErrors;
   if (aggregates.nativeError) snap.nativeError = aggregates.nativeError;
-  return applyUsageDerivedFields(snap, settings, timestamp);
+  return applyUsageDerivedFields(snap, settings, timestamp, options);
 }
 
 
-async function buildInitialSummarySnapshot(payload = {}) {
+async function buildInitialSummarySnapshot(payload = {}, canonicalSnapshot = null) {
   const timestamp = Number(payload.timestamp || Date.now());
   const basePayload = dashboardAggregatePayload({ ...payload, timestamp });
   const summary = await localProvider.getSummary(basePayload);
@@ -273,7 +316,7 @@ async function buildInitialSummarySnapshot(payload = {}) {
     sources: summary.sources || [],
     sourceErrors: summary.sourceErrors || [],
     nativeError: summary.nativeError || null,
-  }, basePayload);
+  }, basePayload, { canonicalSnapshot });
   snap.summaryOnly = true;
   snap.summaryFilter = {
     ...usageScopeForPayload(basePayload),
@@ -284,7 +327,7 @@ async function buildInitialSummarySnapshot(payload = {}) {
   return snap;
 }
 
-async function buildInitialLightSnapshot(payload = {}) {
+async function buildInitialLightSnapshot(payload = {}, canonicalSnapshot = null) {
   const timestamp = Number(payload.timestamp || Date.now());
   const basePayload = dashboardAggregatePayload({ ...payload, timestamp });
   const bucketMs = Number(basePayload.bucketMs || 3600000);
@@ -296,7 +339,7 @@ async function buildInitialLightSnapshot(payload = {}) {
     localProvider.getSessionsPage(sessionPayload).catch((error) => ({ ok: false, error: error.message })),
   ]);
   if (!aggregates?.ok) throw new Error(aggregates?.error || '无法读取 CodeArts 聚合数据');
-  const snap = makeLightSnapshotFromAggregates(aggregates, { ...basePayload, bucketMs });
+  const snap = makeLightSnapshotFromAggregates(aggregates, { ...basePayload, bucketMs }, { canonicalSnapshot });
   snap.requestLog = requestsPage?.ok && Array.isArray(requestsPage.items) ? requestsPage.items : [];
   snap.sessions = sessionsPage?.ok && Array.isArray(sessionsPage.items) ? sessionsPage.items : [];
   snap.requestTotal = Number(requestsPage?.total || 0);
@@ -306,7 +349,7 @@ async function buildInitialLightSnapshot(payload = {}) {
   return snap;
 }
 
-async function buildDashboardLightPair(fullBase, payload = {}) {
+async function buildDashboardLightPair(fullBase, payload = {}, canonicalSnapshot = null) {
   const timestamp = Number(payload.timestamp || Date.now());
   const basePayload = dashboardAggregatePayload({ ...payload, timestamp });
   const dayMode = Number(basePayload.bucketMs || 3600000) >= 86400000;
@@ -345,13 +388,19 @@ async function buildDashboardLightPair(fullBase, payload = {}) {
     fullSnap.aggregateScope = fullSnap.trendsScope;
     fullSnap.aggregateAt = timestamp;
   }
-  if (aggregates?.ok && Array.isArray(aggregates.sourceStats) && !preserveCompleteAggregate) fullSnap.sourceStats = aggregates.sourceStats;
-  if (aggregates?.ok && Array.isArray(aggregates.modelStats) && !preserveCompleteAggregate) fullSnap.models = aggregates.modelStats.slice(0, 12);
+  if (aggregates?.ok && Array.isArray(aggregates.sourceStats) && !preserveCompleteAggregate) {
+    fullSnap.sourceStats = aggregates.sourceStats;
+    fullSnap.sourceStatsScope = { ...usageScopeForPayload(basePayload), complete: true };
+  }
+  if (aggregates?.ok && Array.isArray(aggregates.modelStats) && !preserveCompleteAggregate) {
+    fullSnap.models = aggregates.modelStats;
+    fullSnap.modelsScope = { ...usageScopeForPayload(basePayload), complete: true };
+  }
   if (aggregates?.ok && aggregates.sessionSummary && !preserveCompleteAggregate) fullSnap.sessionSummary = aggregates.sessionSummary;
   if (aggregates?.sourceErrors) fullSnap.sourceErrors = aggregates.sourceErrors;
   if (aggregates?.nativeError) fullSnap.nativeError = aggregates.nativeError;
   delete fullSnap.lightRefresh;
-  applyUsageDerivedFields(fullSnap, settings, timestamp);
+  applyUsageDerivedFields(fullSnap, settings, timestamp, { canonicalSnapshot });
   const dashboardSnap = {
     ...fullSnap,
     requestLog: requestsPage?.ok && Array.isArray(requestsPage.items) ? requestsPage.items : [],
@@ -362,12 +411,14 @@ async function buildDashboardLightPair(fullBase, payload = {}) {
     sessionPage: sessionsPage?.ok ? pageEnvelope(sessionsPage, sessionPayload, sessionsPage.items || [], sessionsPage.total || 0) : null,
     lightRefresh: true,
   };
-  return { fullSnap, dashboardSnap: applyUsageDerivedFields(dashboardSnap, settings, timestamp) };
+  return { fullSnap, dashboardSnap: applyUsageDerivedFields(dashboardSnap, settings, timestamp, { canonicalSnapshot }) };
 }
 
 module.exports = {
   SESSION_PAGE_SIZE,
   usageStatusFromSummary,
+  isCanonicalSnapshotScope,
+  canonicalDerivedFields,
   applyUsageDerivedFields,
   dashboardAggregatePayload,
   trendScopeKeyForPayload,

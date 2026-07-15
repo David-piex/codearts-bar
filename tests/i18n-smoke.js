@@ -89,7 +89,7 @@ function testTrayI18n() {
     },
   };
   const summary = tray.traySummaryText(snapshot, fmtInt);
-  assert.match(summary, /码道 Bar · 今日 42%/);
+  assert.match(summary, /码道 Bar · 今日软上限 42%/);
   assert.match(summary, /更新：2026-07-09 18:00/);
   assert.match(summary, /今日：12,345 token/);
   assertCleanVisibleText(summary, "traySummaryText");

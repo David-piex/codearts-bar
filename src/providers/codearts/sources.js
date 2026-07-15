@@ -85,7 +85,43 @@ function messageErrorExpr(column = 'data') {
     else 0
   end)`;
 }
-function assistantWhere(payload = {}) {
+const MESSAGE_TOKEN_PATHS = {
+  input: [
+    '$.tokens.input', '$.tokens.inputTokens', '$.tokens.input_tokens', '$.tokens.prompt_tokens', '$.tokens.promptTokens',
+    '$.usage.input', '$.usage.inputTokens', '$.usage.input_tokens', '$.usage.prompt_tokens', '$.usage.promptTokens',
+    '$.input', '$.inputTokens', '$.input_tokens', '$.prompt_tokens', '$.promptTokens',
+  ],
+  output: [
+    '$.tokens.output', '$.tokens.outputTokens', '$.tokens.output_tokens', '$.tokens.completion_tokens', '$.tokens.completionTokens',
+    '$.usage.output', '$.usage.outputTokens', '$.usage.output_tokens', '$.usage.completion_tokens', '$.usage.completionTokens',
+    '$.output', '$.outputTokens', '$.output_tokens', '$.completion_tokens', '$.completionTokens',
+  ],
+  reasoning: [
+    '$.tokens.reasoning', '$.tokens.reasoningTokens', '$.tokens.reasoning_tokens',
+    '$.usage.reasoning', '$.usage.reasoningTokens', '$.usage.reasoning_tokens',
+    '$.reasoning', '$.reasoningTokens', '$.reasoning_tokens',
+  ],
+  cacheRead: [
+    '$.tokens.cache.read', '$.tokens.cache.cache_read', '$.tokens.cacheRead', '$.tokens.cache_read', '$.tokens.cached_tokens', '$.tokens.cache_read_tokens',
+    '$.usage.cache.read', '$.usage.cache.cache_read', '$.usage.cacheRead', '$.usage.cache_read', '$.usage.cached_tokens', '$.usage.cache_read_tokens',
+    '$.cache.read', '$.cache.cache_read', '$.cacheRead', '$.cache_read', '$.cached_tokens', '$.cache_read_tokens',
+  ],
+  cacheWrite: [
+    '$.tokens.cache.write', '$.tokens.cache.cache_write', '$.tokens.cacheWrite', '$.tokens.cache_write', '$.tokens.cache_creation_input_tokens', '$.tokens.cache_write_tokens',
+    '$.usage.cache.write', '$.usage.cache.cache_write', '$.usage.cacheWrite', '$.usage.cache_write', '$.usage.cache_creation_input_tokens', '$.usage.cache_write_tokens',
+    '$.cache.write', '$.cache.cache_write', '$.cacheWrite', '$.cache_write', '$.cache_creation_input_tokens', '$.cache_write_tokens',
+  ],
+  total: [
+    '$.tokens.total', '$.tokens.totalTokens', '$.tokens.total_tokens',
+    '$.usage.total', '$.usage.totalTokens', '$.usage.total_tokens',
+    '$.total', '$.totalTokens', '$.total_tokens',
+  ],
+};
+function messageTokenNonZeroExpr(column = 'data') {
+  const paths = Object.values(MESSAGE_TOKEN_PATHS).flat();
+  return `(${paths.map((p) => `coalesce(cast(${jsonExtractExpr(column, p)} as real), 0)`).join(' + ')}) > 0`;
+}
+function assistantWhere(payload = {}, options = {}) {
   const where = [`${jsonExtractExpr('data', '$.role')} = ?`];
   const params = ['assistant'];
   const { start, end } = normalizeRange(payload.range);
@@ -110,6 +146,14 @@ function assistantWhere(payload = {}) {
   const errorFilter = payload.error ?? payload.hasError ?? payload.errorsOnly;
   if (errorFilter === true || errorFilter === 'only' || errorFilter === 'error') where.push(`${messageErrorExpr('data')} = 1`);
   else if (errorFilter === false || errorFilter === 'none' || errorFilter === 'success') where.push(`${messageErrorExpr('data')} = 0`);
+  if (options.excludePlaceholders) {
+    const hasPart = options.hasPart === true;
+    const messageId = options.outerAlias ? `${options.outerAlias}.id` : 'id';
+    const hasStepFinish = hasPart
+      ? `exists (select 1 from part p where p.message_id = ${messageId} and ${jsonExtractExpr('p.data', '$.type')} = 'step-finish')`
+      : '0';
+    where.push(`not (not (${messageTokenNonZeroExpr('data')}) and ${messageErrorExpr('data')} = 0 and coalesce(cast(${jsonExtractExpr('data', '$.time.completed')} as real), 0) <= 0 and not (${hasStepFinish}))`);
+  }
   return { where: where.join(' and '), params };
 }
 function sessionWhere(payload = {}) {
@@ -122,13 +166,19 @@ function sessionWhere(payload = {}) {
   else if (payload.status === 'archived') where.push('time_archived is not null');
   if (payload.project && payload.project !== 'all') { where.push('directory = ?'); params.push(payload.project); }
   if (payload.model && payload.model !== 'all') {
+    const modelWhere = [
+      `${jsonExtractExpr('session_message.data', '$.role')} = 'assistant'`,
+      `${messageModelExpr('session_message.data')} = ?`,
+    ];
+    const modelParams = [String(payload.model)];
+    if (start) { modelWhere.push('session_message.time_created >= ?'); modelParams.push(start); }
+    if (end) { modelWhere.push('session_message.time_created < ?'); modelParams.push(end); }
     where.push(`exists (
       select 1 from message session_message
       where session_message.session_id = session.id
-        and ${jsonExtractExpr('session_message.data', '$.role')} = 'assistant'
-        and ${messageModelExpr('session_message.data')} = ?
+        and ${modelWhere.join('\n        and ')}
     )`);
-    params.push(String(payload.model));
+    params.push(...modelParams);
   }
   const q = String(payload.query || '').trim();
   if (q) {
@@ -168,6 +218,8 @@ module.exports = {
   jsonTypeExpr,
   messageModelExpr,
   messageErrorExpr,
+  MESSAGE_TOKEN_PATHS,
+  messageTokenNonZeroExpr,
   assistantWhere,
   sessionWhere,
   placeholders,

@@ -15,6 +15,7 @@ const path = require('node:path');
 const DEFAULT_DB_PATH = localProvider.DEFAULT_DB_PATH;
 const DEFAULT_DAILY_LIMIT = 200_000;
 const DEFAULT_WINDOW_HOURS = 24;
+const REQUEST_LOG_SAMPLE_LIMIT = 2000;
 
 const resolveNow = localProvider.resolveTimestamp;
 function nowMs() { return resolveNow(); }
@@ -34,12 +35,12 @@ function isAutomaticSourceSnapshot(snapshot = {}) {
   if (!cachedPaths.length && snapshot.dbPath) cachedPaths.push(snapshot.dbPath);
   return cachedPaths.length > 0 && cachedPaths.every((cachedPath) => automaticPaths.some((automaticPath) => samePath(cachedPath, automaticPath)));
 }
-function buildRequestRows(messages, sessions, partMap, ttftMap) {
+function buildRequestRows(messages, sessions, partMap, ttftMap, limit = REQUEST_LOG_SAMPLE_LIMIT) {
   const sessionMap = new Map((sessions || []).map((s) => [`${s.source || ''}:${s.id || ''}`, s]));
-  return (messages || [])
+  const rows = (messages || [])
     .map((row) => {
       const data = agg.parseJsonSafe(row.data, {});
-      if (data.role !== 'assistant') return null;
+      if (!agg.isMeaningfulAssistant(row, partMap)) return null;
       const token = agg.tokenForMessage(row, partMap);
       const perf = agg.messagePerf(row, partMap, ttftMap) || {};
       const session = sessionMap.get(`${row.source || ''}:${row.session_id || ''}`) || {};
@@ -66,14 +67,32 @@ function buildRequestRows(messages, sessions, partMap, ttftMap) {
       };
     })
     .filter(Boolean)
-    .sort((a, b) => b.time - a.time)
-    .slice(0, 2000);
+    .sort((a, b) => b.time - a.time);
+  if (limit === Infinity) return rows;
+  const max = Number(limit);
+  return rows.slice(0, Number.isFinite(max) && max >= 0 ? max : REQUEST_LOG_SAMPLE_LIMIT);
 }
 function aggregateBy(items, keyFn) {
   const map = new Map();
   for (const item of items || []) {
     const key = keyFn(item) || 'unknown';
-    const prev = map.get(key) || { key, total: 0, input: 0, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0, requests: 0, errors: 0, latencyMs: [], ttftMs: [] };
+    const prev = map.get(key) || {
+      key,
+      total: 0,
+      input: 0,
+      output: 0,
+      reasoning: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+      requests: 0,
+      errors: 0,
+      source: item.source || null,
+      sourceLabel: item.sourceLabel || null,
+      provider: item.provider || null,
+      model: item.model || null,
+      latencyMs: [],
+      ttftMs: [],
+    };
     prev.total += item.total || 0;
     prev.input += item.input || 0;
     prev.output += item.output || 0;
@@ -106,7 +125,7 @@ function buildSnapshotFromRows({ dbPath, stat, sources = [], dailyLimit, windowH
     ? localProvider.scanUsageLogs()
     : { ttftEvents: localProvider.scanTtftLogs(), queueEvents: localProvider.scanQueueLogs() };
   const ttftEvents = perfLogs.ttftEvents || [];
-  const ttftMap = agg.buildTtftMap(messages, ttftEvents);
+  const ttftMap = agg.buildTtftMap(messages, ttftEvents, partMap);
   const queueEvents = perfLogs.queueEvents || [];
   const todayRows = messages.filter((m) => m.time_created >= dayStartMs);
   const windowRows = messages.filter((m) => m.time_created >= windowStartMs);
@@ -115,7 +134,11 @@ function buildSnapshotFromRows({ dbPath, stat, sources = [], dailyLimit, windowH
   const window = agg.sumTokens(windowRows, partMap);
   const week = agg.sumTokens(weekRows, partMap);
   const all = agg.sumTokens(messages, partMap);
-  const requests = buildRequestRows(messages, sessions, partMap, ttftMap);
+  // Keep the request list bounded for the renderer, but derive all aggregate
+  // dimensions from the complete assistant row set. The list is a navigation
+  // sample; it must never be used as the source of truth for totals.
+  const allRequests = buildRequestRows(messages, sessions, partMap, ttftMap, Infinity);
+  const requests = allRequests.slice(0, REQUEST_LOG_SAMPLE_LIMIT);
   const sessionUsage = agg.buildSessionUsageMap(messages, partMap, 0);
   const activeSessionCount = sessions.filter((s) => !s.time_archived).length;
   const archivedSessionCount = sessions.filter((s) => s.time_archived).length;
@@ -139,12 +162,21 @@ function buildSnapshotFromRows({ dbPath, stat, sources = [], dailyLimit, windowH
     config: { dailyLimit, windowHours },
     status: { label: `${Math.round(usagePercent)}%`, usagePercent, level: usagePercent >= 90 ? 'danger' : usagePercent >= 70 ? 'warning' : 'ok' },
     usage: { today, window, week, all },
-    models: agg.modelStats(messages, weekStartMs, partMap, ttftMap).slice(0, 12),
+    models: agg.modelStats(messages, 0, partMap, ttftMap),
+    modelsScope: { rangeKey: 'all', start: 0, endExclusive: 0, complete: true },
     performance: { ttftEvents: ttftEvents.length, ttftMatched: ttftMap.size, today: agg.performanceStats(messages, partMap, dayStartMs, ttftMap), window: agg.performanceStats(messages, partMap, windowStartMs, ttftMap), week: agg.performanceStats(messages, partMap, weekStartMs, ttftMap), all: agg.performanceStats(messages, partMap, 0, ttftMap) },
     queue: { events: queueEvents.length, today: agg.queueStats(queueEvents, dayStartMs), window: agg.queueStats(queueEvents, windowStartMs), week: agg.queueStats(queueEvents, weekStartMs), all: agg.queueStats(queueEvents, 0), trends: agg.buildQueueTrends(queueEvents, timestamp) },
     requestLog: requests,
-    sourceStats: aggregateBy(requests, (r) => r.sourceLabel || r.source),
-    providerStats: aggregateBy(requests, (r) => r.provider),
+    requestTotal: allRequests.length,
+    requestLogComplete: requests.length >= allRequests.length,
+    requestLogSampled: requests.length < allRequests.length,
+    requestLogSampleLimit: REQUEST_LOG_SAMPLE_LIMIT,
+    sourceStats: aggregateBy(allRequests, (r) => r.source),
+    providerStats: aggregateBy(allRequests, (r) => r.provider),
+    // These stats describe the historical snapshot only. A range-specific
+    // dashboard aggregate replaces them and carries aggregateScope.
+    sourceStatsScope: { source: 'all', model: 'all', rangeKey: 'all', start: 0, endExclusive: 0, complete: true },
+    providerStatsScope: { source: 'all', model: 'all', rangeKey: 'all', start: 0, endExclusive: 0, complete: true },
     tools: { today: agg.toolStats(parts, dayStartMs), window: agg.toolStats(parts, windowStartMs), week: agg.toolStats(parts, weekStartMs), all: agg.toolStats(parts, 0) },
     trends: agg.buildTrends(messages, partMap, timestamp),
     sessions: recentSessions,
@@ -225,7 +257,7 @@ function snapshotToText(snapshot) {
   if (!snapshot.ok) return `码道 Bar：${snapshot.error}`;
   const u = snapshot.usage;
   const lines = [];
-  lines.push(`码道 Bar · 今日 ${snapshot.status.label}`);
+  lines.push(`码道 Bar · 今日软上限 ${snapshot.status.label}`);
   lines.push(`更新：${snapshot.updatedAt}`);
   lines.push(`今日：${fmtInt(u.today.total)} token（${u.today.messages} 次回复，${u.today.errors} 个错误）`);
   lines.push(`${snapshot.config.windowHours}h：${fmtInt(u.window.total)} token`);
@@ -268,5 +300,5 @@ function errorSnapshot(error, dbPath = resolveDbPath(), options = {}) {
   return { ok: false, app: '码道 Bar', timestamp, updatedAt: fmtTime(timestamp), dbPath, error: localProvider.safeDbError(error) };
 }
 
-module.exports = { DEFAULT_DB_PATH, getSnapshot, getSnapshotAsync, getSnapshotWithCache, snapshotToText, errorSnapshot, resolveNow, fmtInt, fmtDuration, fmtTime, fmtMs };
+module.exports = { DEFAULT_DB_PATH, REQUEST_LOG_SAMPLE_LIMIT, getSnapshot, getSnapshotAsync, getSnapshotWithCache, snapshotToText, errorSnapshot, resolveNow, fmtInt, fmtDuration, fmtTime, fmtMs };
 

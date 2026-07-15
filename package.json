@@ -1,6 +1,6 @@
 {
   "name": "codearts-bar",
-  "version": "1.16.32",
+  "version": "1.16.33",
   "description": "CodeArts Bar: desktop tray app, VS Code/CodeArts status extension, and CLI for local CodeArts Agent usage.",
   "main": "src/main.js",
   "type": "commonjs",

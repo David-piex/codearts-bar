@@ -11,13 +11,17 @@ const payload = jetbrainsPayload({
   trends: { hourly24h: [{ start: 1, total: 20 }], daily14d: [] },
   models: [{ name: 'model', total: 20 }], sourceStats: [{ key: 'local', total: 20 }],
   sessions: [{ id: 'visible', archived: false }, { id: 'archived', archived: true }],
-  requestLog: [{ id: 'request' }], health: { level: 'ok' }, quota: { primary: { used: 20 } },
+  requestLog: [{ id: 'request', ok: false, status: 'error', cacheWrite: 7 }], health: { level: 'ok' }, quota: { primary: { used: 20 } },
 });
 assert.equal(payload.protocolVersion, 1);
 assert.equal(payload.generatedAt, 123);
 assert.equal(payload.data.sessions.length, 1);
 assert.equal(payload.data.sessions[0].id, 'visible');
 assert.equal(payload.data.requests[0].id, 'request');
+assert.equal(payload.data.requests[0].status, 'error');
+assert.equal(payload.data.requests[0].cacheWrite, 7);
+assert.equal(payload.data.requestTotal, 1);
+assert.equal(payload.data.historicalRequestTotal, 1);
 assert.equal(payload.data.sources[0].key, 'local');
 const searched = queryPayload({
   ...payload.data,
@@ -30,6 +34,10 @@ const searched = queryPayload({
 assert.equal(searched.data.total, 1);
 assert.equal(searched.data.items[0].id, 's2');
 assert.equal(searched.data.hasMore, false);
+const sampled = queryPayload({ ok: true, requestLog: [{ id: 'sample' }], requestTotal: 2000, requestLogSampled: true }, 'requests', { page: 2, pageSize: 1 });
+assert.equal(sampled.data.total, 1, 'snapshot request pages must not advertise unavailable historical rows');
+assert.equal(sampled.data.historicalRequestTotal, 2000);
+assert.equal(sampled.data.items.length, 0);
 const dbPage = databasePagePayload({
   limit: 2, offset: 2, total: 5, hasMore: true,
   items: [{ id: 's3', dbPath: 'D:/private/opencode.db' }, { id: 's4' }],

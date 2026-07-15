@@ -4,13 +4,30 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { execFileSync } = require('node:child_process');
+const { execFileSync, spawnSync } = require('node:child_process');
+const { queryPayload, databasePagePayload: canonicalDatabasePagePayload } = require('../src/protocol/query');
+const {
+  dashboardSnapshot,
+  dashboardPayload,
+  databasePagePayload: jetbrainsDatabasePagePayload,
+} = require('../src/providers/codearts/jetbrains-cli');
 
 const root = path.resolve(__dirname, '..');
 const fixtureDb = path.join(root, 'tests', 'fixtures', 'opencode-fixture.db');
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'codearts-jetbrains-cli-'));
 const runtimeDir = path.join(temp, 'runtime');
 const configDir = path.join(temp, 'config');
+
+const contractSnapshot = dashboardSnapshot({
+  usage: { today: { total: 20 }, window: { total: 30 }, week: { total: 40 }, all: { total: 50 } },
+  sources: [{ id: 'custom', label: '自定义', dbPath: fixtureDb }],
+  sourceStats: [{ key: 'custom', total: 50 }], modelStats: [{ name: 'model', total: 50 }], buckets: [],
+  sessionSummary: { total: 2, active: 2 }, sourceErrors: [],
+}, 1783512000000, { dailyLimit: 1000, windowHours: 48 });
+const contractOptions = { page: 1, pageSize: 50, range: { start: 1, end: 2 }, generatedAt: 1783512000000 };
+assert.deepEqual(dashboardPayload(contractSnapshot, contractOptions), queryPayload(contractSnapshot, 'dashboard', contractOptions));
+const pageContract = { limit: 2, offset: 2, total: 5, hasMore: true, items: [{ id: 's3', dbPath: 'private' }] };
+assert.deepEqual(jetbrainsDatabasePagePayload(pageContract, contractOptions), canonicalDatabasePagePayload(pageContract, contractOptions));
 
 function run(entry, args, forceSqlJs) {
   const output = execFileSync(process.execPath, [entry, ...args], {
@@ -45,6 +62,7 @@ try {
   const manifest = JSON.parse(fs.readFileSync(path.join(runtimeDir, 'CLI_RUNTIME_MANIFEST.json'), 'utf8'));
   assert.equal(manifest.entry, 'src/providers/codearts/jetbrains-cli.js');
   assert.deepEqual(manifest.files, ['src/providers/codearts/jetbrains-cli.js']);
+  assert.equal(fs.existsSync(path.join(runtimeDir, '.bundle-src')), false);
   const entry = path.join(runtimeDir, ...manifest.entry.split('/'));
   assert.equal(fs.statSync(entry).size < 125000, true, 'bundled CLI must reuse the packaged sql.js runtime instead of embedding a duplicate');
 
@@ -60,6 +78,11 @@ try {
     assert.equal(dashboard.data.dbSize > 0, true);
     assert.equal(dashboard.data.adapter, forceSqlJs ? 'sql.js' : 'node:sqlite');
 
+    const historicalDashboard = run(entry, ['query', 'dashboard', '--start', '1', '--end', '1700000000000'], forceSqlJs);
+    assert.equal(historicalDashboard.generatedAt, 1783512000000);
+    assert.deepEqual(historicalDashboard.data.status, dashboard.data.status);
+    assert.deepEqual(historicalDashboard.data.quota, dashboard.data.quota);
+
     const analytics = run(entry, ['query', 'analytics', '--start', '1', '--end', '9999999999999', '--bucket-ms', '86400000'], forceSqlJs);
     assert.equal(analytics.data.usage.total, 220);
     assert.equal(analytics.data.trend.length, 1);
@@ -73,7 +96,19 @@ try {
     const requests = run(entry, ['query', 'requests', '--page', '1', '--page-size', '1'], forceSqlJs);
     assert.equal(requests.data.total, 3);
     assert.equal(requests.data.items.length, 1);
+    assert.equal(typeof requests.data.items[0].cacheWrite, 'number');
   }
+
+  const failed = spawnSync(process.execPath, [entry, 'query', 'dashboard'], {
+    cwd: runtimeDir,
+    encoding: 'utf8',
+    timeout: 30000,
+    env: { ...process.env, CODEARTS_BAR_DB: path.join(temp, 'private', 'missing.db') },
+  });
+  assert.notEqual(failed.status, 0);
+  const failure = JSON.parse(failed.stdout);
+  assert.equal(failure.error, 'custom: 数据源 数据库不存在');
+  assert.doesNotMatch(failure.error, /private|missing\.db/i);
   console.log('ok - bundled JetBrains CLI native/sql.js query contract');
 } finally {
   fs.rmSync(temp, { recursive: true, force: true });

@@ -78,11 +78,13 @@ function emptyPlainUsage(extra = {}) {
     latencyTotal: 0,
     latencySamples: 0,
     latencyMax: null,
+    latencyValues: [],
   };
 }
 function addCompactRow(target, row = {}) {
   addUsageRow(target, row);
   if (Number.isFinite(row.latencyMs)) {
+    target.latencyValues.push(Number(row.latencyMs));
     target.latencyTotal += row.latencyMs;
     target.latencySamples += 1;
     target.latencyMax = target.latencyMax == null ? row.latencyMs : Math.max(target.latencyMax, row.latencyMs);
@@ -92,10 +94,11 @@ function addCompactRow(target, row = {}) {
     if (Number.isFinite(row.latencyMax)) {
       target.latencyMax = target.latencyMax == null ? Number(row.latencyMax) : Math.max(target.latencyMax, Number(row.latencyMax));
     }
+    if (Array.isArray(row.latencyValues)) target.latencyValues.push(...row.latencyValues.filter((value) => Number.isFinite(Number(value))).map(Number));
   }
   return target;
 }
-function finalizeCompactUsage(row = {}) {
+function finalizeCompactUsage(row = {}, options = {}) {
   const out = finalizeUsage({
     total: toNumber(row.total),
     input: toNumber(row.input),
@@ -107,7 +110,9 @@ function finalizeCompactUsage(row = {}) {
     errors: toNumber(row.errors),
   });
   out.latencyAvg = latencyAverage(toNumber(row.latencyTotal), toNumber(row.latencySamples));
-  out.latencyP95 = row.latencyMax == null ? null : Number(row.latencyMax);
+  out.latencyP95 = options.includeLatencyPercentile === false
+    ? null
+    : Array.isArray(row.latencyValues) && row.latencyValues.length ? agg.percentile(row.latencyValues, 95) : null;
   return out;
 }
 function normalizeCompactRows(rows = []) {
@@ -128,6 +133,9 @@ function normalizeCompactRows(rows = []) {
     latencyTotal: toNumber(row.latencyTotal),
     latencySamples: toNumber(row.latencySamples),
     latencyMax: row.latencyMax == null ? null : Number(row.latencyMax),
+    latencyValues: Array.isArray(row.latencyValues) && row.latencyValues.every((value) => Number.isFinite(value))
+      ? row.latencyValues
+      : Array.isArray(row.latencyValues) ? row.latencyValues.filter((value) => Number.isFinite(Number(value))).map(Number) : [],
   }));
 }
 function buildCompactUsageRollup(source, rows = [], bucketMs = HOUR_MS) {
@@ -182,6 +190,17 @@ function sumRows(rows = [], predicate = null) {
 function latencyAverage(total, samples) {
   return samples > 0 ? total / samples : null;
 }
+function withLatencyValues(target, values = []) {
+  const samples = Array.isArray(values)
+    ? values.filter((value) => Number.isFinite(Number(value))).map(Number)
+    : [];
+  Object.defineProperty(target, '_latencyValues', {
+    value: samples,
+    enumerable: false,
+    configurable: true,
+  });
+  return target;
+}
 function bucketBoundarySafe(boundary, minTime, maxTime, mode = 'start', bucketMs = HOUR_MS) {
   const value = toNumber(boundary);
   if (!value) return true;
@@ -216,11 +235,12 @@ function compactRowsInRange(rows = [], start = 0, end = 0) {
     return true;
   });
 }
-function sumCompactRows(rows = [], predicate = null) {
+function sumCompactRows(rows = [], predicate = null, options = {}) {
   const usage = emptyPlainUsage();
   for (const row of rows) {
     if (predicate && !predicate(row)) continue;
-    addCompactRow(usage, row);
+    if (options.includeLatency === false) addUsageRow(usage, row);
+    else addCompactRow(usage, row);
   }
   return finalizeCompactUsage(usage);
 }
@@ -237,12 +257,12 @@ function trendBucketsFromCompact(compact, trendRange = {}) {
     addCompactRow(prev, row);
     map.set(bucket, prev);
   }
-  return [...map.values()].sort((a, b) => a.start - b.start).map((bucket) => ({
+  return [...map.values()].sort((a, b) => a.start - b.start).map((bucket) => withLatencyValues({
     start: bucket.start,
     end: bucket.end,
     label: new Date(bucket.start).toLocaleString('zh-CN', { hour12: false }),
     ...finalizeCompactUsage(bucket),
-  }));
+  }, bucket.latencyValues));
 }
 function modelStatsFromCompact(compact, payload = {}) {
   const range = normalizeRange(payload.range || {});
@@ -256,8 +276,9 @@ function modelStatsFromCompact(compact, payload = {}) {
     map.set(key, prev);
   }
   return [...map.values()].map((item) => {
-    const usage = finalizeCompactUsage(item);
-    return {
+    const usage = finalizeCompactUsage(item, { includeLatencyPercentile: false });
+    const latency = agg.summarize(item.latencyValues || []);
+    return withLatencyValues({
       name: item.name,
       provider: item.provider,
       model: item.model,
@@ -274,22 +295,13 @@ function modelStatsFromCompact(compact, payload = {}) {
       source: item.source,
       sourceLabel: item.sourceLabel,
       performance: {
-        latency: {
-          count: toNumber(item.latencySamples),
-          min: null,
-          avg: usage.latencyAvg,
-          p50: null,
-          p90: null,
-          p95: null,
-          p99: null,
-          max: item.latencyMax == null ? null : Number(item.latencyMax),
-        },
+        latency,
         ttft: agg.summarize([]),
         firstContentApprox: agg.summarize([]),
         outputTokensPerSec: agg.summarize([]),
         totalTokensPerSec: agg.summarize([]),
       },
-    };
+    }, item.latencyValues);
   }).sort((a, b) => b.total - a.total);
 }
 function sessionSummaryPartFromRollup(rollup, payload = {}) {
@@ -355,23 +367,25 @@ function trendBucketsFromRows(rows = [], trendRange = {}) {
       errors: 0,
       _latencyTotal: 0,
       _latencySamples: 0,
-      latencyP95: null,
+      latencyValues: [],
     };
     addUsageRow(prev, row);
     if (Number.isFinite(row.latencyMs)) {
       prev._latencyTotal += row.latencyMs;
       prev._latencySamples += 1;
-      prev.latencyP95 = Math.max(prev.latencyP95 || 0, row.latencyMs);
+      prev.latencyValues.push(Number(row.latencyMs));
     }
     map.set(bucket, prev);
   }
   return [...map.values()].sort((a, b) => a.start - b.start).map((bucket) => {
     bucket.latencyAvg = latencyAverage(bucket._latencyTotal, bucket._latencySamples);
-    if (!bucket.latencyP95) bucket.latencyP95 = null;
+    bucket.latencyP95 = bucket.latencyValues.length ? agg.percentile(bucket.latencyValues, 95) : null;
+    const latencyValues = bucket.latencyValues;
+    delete bucket.latencyValues;
     delete bucket._latencyTotal;
     delete bucket._latencySamples;
     bucket.label = new Date(bucket.start).toLocaleString('zh-CN', { hour12: false });
-    return finalizeUsage(bucket);
+    return withLatencyValues(finalizeUsage(bucket), latencyValues);
   });
 }
 function modelStatsFromRows(rows = [], source = {}) {
@@ -394,36 +408,19 @@ function modelStatsFromRows(rows = [], source = {}) {
       errors: 0,
       source: source.id,
       sourceLabel: source.label,
-      _latencyTotal: 0,
-      _latencyCount: 0,
-      _latencyMin: null,
-      _latencyMax: null,
+      _latencyValues: [],
     };
     addUsageRow(prev, row);
     if (Number.isFinite(row.latencyMs)) {
-      prev._latencyTotal += row.latencyMs;
-      prev._latencyCount += 1;
-      prev._latencyMin = prev._latencyMin == null ? row.latencyMs : Math.min(prev._latencyMin, row.latencyMs);
-      prev._latencyMax = prev._latencyMax == null ? row.latencyMs : Math.max(prev._latencyMax, row.latencyMs);
+      prev._latencyValues.push(Number(row.latencyMs));
     }
     map.set(key, prev);
   }
   return [...map.values()].map((item) => {
-    const latency = {
-      count: item._latencyCount,
-      min: item._latencyMin,
-      avg: latencyAverage(item._latencyTotal, item._latencyCount),
-      p50: null,
-      p90: null,
-      p95: null,
-      p99: null,
-      max: item._latencyMax,
-    };
-    delete item._latencyTotal;
-    delete item._latencyCount;
-    delete item._latencyMin;
-    delete item._latencyMax;
-    return finalizeUsage({
+    const latency = agg.summarize(item._latencyValues);
+    const latencyValues = item._latencyValues;
+    delete item._latencyValues;
+    return withLatencyValues(finalizeUsage({
       ...item,
       performance: {
         latency,
@@ -432,22 +429,25 @@ function modelStatsFromRows(rows = [], source = {}) {
         outputTokensPerSec: agg.summarize([]),
         totalTokensPerSec: agg.summarize([]),
       },
-    });
+    }), latencyValues);
   }).sort((a, b) => b.total - a.total);
 }
 function dashboardPartFromCompactRollup(compact, { payload = {}, windows = {}, trendRange = {} } = {}) {
   const source = compact.source || {};
   const range = normalizeRange(payload.range || {});
   const scoped = compactRowsInRange(compact.hourly || [], range.start, range.end);
-  const all = sumCompactRows(scoped);
+  // Summary and source totals never expose latency percentiles. Avoid copying
+  // and sorting every latency sample four times before trend/model aggregation.
+  const usageOnly = (predicate = null) => sumCompactRows(scoped, predicate, { includeLatency: false });
+  const all = usageOnly();
   return {
     source,
     summary: {
       source,
       usage: {
-        today: sumCompactRows(scoped, (row) => toNumber(row.start) >= toNumber(windows.dayStartMs)),
-        window: sumCompactRows(scoped, (row) => toNumber(row.start) >= toNumber(windows.windowStartMs)),
-        week: sumCompactRows(scoped, (row) => toNumber(row.start) >= toNumber(windows.weekStartMs)),
+        today: usageOnly((row) => toNumber(row.start) >= toNumber(windows.dayStartMs)),
+        window: usageOnly((row) => toNumber(row.start) >= toNumber(windows.windowStartMs)),
+        week: usageOnly((row) => toNumber(row.start) >= toNumber(windows.weekStartMs)),
         all,
       },
     },
@@ -508,6 +508,7 @@ module.exports = {
   filterRowsForPayload,
   sumRows,
   latencyAverage,
+  withLatencyValues,
   bucketBoundarySafe,
   compactRollupIsSafeForDashboard,
   compactRowsInRange,

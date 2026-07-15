@@ -49,7 +49,7 @@ function closeContexts(contexts = []) {
 }
 function makeRequestState(ctx, payload, queryAll, batchSize) {
   const { source, db, tables } = ctx;
-  const { where, params } = assistantWhere(payload);
+  const { where, params } = assistantWhere(payload, { hasPart: tables.includes('part'), excludePlaceholders: true, outerAlias: 'message' });
   const total = Number(queryAll(db, `select count(*) as count from message where ${where}`, params)[0]?.count || 0);
   return {
     payload,
@@ -99,13 +99,18 @@ function kWayMergePage(states, limit, offset, sortKey) {
   let scanned = 0;
   while (items.length < limit) {
     let best = null;
+    let bestRow = null;
     let bestValue = -Infinity;
     for (const state of states) {
       fillState(state);
       const head = state.buffer[0];
       if (!head) continue;
       const value = Number(head[sortKey] || 0);
-      if (!best || value > bestValue || (value === bestValue && comparePaginationRows(head, state.buffer[0]) < 0)) { best = state; bestValue = value; }
+      if (!best || value > bestValue || (value === bestValue && comparePaginationRows(head, bestRow) < 0)) {
+        best = state;
+        bestRow = head;
+        bestValue = value;
+      }
     }
     if (!best) break;
     const next = best.buffer.shift();
@@ -120,7 +125,7 @@ function comparePaginationRows(a = {}, b = {}) {
   const sourceA = String(a.source || '');
   const sourceB = String(b.source || '');
   if (sourceA !== sourceB) return sourceA.localeCompare(sourceB);
-  return String(a.id || '').localeCompare(String(b.id || ''));
+  return String(b.id || '').localeCompare(String(a.id || ''));
 }
 function keyForSourceRow(row) {
   return `${row?.source || ''}:${row?.id || ''}`;
@@ -178,7 +183,7 @@ function hydrateSessionPageItems(rawItems, states, queryAll) {
 }
 function directRequestsPage(ctx, payload, queryAll, limit, offset) {
   const { source, db, tables } = ctx;
-  const { where, params } = assistantWhere(payload);
+  const { where, params } = assistantWhere(payload, { hasPart: tables.includes('part'), excludePlaceholders: true, outerAlias: 'message' });
   const total = Number(queryAll(db, `select count(*) as count from message where ${where}`, params)[0]?.count || 0);
   const rawMessages = queryAll(db, `select id, session_id, time_created, time_updated, data from message where ${where} order by time_created desc, id desc limit ? offset ?`, [...params, limit, offset]);
   const messages = tagRows(rawMessages, source);

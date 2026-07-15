@@ -22,12 +22,20 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: 24, cache: npm }
       - run: npm ci
+      - run: npm test
       - run: npm run build:renderer
       - run: npm run build:cli-resources
       - run: npm run build:app-resources
       - name: Build unsigned application
         shell: bash
         run: npx electron-builder --projectDir .cache/app-runtime --config ../../electron-builder.runtime.js --${{ matrix.target }} --publish never
+      - name: Verify packaged resources
+        shell: bash
+        env:
+          CODEARTS_BAR_DIST_DIR: dist
+        run: |
+          npm run smoke:app-asar
+          npm run smoke:package-resources
       - uses: actions/upload-artifact@v4
         with:
           name: codearts-bar-${{ matrix.target }}-${{ github.sha }}

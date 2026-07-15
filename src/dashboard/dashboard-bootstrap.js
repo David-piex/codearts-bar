@@ -333,17 +333,17 @@ async function refreshDashboardAggregates(s, token){
       s.aggregateScope = nextTrendScope;
       s.aggregateAt = Date.now();
     }
+    const nextUsageScope = {
+      source: basePayload.source || 'all',
+      model: basePayload.model || 'all',
+      rangeKey: basePayload.rangeKey || '',
+      start: Number(basePayload.start ?? basePayload.range?.start ?? 0) || 0,
+      end: Number(basePayload.endExclusive ?? basePayload.end ?? basePayload.range?.endExclusive ?? basePayload.range?.end ?? 0) || 0,
+      endExclusive: Number(basePayload.endExclusive ?? basePayload.end ?? basePayload.range?.endExclusive ?? basePayload.range?.end ?? 0) || 0,
+    };
     const changes = { summary: false, trend: false, sourceStats: false, modelStats: false, sessionSummary: false };
     let changed = false;
     if(aggregate?.ok && aggregate.usage && !preserveCompleteAggregate){
-      const nextUsageScope = {
-        source: basePayload.source || 'all',
-        model: basePayload.model || 'all',
-        rangeKey: basePayload.rangeKey || '',
-        start: Number(basePayload.start ?? basePayload.range?.start ?? 0) || 0,
-        end: Number(basePayload.endExclusive ?? basePayload.end ?? basePayload.range?.endExclusive ?? basePayload.range?.end ?? 0) || 0,
-        endExclusive: Number(basePayload.endExclusive ?? basePayload.end ?? basePayload.range?.endExclusive ?? basePayload.range?.end ?? 0) || 0,
-      };
       if(!shallowJsonEqual(s.usage, aggregate.usage)){ s.usage = aggregate.usage; changes.summary = true; changed = true; }
       s.usageScope = nextUsageScope;
       s.summaryOnly = false;
@@ -361,12 +361,18 @@ async function refreshDashboardAggregates(s, token){
         changed = true;
       }
     }
-    if(aggregate?.ok && Array.isArray(aggregate.sourceStats) && !preserveCompleteAggregate && !shallowJsonEqual(s.sourceStats, aggregate.sourceStats)){ s.sourceStats = aggregate.sourceStats; changes.sourceStats = true; changed = true; }
-    if(aggregate?.ok && Array.isArray(aggregate.modelStats) && !preserveCompleteAggregate && !shallowJsonEqual(s.models, aggregate.modelStats.slice(0, 12))){
-      s.models = aggregate.modelStats.slice(0, 12);
-      try { memoForSnapshot(s).modelOptions = null; } catch {}
-      changes.modelStats = true;
-      changed = true;
+    if(aggregate?.ok && Array.isArray(aggregate.sourceStats) && !preserveCompleteAggregate){
+      s.sourceStatsScope = { ...nextUsageScope, complete: true };
+      if(!shallowJsonEqual(s.sourceStats, aggregate.sourceStats)){ s.sourceStats = aggregate.sourceStats; changes.sourceStats = true; changed = true; }
+    }
+    if(aggregate?.ok && Array.isArray(aggregate.modelStats) && !preserveCompleteAggregate){
+      s.modelsScope = { ...nextUsageScope, complete: true };
+      if(!shallowJsonEqual(s.models, aggregate.modelStats)){
+        s.models = aggregate.modelStats;
+        try { memoForSnapshot(s).modelOptions = null; } catch {}
+        changes.modelStats = true;
+        changed = true;
+      }
     }
     if(aggregate?.ok && aggregate.sessionSummary && !preserveCompleteAggregate && !shallowJsonEqual(s.sessionSummary, aggregate.sessionSummary)){ s.sessionSummary = aggregate.sessionSummary; changes.sessionSummary = true; changed = true; }
     if(partialAggregate) s.sourceErrors = aggregate.sourceErrors;

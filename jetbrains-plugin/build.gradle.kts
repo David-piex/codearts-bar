@@ -5,7 +5,12 @@ plugins {
 
 group = "com.codearts.bar"
 val rootPackageJson = groovy.json.JsonSlurper().parse(file("../package.json")) as Map<*, *>
-version = rootPackageJson["version"].toString()
+// The launcher always supplies this project property. Keeping the version in
+// the Gradle invocation makes it part of the configuration-cache key, so a
+// package.json version bump cannot reuse a plugin model from the prior release.
+version = providers.gradleProperty("codeartsBarVersion")
+    .orElse(rootPackageJson["version"].toString())
+    .get()
 
 repositories {
     mavenCentral()

@@ -20,6 +20,7 @@ const aggregationRuntime = require('../src/providers/codearts/aggregation-runtim
 const aggregateCache = require('../src/providers/codearts/aggregate-cache');
 const atomicFile = require('../src/core/atomic-file');
 const sqlite = require('../src/providers/codearts/sqlite');
+const sourceQueries = require('../src/providers/codearts/sources');
 const { DatabaseSync } = require('node:sqlite');
 
 const FIXTURE_NOW_MS = Date.UTC(2026, 6, 8, 0, 0, 0);
@@ -110,6 +111,31 @@ function testAggregator() {
   assert.equal(agg.sumTokens(rows).total, 3);
   assert.equal(agg.toolStats(parts).byName[0].name, 'read');
   assert.equal(agg.performanceStats(rows, agg.buildPartMap(parts), 0).latency.avg, 1000);
+  const placeholders = [
+    { id:'placeholder', session_id:'s1', time_created:base + 2, time_updated:base + 2, data: JSON.stringify({ role:'assistant', modelID:'m', tokens:{ input:0, output:0 } }) },
+    { id:'error-row', session_id:'s1', time_created:base + 3, time_updated:base + 3, data: JSON.stringify({ role:'assistant', modelID:'m', error:{ message:'failed' }, tokens:{ input:0, output:0 } }) },
+  ];
+  const placeholderUsage = agg.sumTokens(placeholders);
+  assert.equal(placeholderUsage.messages, 1, 'zero-token assistant placeholders must be excluded while errors remain visible');
+  assert.equal(placeholderUsage.errors, 1);
+  const mixedUsage = agg.pickToken({ tokens: { input: 0 }, usage: { input: 12, output: 3, cache_creation_input_tokens: 5 } });
+  assert.deepEqual(mixedUsage, { total: 20, input: 12, output: 3, reasoning: 0, cacheRead: 0, cacheWrite: 5 }, 'tokens and usage aliases must share one fallback chain');
+  const topLevelUsage = agg.pickToken({ input_tokens: 7, completion_tokens: 2, cached_tokens: 3, cache_creation_input_tokens: 1 });
+  assert.deepEqual(topLevelUsage, { total: 13, input: 7, output: 2, reasoning: 0, cacheRead: 3, cacheWrite: 1 }, 'top-level token aliases must match nested token parsing');
+  const partOnly = { id:'part-only', session_id:'s1', time_created:base + 4, time_updated:base + 4, data: JSON.stringify({ role:'assistant', modelID:'m', tokens:{ input:0, output:0 } }) };
+  const partOnlyMap = agg.buildPartMap([{ id:'finish', message_id:'part-only', session_id:'s1', time_created:base + 5, data:JSON.stringify({ type:'step-finish', tokens:{ input:1, output:1 } }) }]);
+  const ttft = agg.buildTtftMap([partOnly], [{ sessionId:'s1', firstTokenAt:base + 5, ttftMs:1 }], partOnlyMap);
+  assert.equal(ttft.get('part-only')?.ttftMs, 1, 'step-finish-only assistants must remain eligible for TTFT matching');
+  const sessionFilter = sourceQueries.sessionWhere({ model:'m', range:{ start:10, endExclusive:20 } });
+  assert.match(sessionFilter.where, /session_message\.time_created >= \?/);
+  assert.match(sessionFilter.where, /session_message\.time_created < \?/);
+  assert.deepEqual(sessionFilter.params, [10, 20, 'm', 10, 20]);
+  assert.equal(dashboardUsageRollup.canUseSessionSummaryRollup({ model:'m' }), false, 'model-filtered session summaries must bypass unscoped rollups');
+  assert.equal(agg.percentile([10, 20, 30, 40], 95), 40);
+  const largeSummary = agg.summarize(Array.from({ length: 150000 }, (_, index) => index));
+  assert.equal(largeSummary.min, 0);
+  assert.equal(largeSummary.p95, 142499);
+  assert.equal(largeSummary.max, 149999);
 }
 function testCacheMetricsFormula() {
   const fixture = { input: 842000, output: 26000, cacheRead: 509000, cacheWrite: 0 };
@@ -172,6 +198,48 @@ function testCacheMetricPipelineConsistency() {
   assert.equal(modelCache.cacheHitDenominator, 842000 + 100 + 509000 + 100);
   assert.equal(Math.round(modelCache.cacheHitRate * 10) / 10, Math.round(((509000 + 100) / modelCache.cacheHitDenominator) * 1000) / 10);
   assert.notEqual(core.cacheHitRate, (core.cacheRead / Math.max(1, core.cacheRead + core.cacheWrite)) * 100, 'cache hit rate must not use cacheRead/(cacheRead+cacheWrite)');
+  const latencyRows = Array.from({ length: 20 }, (_, index) => ({
+    id: `lat-${index}`,
+    sessionId: 'latency-session',
+    timeCreated: base + index * 1000,
+    provider: 'p95-provider',
+    model: 'p95-model',
+    total: 1,
+    input: 1,
+    output: 0,
+    reasoning: 0,
+    cacheRead: 0,
+    cacheWrite: 0,
+    messages: 1,
+    errors: 0,
+    latencyMs: index === 19 ? 1000 : index + 1,
+  }));
+  const latencyTrend = usageRollupCalc.trendBucketsFromRows(latencyRows, { start: base, endExclusive: base + 60000, bucketMs: 60000 });
+  assert.equal(latencyTrend[0].latencyP95, 19, 'trend P95 must be percentile, not max');
+  const latencyModel = usageRollupCalc.modelStatsFromRows(latencyRows, { id: 'fixture', label: 'Fixture' })[0];
+  assert.equal(latencyModel.performance.latency.p50, 10, 'model P50 must use the same percentile contract');
+  assert.equal(latencyModel.performance.latency.p95, 19, 'model P95 must be percentile, not max');
+  assert.equal(latencyModel.performance.latency.p99, 1000, 'model P99 must use the same percentile contract');
+  const splitModels = [latencyRows.slice(0, 10), latencyRows.slice(10)].map((rows, index) => usageRollupCalc.modelStatsFromRows(rows, { id: `source-${index}`, label: `Source ${index}` }));
+  const mergedModel = aggregationRuntime.mergeModelStats(splitModels)[0];
+  assert.equal(mergedModel.performance?.latency?.p50, 10, 'multi-source model P50 must merge raw rollup samples');
+  assert.equal(mergedModel.performance?.latency?.p90, 18, 'multi-source model P90 must merge raw rollup samples');
+  assert.equal(mergedModel.performance?.latency?.p95, 19, 'multi-source model P95 must merge raw rollup samples');
+  assert.equal(mergedModel.performance?.latency?.p99, 1000, 'multi-source model P99 must merge raw rollup samples');
+  const splitBuckets = [latencyRows.slice(0, 10), latencyRows.slice(10)].flatMap((rows) => usageRollupCalc.trendBucketsFromRows(rows, { start: base, endExclusive: base + 60000, bucketMs: 60000 }));
+  const mergedBucket = aggregationRuntime.mergeBuckets(splitBuckets, 60000)[0];
+  assert.equal(mergedBucket.latencyP95, 19, 'multi-source trend P95 must merge raw rollup samples');
+  const compactParts = [latencyRows.slice(0, 10), latencyRows.slice(10)].map((rows, index) => {
+    const source = { id: `compact-${index}`, label: `Compact ${index}`, dbPath: `compact-${index}.db` };
+    const compactRollup = usageRollupCalc.buildCompactUsageRollup(source, rows, 60000);
+    return usageRollupCalc.dashboardPartFromCompactRollup(compactRollup, {
+      payload: { range: { start: base, endExclusive: base + 60000 } },
+      windows: { dayStartMs: base, windowStartMs: base, weekStartMs: base },
+      trendRange: { start: base, endExclusive: base + 60000, bucketMs: 60000 },
+    });
+  });
+  assert.equal(aggregationRuntime.mergeModelStats(compactParts.map((part) => part.modelStats))[0].performance.latency.p95, 19, 'compact rollup model P95 must merge raw samples');
+  assert.equal(aggregationRuntime.mergeBuckets(compactParts.flatMap((part) => part.trendBuckets), 60000)[0].latencyP95, 19, 'compact rollup trend P95 must merge raw samples');
 }
 async function testRuntimeErrorPrivacy() {
   const secretRoot = path.join(os.tmpdir(), 'private-runtime-secret');
@@ -504,6 +572,10 @@ async function testSqliteFixtureSqlJsFallback() {
     assert.equal(snap.adapter, 'sql.js');
     assert.equal(snap.usage.all.total, 220);
     assert.equal(snap.models[0].model, 'fixture-model');
+    assert.equal(snap.requestTotal, 3, 'snapshot request total must count meaningful assistant rows');
+    assert.equal(snap.requestLogComplete, true, 'small fixture request log is complete');
+    assert.equal(snap.requestLogSampled, false);
+    assert.equal(snap.modelsScope?.rangeKey, 'all', 'snapshot model stats must declare their all-time scope');
     assert.equal(snap.tools.all.byName[0].name, 'read');
     const multi = snap.sessions.find((s) => s.id === 'ses_multi');
     assert.equal(multi.usage.total, 53);
@@ -547,6 +619,8 @@ async function testProviderDbPagination() {
     assert.equal(sessionPage.items[0].id, 'ses_multi');
     assert.equal(sessionPage.items[0].usage.total, 53);
     assert.equal(sessionPage.items[0].usage.userTurns, 2);
+    const rangeSession = await localProvider.getSessionsPage({ dbPath, limit: 20, offset: 0, source: 'all', status: 'all', range: { start: 1783386020000, endExclusive: 1783386040000 } });
+    assert.equal(rangeSession.items.find((item) => item.id === 'ses_multi')?.usage.total, 35, 'session usage must honor the selected message range');
   } finally {
     if (previous == null) delete process.env.CODEARTS_BAR_FORCE_SQLJS; else process.env.CODEARTS_BAR_FORCE_SQLJS = previous;
   }
@@ -593,6 +667,11 @@ async function testProviderDbAggregates() {
     const sessions = await localProvider.getSessionSummary({ dbPath, timestamp });
     assert.equal(sessions.total, 2);
     assert.equal(sessions.active, 2);
+
+    const dashboard = await localProvider.getDashboardAggregates({ dbPath, timestamp, range: { start: 0, end: Date.UTC(2030, 0, 1) }, bucketMs: 86400000, disableAggregateCache: true });
+    assert.equal(dashboard.ok, true);
+    assert.equal(dashboard.modelStats[0].performance.latency.p95, models.items[0].performance.latency.p95);
+    assert.equal(JSON.stringify(dashboard).includes('_latencyValues'), false, 'single-source dashboard payload must not expose internal percentile samples');
 
     const health = await localProvider.getDatabaseHealth({ dbPath });
     assert.equal(health.items[0].quickCheck, 'ok');
@@ -676,6 +755,7 @@ async function testExactJsonFiltersAndExclusiveRange() {
     insert.run('exact-gpt4', 'ses_multi', boundary - 3, boundary - 2, JSON.stringify({ role: 'assistant', modelID: 'gpt-4', tokens: { total: 1 }, error: null }));
     insert.run('prefix-gpt4o', 'ses_multi', boundary - 2, boundary - 1, JSON.stringify({ role: 'assistant', modelID: 'gpt-4o', tokens: { total: 2 }, error: { message: 'failed' } }));
     insert.run('boundary-gpt4', 'ses_multi', boundary, boundary, JSON.stringify({ role: 'assistant', model: { modelID: 'gpt-4' }, tokens: { total: 4 }, error: 'failed at boundary' }));
+    insert.run('top-level-token-aliases', 'ses_multi', boundary - 5, boundary - 4, JSON.stringify({ role: 'assistant', modelID: 'top-level-model', input_tokens: 5, completion_tokens: 2 }));
     insert.run('not-assistant', 'ses_multi', boundary - 1, boundary - 1, JSON.stringify({ role: 'user', modelID: 'gpt-4', note: { role: 'assistant' }, tokens: { total: 8 }, error: { message: 'ignore' } }));
     insert.run('malformed-json', 'ses_multi', boundary - 1, boundary - 1, '{"role":"assistant",');
     db.prepare('insert into part (id, message_id, session_id, time_created, time_updated, data) values (?, ?, ?, ?, ?, ?)')
@@ -700,7 +780,7 @@ async function testExactJsonFiltersAndExclusiveRange() {
       const errors = await localProvider.getRequestsPage({ dbPath, source: 'all', errorsOnly: true, range: { start: boundary - 10, end: boundary }, limit: 20 });
       assert.deepEqual(errors.items.map((item) => item.id), ['prefix-gpt4o']);
       const successes = await localProvider.getRequestsPage({ dbPath, source: 'all', error: false, range: { start: boundary - 10, end: boundary }, limit: 20 });
-      assert.deepEqual(successes.items.map((item) => item.id), ['exact-gpt4', 'nested-gpt4']);
+      assert.deepEqual(successes.items.map((item) => item.id), ['exact-gpt4', 'nested-gpt4', 'top-level-token-aliases']);
       const aggregate = await localProvider.getSourceStats({
         dbPath,
         source: 'all',
@@ -711,6 +791,11 @@ async function testExactJsonFiltersAndExclusiveRange() {
       assert.equal(aggregate.items[0].requests, 2);
       assert.equal(aggregate.items[0].total, 4);
       assert.equal(aggregate.items[0].errors, 0);
+      const topLevelPage = await localProvider.getRequestsPage({ dbPath, source: 'all', model: 'top-level-model', range: { start: boundary - 10, endExclusive: boundary }, limit: 20 });
+      assert.deepEqual(topLevelPage.items.map((item) => ({ id: item.id, total: item.total })), [{ id: 'top-level-token-aliases', total: 7 }]);
+      const topLevelAggregate = await localProvider.getSourceStats({ dbPath, source: 'all', model: 'top-level-model', range: { start: boundary - 10, endExclusive: boundary }, disableAggregateCache: true });
+      assert.equal(topLevelAggregate.items[0].total, 7);
+      assert.equal(topLevelAggregate.items[0].requests, 1);
       const modelSessions = await localProvider.getSessionsPage({ dbPath, source: 'all', status: 'all', model: 'gpt-4', limit: 20, offset: 0 });
       assert.ok(modelSessions.items.some((item) => item.id === 'ses_multi'));
       assert.ok(modelSessions.items.every((item) => (item.usage?.models || []).every((model) => model.model === 'gpt-4')));

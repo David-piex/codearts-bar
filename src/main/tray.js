@@ -40,7 +40,7 @@ function traySummaryText(snapshot, fmtInt) {
   if (!snapshot || !snapshot.ok) return snapshot ? `码道 Bar\n${snapshot.error}` : '码道 Bar';
   const u = snapshot.usage || {};
   return [
-    `码道 Bar · 今日 ${snapshot.status?.label || '0%'}`,
+    `码道 Bar · 今日软上限 ${snapshot.status?.label || '0%'}`,
     `更新：${snapshot.updatedAt || '未刷新'}`,
     `今日：${fmtInt(u.today?.total || 0)} token`,
     `24h：${fmtInt(u.window?.total || 0)} token`,

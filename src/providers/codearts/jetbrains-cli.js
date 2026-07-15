@@ -1,13 +1,40 @@
 'use strict';
 
 const fs = require('node:fs');
-const { queryPayload, databasePagePayload } = require('../../protocol/query');
 const { envelope, failure } = require('../../protocol/envelope');
 const aggregation = require('./aggregation-engine');
 const pagination = require('./pagination');
 
 const DEFAULT_DAILY_LIMIT = 200000;
 const DEFAULT_WINDOW_HOURS = 24;
+
+function finite(value, fallback = 0) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : fallback;
+}
+
+function databasePagePayload(result = {}, options = {}) {
+  const pageSize = Math.max(1, Math.trunc(finite(result.limit, finite(options.pageSize, 50))));
+  const offset = Math.max(0, Math.trunc(finite(result.offset, (Math.max(1, Math.trunc(finite(options.page, 1))) - 1) * pageSize)));
+  const total = Math.max(0, Math.trunc(finite(result.total, 0)));
+  const page = Math.floor(offset / pageSize) + 1;
+  const items = (result.items || []).map((item) => { const { dbPath: _dbPath, ...safe } = item || {}; return safe; });
+  return envelope({ items, page, pageSize, total, pageCount: Math.max(1, Math.ceil(total / pageSize)), hasMore: Boolean(result.hasMore), strategy: result.strategy || 'database' }, { ...options, diagnostics: { adapter: result.nativeError ? 'sql.js' : 'node:sqlite', cache: null } });
+}
+
+function dashboardPayload(snapshot, options = {}) {
+  const requests = snapshot.requestLog || [];
+  const historicalRequestTotal = finite(snapshot.requestTotal, requests.length);
+  return envelope({
+    updatedAt: snapshot.updatedAt || '', dbPath: snapshot.dbPath || '', dbSize: finite(snapshot.dbSize), adapter: snapshot.adapter || '', config: snapshot.config || {}, status: snapshot.status || {}, usage: snapshot.usage || {},
+    trends: snapshot.trends || { hourly24h: [], daily14d: [] }, models: snapshot.models || [], modelsScope: snapshot.modelsScope || null, sources: snapshot.sourceStats || snapshot.sources || [],
+    sessions: (snapshot.sessions || []).filter((item) => !item.archived), sessionSummary: snapshot.sessionSummary || {}, requests,
+    requestTotal: requests.length, historicalRequestTotal, requestLogComplete: snapshot.requestLogComplete === true || historicalRequestTotal <= requests.length,
+    requestLogSampled: snapshot.requestLogSampled === true || historicalRequestTotal > requests.length, requestLogSampleLimit: finite(snapshot.requestLogSampleLimit, requests.length),
+    sourceStatsScope: snapshot.sourceStatsScope || null, providerStats: snapshot.providerStats || [], providerStatsScope: snapshot.providerStatsScope || null,
+    performance: snapshot.performance || {}, queue: snapshot.queue || {}, tools: snapshot.tools || {}, health: snapshot.health || {}, quota: snapshot.quota || {}, freshness: snapshot.freshness || {}, providers: snapshot.providers || [], process: snapshot.process || {},
+  }, { ...options, generatedAt: finite(snapshot.timestamp, Date.now()), diagnostics: { adapter: snapshot.adapter || '', cache: snapshot.freshness?.source || null } });
+}
 
 function readOption(args, name, fallback = null) {
   const index = args.indexOf(name);
@@ -128,14 +155,14 @@ async function query(resource, args = []) {
     return databasePagePayload(result, pageOptions);
   }
   if (resource === 'dashboard') {
-    const timestamp = end || positiveNumber(process.env.CODEARTS_BAR_NOW_MS, Date.now());
+    const timestamp = positiveNumber(process.env.CODEARTS_BAR_NOW_MS, Date.now());
     const settings = {
       dailyLimit: positiveNumber(process.env.CODEARTS_BAR_DAILY_LIMIT, DEFAULT_DAILY_LIMIT),
       windowHours: Math.min(24 * 365, positiveNumber(process.env.CODEARTS_BAR_WINDOW_HOURS, DEFAULT_WINDOW_HOURS)),
     };
     const result = await aggregation.getDashboardAggregates({ source, timestamp, windowHours: settings.windowHours, bucketMs: 3600000 });
     if (!result?.ok) throw new Error(result?.error || 'Unable to read local usage data.');
-    return queryPayload(dashboardSnapshot(result, result.timestamp || timestamp, settings), 'dashboard', pageOptions);
+    return dashboardPayload(dashboardSnapshot(result, result.timestamp || timestamp, settings), pageOptions);
   }
   throw new Error(`Unknown query resource: ${resource}`);
 }
@@ -148,4 +175,4 @@ async function run() {
 }
 
 if (require.main === module) run().catch((error) => { console.log(JSON.stringify(failure(error))); process.exitCode = 1; });
-module.exports = { query, readOption, usageFromBuckets, positiveNumber, nextDayStart, dashboardSnapshot };
+module.exports = { query, readOption, usageFromBuckets, positiveNumber, nextDayStart, dashboardSnapshot, databasePagePayload, dashboardPayload };

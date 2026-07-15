@@ -7,7 +7,9 @@ const path = require("node:path");
 const { spawn } = require("node:child_process");
 
 const root = path.join(__dirname, "..");
-const distDir = path.resolve(process.env.CODEARTS_BAR_DIST_DIR || path.join(root, "dist"));
+// The standalone smoke command validates the atomically published release.
+// Build orchestration can still point this test at its temporary dist folder.
+const distDir = path.resolve(process.env.CODEARTS_BAR_DIST_DIR || path.join(root, "release"));
 const pkg = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
 
 if (process.env.CODEARTS_BAR_SKIP_RELEASE_SMOKE === "1") {
@@ -93,9 +95,9 @@ function waitForPackageReady({ child, resultFile, timeoutMs = 45000 }) {
 
 (async () => {
   const artifact = findPortableArtifact();
-  assert.ok(artifact, `No portable package found in ${distDir}. Run npm run build:app first.`);
+  assert.ok(artifact, `No portable package found in ${distDir}. Run npm run release first.`);
   const installer = findInstallerArtifact();
-  assert.ok(installer, `No installer package found in ${distDir}. Run npm run build:app first.`);
+  assert.ok(installer, `No installer package found in ${distDir}. Run npm run release first.`);
   assert.match(path.basename(artifact), new RegExp(`^CodeArts-Bar-Portable-${pkg.version.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}-x64\\.exe$`), "portable artifact should match current package version");
   assert.match(path.basename(installer), new RegExp(`^CodeArts-Bar-Setup-${pkg.version.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}-x64\\.exe$`), "installer artifact should match current package version");
 

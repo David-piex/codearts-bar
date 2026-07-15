@@ -79,7 +79,7 @@ function markdownDetails(snapshot) {
       "codeartsBar.openDataFolder",
     ],
   };
-  md.appendMarkdown(`**${T.app} - ${T.today} ${snapshot.status.label}**\n\n`);
+  md.appendMarkdown(`**${T.app} - 今日软上限 ${snapshot.status.label}**\n\n`);
   md.appendMarkdown(`${T.updated}: ${snapshot.updatedAt}\n\n`);
   md.appendMarkdown(
     `| ${T.window} | token | ${T.reply} | ${T.error} | \u7f13\u5b58\u547d\u4e2d |\n|---|---:|---:|---:|---:|\n`,

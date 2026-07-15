@@ -98,6 +98,24 @@ function writeManifest(files, options = {}) {
   fs.writeFileSync(path.join(outDir, 'CLI_RUNTIME_MANIFEST.json'), JSON.stringify(manifest, null, 2), 'utf8');
 }
 
+function prepareBundleEntry() {
+  if (path.basename(entry).toLowerCase() !== 'jetbrains-cli.js') return { entry, cleanup() {} };
+  required.clear();
+  scan(entry);
+  const stageRoot = path.join(outDir, '.bundle-src');
+  for (const file of required) {
+    const staged = path.join(stageRoot, path.relative(root, file));
+    fs.mkdirSync(path.dirname(staged), { recursive: true });
+    fs.copyFileSync(file, staged);
+  }
+  const slimDiagnostics = path.join(srcDir, 'providers', 'codearts', 'jetbrains-diagnostics.js');
+  fs.copyFileSync(slimDiagnostics, path.join(stageRoot, 'src', 'providers', 'codearts', 'diagnostics.js'));
+  return {
+    entry: path.join(stageRoot, path.relative(root, entry)),
+    cleanup() { fs.rmSync(stageRoot, { recursive: true, force: true }); },
+  };
+}
+
 function build() {
   fs.rmSync(outDir, { recursive: true, force: true });
   fs.mkdirSync(outDir, { recursive: true });
@@ -107,18 +125,24 @@ function build() {
     const relativeEntry = path.relative(root, entry).replace(/\\/g, '/');
     const bundleFile = path.join(outDir, ...relativeEntry.split('/'));
     fs.mkdirSync(path.dirname(bundleFile), { recursive: true });
-    require('esbuild').buildSync({
-      entryPoints: [entry],
-      outfile: bundleFile,
-      bundle: true,
-      platform: 'node',
-      target: 'node18',
-      format: 'cjs',
-      external: ['sql.js'],
-      minify: true,
-      legalComments: 'none',
-      sourcemap: false,
-    });
+    const bundleInput = prepareBundleEntry();
+    try {
+      require('esbuild').buildSync({
+        entryPoints: [bundleInput.entry],
+        outfile: bundleFile,
+        bundle: true,
+        platform: 'node',
+        target: 'node18',
+        format: 'cjs',
+        external: ['sql.js'],
+        minify: true,
+        charset: 'utf8',
+        legalComments: 'none',
+        sourcemap: false,
+      });
+    } finally {
+      bundleInput.cleanup();
+    }
     files = [bundleFile];
     manifestOptions = { entry: relativeEntry, packagedFiles: [{ rel: relativeEntry, file: bundleFile }] };
   } else {
@@ -137,4 +161,4 @@ function build() {
 
 if (require.main === module) build();
 
-module.exports = { build, resolveLocalRequire };
+module.exports = { build, resolveLocalRequire, prepareBundleEntry };

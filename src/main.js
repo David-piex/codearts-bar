@@ -413,7 +413,11 @@ async function buildDashboardLightSnapshot(payload = {}) {
         : (getDashboardSnapshotForPayload(nextPayload) || lastSnapshot);
       if (!base?.ok) return base;
       const commitGeneration = canonical ? ++canonicalSnapshotGeneration : 0;
-      const { fullSnap, dashboardSnap } = await buildDashboardLightPair(base, nextPayload);
+      // Range/source/model snapshots must keep the top-level quota/status from
+      // the live canonical snapshot. Canonical requests derive those fields
+      // from their own current aggregate instead.
+      const canonicalReference = canonical ? null : lastSnapshot;
+      const { fullSnap, dashboardSnap } = await buildDashboardLightPair(base, nextPayload, canonicalReference);
       // Return this task's own result to its caller. Only cache/commit it when it
       // is still the newest task for the same scope.
       if (isSuperseded()) return dashboardSnap;
@@ -449,8 +453,14 @@ registerDashboardIpc({
   getLastSnapshot: () => lastSnapshot,
   getLastDashboardSnapshot: () => lastDashboardSnapshot,
   getDashboardSnapshotForPayload,
-  buildInitialSummarySnapshot,
-  buildInitialLightSnapshot,
+  buildInitialSummarySnapshot: async (payload) => {
+    if (!lastSnapshot?.ok) await refreshLight({ summaryOnly: true, reason: 'dashboard-canonical-base' });
+    return buildInitialSummarySnapshot(payload, lastSnapshot);
+  },
+  buildInitialLightSnapshot: async (payload) => {
+    if (!lastSnapshot?.ok) await refreshLight({ reason: 'dashboard-canonical-base' });
+    return buildInitialLightSnapshot(payload, lastSnapshot);
+  },
   buildDashboardPreviewSnapshot,
   buildDashboardLightSnapshot,
   refreshNow,

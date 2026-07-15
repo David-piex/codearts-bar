@@ -150,6 +150,20 @@ function addTokenInto(target, value = {}) {
 }
 function emptyUsage() { return agg.cacheMetrics.withCacheHitMetrics({ total: 0, input: 0, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0, messages: 0, errors: 0 }); }
 function addUsage(a, b) { return addTokenInto(a, b); }
+function combinePercentile(values = [], p = 95) {
+  const nums = values.filter((value) => Number.isFinite(Number(value))).map(Number);
+  return nums.length ? agg.percentile(nums, p) : null;
+}
+function latencySamples(item = {}) {
+  return Array.isArray(item._latencyValues)
+    ? item._latencyValues.filter((value) => Number.isFinite(Number(value))).map(Number)
+    : [];
+}
+function optionalNumber(value) {
+  if (value == null || value === '') return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
 function aggregateError(nativeError, page) { if (nativeError) page.nativeError = safeDbError(nativeError); return page; }
 function sourceList(payload = {}) {
   return listDataSources(payload).filter((s) => sourceMatchesPayload(s, payload));
@@ -237,18 +251,27 @@ function rebucketCalendarDays(items = [], trendRange = {}) {
   const map = new Map();
   for (const item of items || []) {
     const key = localDayStartMs(Number(item.start || 0));
-    const prev = map.get(key) || { start: key, end: nextLocalDayStartMs(key), total: 0, input: 0, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0, messages: 0, errors: 0, latencyAvg: null, latencyP95: null, _latencyWeighted: 0, _latencySamples: 0 };
+    const prev = map.get(key) || { start: key, end: nextLocalDayStartMs(key), total: 0, input: 0, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0, messages: 0, errors: 0, latencyAvg: null, latencyP95: null, _latencyWeighted: 0, _latencySamples: 0, _latencyValues: [], _latencyFallbacks: [] };
     addUsage(prev, item);
-    if (Number.isFinite(item.latencyAvg) && Number(item.messages || 0) > 0) {
-      prev._latencyWeighted += item.latencyAvg * Number(item.messages || 0);
-      prev._latencySamples += Number(item.messages || 0);
+    const samples = latencySamples(item);
+    const sampleWeight = samples.length || Number(item.messages || 0);
+    if (Number.isFinite(item.latencyAvg) && sampleWeight > 0) {
+      prev._latencyWeighted += item.latencyAvg * sampleWeight;
+      prev._latencySamples += sampleWeight;
     }
-    prev.latencyP95 = Math.max(prev.latencyP95 || 0, item.latencyP95 || 0) || null;
+    if (samples.length) prev._latencyValues.push(...samples);
+    else if (Number.isFinite(item.latencyP95)) prev._latencyFallbacks.push(Number(item.latencyP95));
     map.set(key, prev);
   }
   return [...map.values()].sort((a, b) => a.start - b.start).map((item) => {
     item.latencyAvg = item._latencySamples ? item._latencyWeighted / item._latencySamples : null;
+    item.latencyP95 = item._latencyValues.length
+      ? combinePercentile(item._latencyValues)
+      : item._latencyFallbacks.length === 1 ? item._latencyFallbacks[0] : null;
+    const samples = item._latencyValues.slice();
     delete item._latencyWeighted; delete item._latencySamples;
+    delete item._latencyValues; delete item._latencyFallbacks;
+    Object.defineProperty(item, '_latencyValues', { value: samples, enumerable: false, configurable: true });
     item.label = new Date(item.start).toLocaleString('zh-CN', { hour12: false });
     return agg.cacheMetrics.withCacheHitMetrics(item);
   });
@@ -312,18 +335,27 @@ function mergeBuckets(items, bucketMs) {
   const map = new Map();
   for (const item of items || []) {
     const key = Number(item.start || 0);
-    const prev = map.get(key) || { start: key, end: key + bucketMs, total: 0, input: 0, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0, messages: 0, errors: 0, latencyAvg: null, latencyP95: null, _latencyWeighted: 0, _latencySamples: 0 };
+    const prev = map.get(key) || { start: key, end: key + bucketMs, total: 0, input: 0, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0, messages: 0, errors: 0, latencyAvg: null, latencyP95: null, _latencyWeighted: 0, _latencySamples: 0, _latencyValues: [], _latencyFallbacks: [] };
     addUsage(prev, item);
-    if (Number.isFinite(item.latencyAvg) && Number(item.messages || 0) > 0) {
-      prev._latencyWeighted += item.latencyAvg * Number(item.messages || 0);
-      prev._latencySamples += Number(item.messages || 0);
+    const samples = latencySamples(item);
+    const sampleWeight = samples.length || Number(item.messages || 0);
+    if (Number.isFinite(item.latencyAvg) && sampleWeight > 0) {
+      prev._latencyWeighted += item.latencyAvg * sampleWeight;
+      prev._latencySamples += sampleWeight;
     }
-    prev.latencyP95 = Math.max(prev.latencyP95 || 0, item.latencyP95 || 0) || null;
+    if (samples.length) prev._latencyValues.push(...samples);
+    else if (Number.isFinite(item.latencyP95)) prev._latencyFallbacks.push(Number(item.latencyP95));
     map.set(key, prev);
   }
   return [...map.values()].sort((a, b) => a.start - b.start).map((b) => {
     b.latencyAvg = b._latencySamples ? b._latencyWeighted / b._latencySamples : null;
+    b.latencyP95 = b._latencyValues.length
+      ? combinePercentile(b._latencyValues)
+      : b._latencyFallbacks.length === 1 ? b._latencyFallbacks[0] : null;
+    const samples = b._latencyValues.slice();
     delete b._latencyWeighted; delete b._latencySamples;
+    delete b._latencyValues; delete b._latencyFallbacks;
+    Object.defineProperty(b, '_latencyValues', { value: samples, enumerable: false, configurable: true });
     b.label = new Date(b.start).toLocaleString('zh-CN', { hour12: false });
     return agg.cacheMetrics.withCacheHitMetrics(b);
   });
@@ -378,12 +410,61 @@ function mergeModelStats(items) {
   const map = new Map();
   for (const arr of items || []) for (const item of arr || []) {
     const key = item.name || `${item.provider} / ${item.model}`;
-    const prev = map.get(key) || { name: key, provider: item.provider, model: item.model, total: 0, input: 0, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0, messages: 0, errors: 0, sources: [] };
+    const prev = map.get(key) || {
+      name: key, provider: item.provider, model: item.model,
+      total: 0, input: 0, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0, messages: 0, errors: 0,
+      sources: [], _performanceParts: [], _latencyValues: [], _latencyCount: 0,
+      _latencyWeighted: 0, _latencyMin: null, _latencyMax: null, _latencyFallbacks: [], _latencyValuesComplete: true,
+    };
     addUsage(prev, item);
     prev.sources.push(item.source);
+    const performance = item.performance || {};
+    const latency = performance.latency || {};
+    const count = Math.max(0, Number(latency.count || 0));
+    const samples = latencySamples(item);
+    const latencyAvg = optionalNumber(latency.avg);
+    const latencyMin = optionalNumber(latency.min);
+    const latencyMax = optionalNumber(latency.max);
+    const latencyP95 = optionalNumber(latency.p95);
+    prev._performanceParts.push(performance);
+    prev._latencyCount += count;
+    if (count > 0 && latencyAvg != null) prev._latencyWeighted += latencyAvg * count;
+    if (latencyMin != null) prev._latencyMin = prev._latencyMin == null ? latencyMin : Math.min(prev._latencyMin, latencyMin);
+    if (latencyMax != null) prev._latencyMax = prev._latencyMax == null ? latencyMax : Math.max(prev._latencyMax, latencyMax);
+    if (samples.length) prev._latencyValues.push(...samples);
+    if (samples.length < count) prev._latencyValuesComplete = false;
+    if (latencyP95 != null) prev._latencyFallbacks.push(latencyP95);
     map.set(key, prev);
   }
-  return [...map.values()].map((item) => agg.cacheMetrics.withCacheHitMetrics(item)).sort((a, b) => b.total - a.total);
+  return [...map.values()].map((item) => {
+    const basePerformance = item._performanceParts.length === 1 ? item._performanceParts[0] : {};
+    const completeLatency = item._latencyValuesComplete && item._latencyValues.length
+      ? agg.summarize(item._latencyValues)
+      : null;
+    const latencyP95 = completeLatency?.p95
+      ?? (item._latencyFallbacks.length === 1 ? item._latencyFallbacks[0] : null);
+    const performance = {
+      ttft: basePerformance.ttft || agg.summarize([]),
+      firstContentApprox: basePerformance.firstContentApprox || agg.summarize([]),
+      outputTokensPerSec: basePerformance.outputTokensPerSec || agg.summarize([]),
+      totalTokensPerSec: basePerformance.totalTokensPerSec || agg.summarize([]),
+      latency: {
+        count: item._latencyCount,
+        min: item._latencyMin,
+        avg: item._latencyCount ? item._latencyWeighted / item._latencyCount : null,
+        p50: completeLatency?.p50 ?? null,
+        p90: completeLatency?.p90 ?? null,
+        p95: latencyP95,
+        p99: completeLatency?.p99 ?? null,
+        max: item._latencyMax,
+      },
+    };
+    delete item._performanceParts; delete item._latencyValues; delete item._latencyCount;
+    delete item._latencyWeighted; delete item._latencyMin; delete item._latencyMax;
+    delete item._latencyFallbacks; delete item._latencyValuesComplete;
+    item.sources = [...new Set(item.sources.filter(Boolean))];
+    return agg.cacheMetrics.withCacheHitMetrics({ ...item, performance });
+  }).sort((a, b) => b.total - a.total);
 }
 function mergeSessionSummaries(items, payload = {}, errors = []) {
   const out = { ok: true, timestamp: Number(payload.timestamp || Date.now()), total: 0, active: 0, archived: 0, recent7d: 0, bySource: [], projects: [], sourceErrors: errors };
