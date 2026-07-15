@@ -103,13 +103,13 @@ function createCrashReporter({
   function runtimePayload(extra = {}) {
     const time = new Date(now()).toISOString();
     return sanitizeForDisk({
+      ...extra,
       app: 'CodeArts Bar',
       version: appVersion(),
       pid: processRef?.pid || null,
       startedAt: extra.startedAt || time,
-      updatedAt: time,
-      cleanExit: false,
-      ...extra,
+      updatedAt: extra.updatedAt || time,
+      cleanExit: extra.cleanExit === true,
     });
   }
 

@@ -74,6 +74,7 @@ const runtimeFiles = [
     .filter((entry) => entry.isFile() && entry.name.endsWith(".js"))
     .map((entry) => `protocol/${entry.name}`)
     .sort(),
+  "vendor/session-xlsx.js",
 ];
 const uiFiles = [
   "dashboard.js",
@@ -112,6 +113,9 @@ fs.cpSync(path.join(root, "src", "core"), path.join(extDir, "core"), {
   recursive: true,
 });
 fs.cpSync(path.join(root, "src", "protocol"), path.join(extDir, "protocol"), {
+  recursive: true,
+});
+fs.cpSync(path.join(root, "src", "vendor"), path.join(extDir, "vendor"), {
   recursive: true,
 });
 fs.rmSync(path.join(extDir, "core", "chart-axis.js"), { force: true });

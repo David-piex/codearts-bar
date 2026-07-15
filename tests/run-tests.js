@@ -21,6 +21,7 @@ const aggregateCache = require('../src/providers/codearts/aggregate-cache');
 const atomicFile = require('../src/core/atomic-file');
 const sqlite = require('../src/providers/codearts/sqlite');
 const sourceQueries = require('../src/providers/codearts/sources');
+const { redactSensitiveText } = require('../src/core/sensitive-text');
 const { DatabaseSync } = require('node:sqlite');
 
 const FIXTURE_NOW_MS = Date.UTC(2026, 6, 8, 0, 0, 0);
@@ -897,6 +898,14 @@ async function testDashboardUsageRollupCache() {
     assert.equal(second.sessionSummary.total, first.sessionSummary.total);
     assert.ok(second.perf.usageRollup.statuses[0].compactBuckets >= 1);
 
+    const independentSessionSearch = await localProvider.getDashboardAggregates({
+      ...payload,
+      sessionQuery: 'Multi',
+    });
+    assert.equal(independentSessionSearch.usage.all.total, first.usage.all.total, 'session search must not change rollup analytics usage');
+    assert.equal(independentSessionSearch.perf.usageRollup.statuses[0].status, 'compact-hit');
+    assert.equal(independentSessionSearch.sessionSummary.total, 1, 'sessionQuery must independently filter the session summary');
+
     const summaryFast = await localProvider.getSummary(payload);
     assert.equal(summaryFast.ok, true);
     assert.equal(summaryFast.usage.all.total, first.usage.all.total);
@@ -943,7 +952,7 @@ async function testDashboardUsageRollupCache() {
   }
 }
 
-(async () => {
+async function main() {
   testAtomicRenameRetriesTransientWindowsLocks();
   await testExplicitMissingDatabaseDoesNotUseSnapshotCache();
   testOfficialStatsParser();
@@ -951,6 +960,7 @@ async function testDashboardUsageRollupCache() {
   testProviders();
   testAggregator();
   await testRuntimeErrorPrivacy();
+  testEmbeddedJsonPrivacy();
   testCacheMetricsFormula();
   testCacheMetricPipelineConsistency();
   testLocalDayTrendBuckets();
@@ -974,4 +984,21 @@ async function testDashboardUsageRollupCache() {
   await testDashboardUsageRollupCache();
   await testRenameSessionFixture();
   console.log('ok - unit tests');
-})().catch((error) => { console.error(error); process.exit(1); });
+}
+
+function testEmbeddedJsonPrivacy() {
+  const samples = [
+    ['prefix {"token":123456} suffix', '123456'],
+    ['payload={"token":"abc\\\"TAIL_SECRET"}', 'TAIL_SECRET'],
+    ['before [{"access_token":"array-secret"}] after', 'array-secret'],
+  ];
+  for (const [sample, secret] of samples) {
+    const safe = redactSensitiveText(sample);
+    assert.doesNotMatch(safe, new RegExp(secret), `embedded JSON must redact ${secret}`);
+    assert.match(safe, /\[redacted\]/);
+  }
+}
+
+if (require.main === module) main().catch((error) => { console.error(error); process.exit(1); });
+
+module.exports = { main };

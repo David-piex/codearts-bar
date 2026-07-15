@@ -1,5 +1,10 @@
 "use strict";
 
+let ideProtocol;
+try { ideProtocol = require("../protocol/query-results"); }
+catch { ideProtocol = require(["..", "..", "src", "protocol", "query-results"].join("/")); }
+const { safeIdeText, sanitizeIdeValue } = ideProtocol;
+
 function finite(value) {
   if (value === null || value === undefined || value === "") return null;
   const number = Number(value);
@@ -35,13 +40,13 @@ function viewModel(snapshot) {
     return {
       ok: false,
       error:
-        snapshot?.error ||
+        safeIdeText(snapshot?.error) ||
         "\u6682\u65f6\u65e0\u6cd5\u8bfb\u53d6\u672c\u5730\u4f7f\u7528\u6570\u636e\u3002",
       timestamp: Date.now(),
     };
   const performance = snapshot.performance?.window || {};
   const queue = snapshot.queue?.window || {};
-  return {
+  return sanitizeIdeValue({
     ok: true,
     timestamp: finite(snapshot.timestamp) || Date.now(),
     updatedAt: snapshot.updatedAt || "",
@@ -74,6 +79,13 @@ function viewModel(snapshot) {
       messages: finite(item.messages) || 0,
       errors: finite(item.errors) || 0,
     })),
+    providers: (snapshot.providerStats || []).slice(0, 8).map((item) => ({
+      name: item.provider || item.name || "unknown",
+      total: finite(item.total) || 0,
+      messages: finite(item.messages) || 0,
+      errors: finite(item.errors) || 0,
+      models: (item.models || []).slice(0, 6),
+    })),
     sources: (snapshot.sourceStats || snapshot.sources || [])
       .slice(0, 8)
       .map((item) => ({
@@ -96,6 +108,7 @@ function viewModel(snapshot) {
         title: item.title || "\u672a\u547d\u540d\u4f1a\u8bdd",
         directory: item.directory || "",
         sourceLabel: item.sourceLabel || item.source || "",
+        source: item.source || "",
         age: finite(item.age),
         total: finite(item.usage?.total) || 0,
         model: item.usage?.topModel?.model || "",
@@ -106,9 +119,15 @@ function viewModel(snapshot) {
       id: item.id || "", time: finite(item.time), sessionTitle: item.sessionTitle || "\u672a\u547d\u540d\u4f1a\u8bdd",
       source: item.source || "", sourceLabel: item.sourceLabel || item.source || "", provider: item.provider || "", model: item.model || "",
       status: item.status ?? "", ok: item.ok !== false, total: finite(item.total) || 0, input: finite(item.input) || 0,
-      output: finite(item.output) || 0, cacheRead: finite(item.cacheRead) || 0, cacheWrite: finite(item.cacheWrite) || 0, latencyMs: finite(item.latencyMs),
+      output: finite(item.output) || 0, reasoning: finite(item.reasoning) || 0, cacheRead: finite(item.cacheRead) || 0, cacheWrite: finite(item.cacheWrite) || 0,
+      latencyMs: finite(item.latencyMs), ttftMs: finite(item.ttftMs), firstContentMs: finite(item.firstContentMs), outputTokensPerSec: finite(item.outputTokensPerSec), error: item.error || "",
     })),
     requestTotal: finite(snapshot.requestTotal) ?? (snapshot.requests || []).length,
+    historicalRequestTotal: finite(snapshot.historicalRequestTotal) ?? finite(snapshot.requestTotal) ?? (snapshot.requests || []).length,
+    requestLogComplete: snapshot.requestLogComplete === true,
+    requestLogSampled: snapshot.requestLogSampled === true,
+    requestLogSampleLimit: finite(snapshot.requestLogSampleLimit) ?? (snapshot.requests || []).length,
+    projects: (snapshot.projects || []).slice(0, 20).map((item) => ({ id: item.id || item.directory || "__none", label: item.label || "未关联项目", directory: item.directory || "", count: finite(item.count) || 0 })),
     performance: {
       latencyAvg: finite(performance.latency?.avg),
       latencyP95: finite(performance.latency?.p95),
@@ -117,10 +136,28 @@ function viewModel(snapshot) {
       errorRate: finite(performance.errorRate) || 0,
       queueAvg: finite(queue.avg),
       queueP95: finite(queue.p95),
+      complete: performance.complete !== false,
+      metrics: performance.metricCompleteness || {},
+    },
+    diagnostics: {
+      items: (snapshot.diagnostics?.items || []).slice(0, 8).map((item) => ({ source: item.source || "", label: item.label || item.source || "", ok: item.ok !== false, quickCheck: item.quickCheck || "", tables: finite(item.tables) || 0, messages: finite(item.messages) || 0, sessions: finite(item.sessions) || 0 })),
+      sourceErrors: (snapshot.diagnostics?.sourceErrors || []).slice(0, 8).map((item) => ({ source: item.source || "", message: item.message || "数据库检查失败" })),
+    },
+    completeness: {
+      complete: snapshot.completeness?.complete !== false,
+      sampled: snapshot.completeness?.sampled === true,
+      reasons: (snapshot.completeness?.reasons || []).slice(0, 8),
+      sources: {
+        expected: finite(snapshot.completeness?.sources?.expected) || 0,
+        read: finite(snapshot.completeness?.sources?.read) || 0,
+        failed: finite(snapshot.completeness?.sources?.failed) || 0,
+        missing: finite(snapshot.completeness?.sources?.missing) || 0,
+      },
+      metrics: snapshot.completeness?.metrics || {},
     },
     dbSize: finite(snapshot.dbSize) || 0,
     stale: Boolean(snapshot.freshness?.stale),
-  };
+  });
 }
 
 module.exports = { finite, usage, viewModel };

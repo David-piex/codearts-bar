@@ -1,5 +1,11 @@
 readSessionMeta();
 readSavedSessionViews();
+document.addEventListener('keydown', (e) => {
+  if(!exportDialog || e.key !== 'Escape') return;
+  e.preventDefault();
+  exportDialog = null;
+  patchSessionModalOrRender();
+});
 applyZoom();
 document.getElementById('refresh').onclick = refreshNow;
 document.getElementById('settings').onclick = () => ipcRenderer.invoke('dashboard:settings');

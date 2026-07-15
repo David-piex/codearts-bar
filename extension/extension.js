@@ -9,6 +9,9 @@ const { DashboardHost, OverviewViewProvider } = require("./dashboard");
 const localProvider = require("./providers/codeartsLocal");
 const { databaseFingerprint } = require("./core/source-fingerprint");
 const { closeSettingsStore } = require("./settings");
+const { databasePagePayload } = require("./protocol/query-results");
+const { redactSensitiveText } = require("./core/sensitive-text");
+const { exportSessionWithPrivacy } = require("./session-export");
 
 let statusItem;
 let timer;
@@ -246,8 +249,14 @@ async function refresh(options = {}) {
 }
 
 function schedule() {
-  if (timer) clearInterval(timer);
-  timer = setInterval(refresh, config().refreshMs);
+  if (timer) clearTimeout(timer);
+  const configured = config().refreshMs;
+  const delay = dashboardHost?.hasTargets() ? configured : Math.max(configured, 300000);
+  timer = setTimeout(async () => {
+    timer = null;
+    try { await refresh(); }
+    finally { schedule(); }
+  }, delay);
   timer.unref?.();
 }
 
@@ -267,6 +276,64 @@ async function openDataFolder() {
   vscode.env.openExternal(vscode.Uri.file(path.dirname(dbPath)));
 }
 
+async function querySessionsPage(options = {}) {
+  const c = config();
+  const page = Math.max(1, Number(options.page || 1));
+  const pageSize = Math.max(1, Math.min(100, Number(options.pageSize || 20)));
+  const result = await localProvider.getSessionsPage({
+    ...c,
+    useSavedSettings: false,
+    source: options.source || "all",
+    model: options.model || "all",
+    project: options.project || "all",
+    status: options.status || "active",
+    query: options.search || "",
+    range: options.range || {},
+    limit: pageSize,
+    offset: (page - 1) * pageSize,
+  });
+  return databasePagePayload({ ...result, items: (result.items || []).map((item) => ({
+      id: item.id || "",
+      title: redactSensitiveText(item.title || "未命名会话"),
+      directory: redactSensitiveText(item.directory || ""),
+      source: item.source || "",
+      sourceLabel: item.sourceLabel || item.source || "",
+      archived: Boolean(item.archived),
+      updatedAt: Number(item.updatedAt || 0),
+      total: Number(item.usage?.total || 0),
+      model: item.usage?.topModel?.model || "",
+    })) }, { page, pageSize, resource: "sessions", source: options.source, model: options.model, project: options.project, query: options.search, range: options.range });
+}
+
+async function queryRequestsPage(options = {}) {
+  const c = config();
+  const page = Math.max(1, Number(options.page || 1));
+  const pageSize = Math.max(1, Math.min(100, Number(options.pageSize || 40)));
+  const result = await localProvider.getRequestsPage({
+    ...c, useSavedSettings: false, source: options.source || "all", model: options.model || "all",
+    query: options.search || "", range: options.range || {}, limit: pageSize, offset: (page - 1) * pageSize,
+  });
+  return databasePagePayload({ ...result, items: (result.items || []).map((item) => ({
+    id: item.id || "", time: item.time || item.createdAt || 0,
+    sessionTitle: redactSensitiveText(item.sessionTitle || "未命名会话"), source: item.source || "", sourceLabel: item.sourceLabel || item.source || "",
+    provider: item.provider || "", model: item.model || "", status: item.status, ok: item.ok !== false,
+    total: Number(item.total || 0), input: Number(item.input || 0), output: Number(item.output || 0), reasoning: Number(item.reasoning || 0),
+    cacheRead: Number(item.cacheRead || 0), cacheWrite: Number(item.cacheWrite || 0), latencyMs: item.latencyMs,
+    ttftMs: item.ttftMs, firstContentMs: item.firstContentMs, outputTokensPerSec: item.outputTokensPerSec,
+    error: redactSensitiveText(item.error || ""),
+  })) }, { page, pageSize, resource: "requests", source: options.source, model: options.model, query: options.search, range: options.range });
+}
+
+async function exportSession(session, format = "json") {
+  return exportSessionWithPrivacy({
+    vscode,
+    localProvider,
+    session,
+    format,
+    providerOptions: { ...config(), useSavedSettings: false },
+  });
+}
+
 function activate(context) {
   dashboardHost = new DashboardHost(
     context,
@@ -274,6 +341,7 @@ function activate(context) {
     refresh,
     loadDashboardDetails,
     openDataFolder,
+    { querySessionsPage, queryRequestsPage, exportSession, onVisibilityChanged: schedule },
   );
   const overviewProvider = new OverviewViewProvider(dashboardHost);
   statusItem = vscode.window.createStatusBarItem(
@@ -321,13 +389,14 @@ function activate(context) {
     }),
   );
 
-  context.subscriptions.push({ dispose: () => { if (timer) clearInterval(timer); timer = null; } });
+  context.subscriptions.push({ dispose: () => { if (timer) clearTimeout(timer); timer = null; } });
   schedule();
   refresh();
+  return { querySessionsPage, queryRequestsPage, exportSession };
 }
 
 async function deactivate() {
-  if (timer) clearInterval(timer);
+  if (timer) clearTimeout(timer);
   timer = null;
   refreshPromise = null;
   await localProvider.closeSqlJsWorker?.();
@@ -339,4 +408,4 @@ async function deactivate() {
   summaryCachedAt = 0;
 }
 
-module.exports = { activate, deactivate };
+module.exports = { activate, deactivate, querySessionsPage, queryRequestsPage, exportSession };

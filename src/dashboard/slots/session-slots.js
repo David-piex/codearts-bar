@@ -172,7 +172,7 @@ function patchSessionToolbar(s = snapshot || {}){
   return patchHtmlSlot('sessionToolbarSlot', `${sessionSimpleToolbarHtml(s)}${sessionFilterContextHtml(s)}${sessionAdvancedHtml(s)}`);
 }
 function patchSessionModal(){
-  return patchHtmlSlot('sessionModalSlot', `${renderRenameSheet()}${renderBulkMetaSheet()}`);
+  return patchHtmlSlot('sessionModalSlot', `${renderRenameSheet()}${renderBulkMetaSheet()}${renderExportSheet()}`);
 }
 function patchSessionRow(key){
   if(typeof document.querySelectorAll !== 'function') return false;

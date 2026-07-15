@@ -25,6 +25,7 @@ const required = [
   'src/main/java/com/codearts/bar/toolwindow/CodeArtsToolWindowFactory.java',
   'src/main/java/com/codearts/bar/toolwindow/CodeArtsDashboardPanel.java',
   'src/main/java/com/codearts/bar/toolwindow/DashboardUi.java',
+  'src/main/java/com/codearts/bar/toolwindow/SessionExportOptionsDialog.java',
   'src/main/java/com/codearts/bar/toolwindow/TrendChartPanel.java',
   'src/main/java/com/codearts/bar/settings/CodeArtsConfigurable.java',
 ];
@@ -33,10 +34,44 @@ for (const file of required) {
 }
 const dashboardSource = fs.readFileSync(path.join(pluginRoot, 'src/main/java/com/codearts/bar/toolwindow/CodeArtsDashboardPanel.java'), 'utf8');
 const uiSource = fs.readFileSync(path.join(pluginRoot, 'src/main/java/com/codearts/bar/toolwindow/DashboardUi.java'), 'utf8');
+const exportDialogSource = fs.readFileSync(path.join(pluginRoot, 'src/main/java/com/codearts/bar/toolwindow/SessionExportOptionsDialog.java'), 'utf8');
 const gradleBuildSource = fs.readFileSync(path.join(pluginRoot, 'build.gradle.kts'), 'utf8');
+const gradleSettingsSource = fs.readFileSync(path.join(pluginRoot, 'settings.gradle.kts'), 'utf8');
 const gradleRunnerSource = fs.readFileSync(path.join(root, 'src/run-jetbrains-gradle.js'), 'utf8');
+const { discoverJavaHome, javaMajorVersion, parseJavaMajor, usableJavaHome } = require('../src/run-jetbrains-gradle');
 assert.match(gradleBuildSource, /gradleProperty\("codeartsBarVersion"\)/, 'JetBrains version must participate in the Gradle configuration-cache key');
+assert.match(gradleSettingsSource, /org\.gradle\.toolchains\.foojay-resolver-convention/, 'missing JDK 21 compilers must be auto-provisioned by the Gradle toolchain resolver');
 assert.match(gradleRunnerSource, /-PcodeartsBarVersion=\$\{packageVersion\}/, 'JetBrains builds must receive the current package version explicitly');
+assert.doesNotMatch(gradleRunnerSource, /IntelliJ IDEA 2025\.3\.3/, 'JetBrains JBR discovery must not rely on a developer-specific IDE path');
+assert.equal(parseJavaMajor('1.8.0_402'), 8);
+assert.equal(parseJavaMajor('21.0.8'), 21);
+{
+  const javaFixture = fs.mkdtempSync(path.join(os.tmpdir(), 'codearts-bar-java-home-'));
+  const makeJavaHome = (name, version) => {
+    const home = path.join(javaFixture, name);
+    const bin = path.join(home, 'bin');
+    fs.mkdirSync(bin, { recursive: true });
+    fs.writeFileSync(path.join(bin, process.platform === 'win32' ? 'java.exe' : 'java'), 'fixture');
+    fs.writeFileSync(path.join(bin, process.platform === 'win32' ? 'javac.exe' : 'javac'), 'fixture');
+    fs.writeFileSync(path.join(home, 'release'), `JAVA_VERSION="${version}"\n`);
+    return home;
+  };
+  try {
+    const jdk17 = makeJavaHome('jdk-17', '17.0.12');
+    const ideaJbr25 = makeJavaHome('idea-jbr-25', '25.0.3');
+    assert.equal(javaMajorVersion(jdk17), 17);
+    assert.equal(javaMajorVersion(ideaJbr25), 25);
+    assert.equal(usableJavaHome(jdk17), false, 'Java 17 cannot compile the Java 21 plugin target');
+    assert.equal(usableJavaHome(ideaJbr25), true, 'a newer IDEA JBR can compile the Java 21 plugin target');
+    assert.equal(
+      discoverJavaHome({ CODEARTS_BAR_JAVA_HOME: jdk17, JAVA_HOME: jdk17 }, [ideaJbr25]),
+      ideaJbr25,
+      'an outdated configured JDK must fall back to an installed compatible IDEA JBR',
+    );
+  } finally {
+    fs.rmSync(javaFixture, { recursive: true, force: true });
+  }
+}
 assert.match(dashboardSource, /disposed \|\| generation != analyticsQueryGeneration\.get\(\)/, 'analytics callbacks must ignore disposed panels');
 assert.match(dashboardSource, /UsageSnapshot baseSnapshot = service\.getSnapshot\(\);[\s\S]*renderReadFailure\(baseSnapshot\.error\(\)\)/, 'base data-source errors must take priority over analytics range errors');
 assert.match(dashboardSource, /current = snapshot;\s*if \(!snapshot\.ok\(\)\)/, 'failed snapshots must become the authoritative dashboard state');
@@ -72,8 +107,22 @@ assert.match(dashboardSource, /analyticsViewButton\.setSelected\(VIEW_ANALYTICS\
 assert.match(dashboardSource, /cancelQuery\(analyticsQueryTask\)/, 'range changes and disposal must cancel obsolete analytics work');
 assert.match(dashboardSource, /cancelQuery\(sessionQueryTask\)/, 'dashboard disposal must cancel session queries');
 assert.match(dashboardSource, /cancelQuery\(requestQueryTask\)/, 'session changes and disposal must cancel request queries');
-assert.match(dashboardSource, /new GridLayout\(1, 2, JBUI\.scale\(6\), 0\)/, 'narrow session filters must keep both time and source controls visible');
+assert.match(dashboardSource, /new GridLayout\(1, 4, JBUI\.scale\(6\), 0\)/, 'narrow session filters must keep time, source, model, and project controls visible');
 assert.match(dashboardSource, /allowNarrow\(this\)/, 'the dashboard must not impose a desktop-width minimum on the tool window');
+assert.match(dashboardSource, /JComboBox<String> analyticsModel[\s\S]*JComboBox<String> analyticsSource/, 'analytics must expose model and source filters');
+assert.match(dashboardSource, /JComboBox<UsageSnapshot\.ProjectInfo> sessionProject[\s\S]*args\.addAll\(List\.of\("--project", projectFilter\.id\(\)\)\)/, 'session project filtering must reach the database query');
+assert.match(dashboardSource, /JComboBox<String> sessionModel[\s\S]*args\.addAll\(List\.of\("--model", modelFilter\.toString\(\)\)\)/, 'session model filtering must reach the database query');
+assert.match(dashboardSource, /service\.query\("filters", List\.of\(\)[\s\S]*UsageSnapshot\.filterModels\(data\)[\s\S]*UsageSnapshot\.filterProjects\(data\)/, 'filter menus must use the unfiltered CLI resource rather than the current analytics result');
+assert.match(dashboardSource, /deck\.add\(tableSurface\(providerGrid\), "providers"\)[\s\S]*fillProviders\(data\.providers\(\)\)/, 'provider analytics must have a populated native table');
+assert.match(dashboardSource, /data\.sampled\(\) \? "抽样数据"[\s\S]*UsageSnapshot\.Performance performance = data\.performance\(\)/, 'analytics must expose completeness and range performance');
+assert.match(exportDialogSource, /class SessionExportOptionsDialog extends DialogWrapper/, 'session exports must show a native privacy-options dialog');
+assert.match(dashboardSource, /new SessionExportOptions\(true, false, true, true\)/, 'session export privacy defaults must include content and redacted errors while excluding tool IO');
+assert.match(dashboardSource, /if \(!includeContent\) args\.add\("--no-content"\);[\s\S]*if \(includeToolIO\) args\.add\("--include-tool-io"\);[\s\S]*if \(!redactPaths\) args\.add\("--no-redact-paths"\);[\s\S]*if \(!includeErrors\) args\.add\("--no-errors"\);/, 'every JetBrains export privacy choice must map to the shared CLI contract');
+assert.match(dashboardSource, /selected\.exists\(\)[\s\S]*Messages\.showYesNoDialog[\s\S]*Messages\.YES/, 'JetBrains export must require explicit confirmation before overwriting an existing file');
+assert.match(dashboardSource, /service\.query\("diagnostics"[\s\S]*quickCheck[\s\S]*sessionCount[\s\S]*messageCount/, 'JetBrains diagnostics must query shared database health instead of synthesizing a snapshot-only report');
+assert.match(dashboardSource, /重命名、归档等写操作请在 Desktop 中完成/, 'unsupported JetBrains session writes must be explained');
+assert.match(dashboardSource, /diagnosticsQueryGeneration\.incrementAndGet\(\)[\s\S]*generation != diagnosticsQueryGeneration\.get\(\)/, 'obsolete database-health callbacks must not overwrite a newer data source or hidden tool window');
+assert.match(dashboardSource, /!"ok"\.equalsIgnoreCase\(quickCheck\)[\s\S]*数据库完整性检查异常/, 'failed SQLite quick_check results must not be presented as healthy');
 const rangeSource = fs.readFileSync(path.join(pluginRoot, 'src/main/java/com/codearts/bar/model/AnalyticsRange.java'), 'utf8');
 const snapshotSource = fs.readFileSync(path.join(pluginRoot, 'src/main/java/com/codearts/bar/model/UsageSnapshot.java'), 'utf8');
 assert.match(rangeSource, /CUSTOM\("custom", "自定义…"/, 'time ranges must include the desktop-style custom range');
@@ -96,12 +145,16 @@ assert.match(locatorSource, /内嵌 CodeArts Bar CLI 无法准备：[\s\S]*IDE s
 assert.match(embeddedSource, /static synchronized Path materialize\(\) throws IOException/, 'production embedded CLI materialization must expose integrity and extraction failures');
 assert.match(runnerSource, /数据库文件不存在/, 'missing database paths must produce an actionable error');
 assert.match(runnerSource, /未找到 Node\.js/, 'missing Node.js must produce an actionable error');
+assert.match(runnerSource, /validateNodeRuntime\(command\)/, 'JavaScript CLI commands must validate the Node.js runtime before use');
+assert.match(runnerSource, /MIN_NODE_MAJOR = 18/, 'JetBrains runtime must enforce the documented Node.js 18 baseline');
 assert.match(embeddedSource, /requiredString\(manifest, "contentHash"\)/, 'embedded CLI extraction must use reproducible content-addressed directories');
 assert.match(embeddedSource, /cleanupOldVersions[\s\S]*cli-\[0-9a-f\]/, 'embedded CLI upgrades must clean only obsolete content-addressed runtime directories');
 assert.match(embeddedSource, /expectedHash\.equals\(sha256\(target\)\)/, 'cached embedded CLI files must pass integrity validation before reuse');
 assert.match(embeddedSource, /cachedFilesUnchanged\(\)[\s\S]*FileStamp\.read/, 'hot embedded CLI queries must use low-cost metadata validation before full hashing');
 assert.match(embeddedSource, /expectedHash\.equals\(sha256\(temp\)\)[\s\S]*failed integrity verification/, 'embedded CLI resources must be verified before atomic installation');
 assert.match(runnerSource, /repairEmbeddedRuntime\(command\)[\s\S]*queryCommand/, 'embedded CLI execution failures must retry once only after an actual integrity repair');
+assert.match(runnerSource, /exportSession[\s\S]*repairEmbeddedRuntime\(command\)[\s\S]*exportCommand/, 'embedded session exports must repair a damaged runtime before one retry');
+assert.match(embeddedSource, /commandUsesRuntime\(command, root\)/, 'runtime repair must recognize the separate embedded exporter entry');
 assert.match(embeddedSource, /runtimeIsIntact[\s\S]*repairAfterFailure/, 'failure recovery must force full runtime hashing beyond the metadata hot path');
 assert.match(embeddedSource, /isSymbolicLink\(root\)[\s\S]*runtime directory is a symbolic link/, 'embedded CLI extraction must reject linked content-addressed roots');
 assert.match(embeddedSource, /holdRuntimeLock[\s\S]*deleteTreeIfUnlocked/, 'embedded CLI cleanup must preserve runtime versions used by another IDE process');
@@ -117,7 +170,7 @@ assert.match(refreshCoordinatorSource, /pendingNotification \|= notifyOnError[\s
 assert.match(serviceSource, /createNotification\("码道刷新失败", message/, 'deferred refresh notifications must capture their own failure instead of reading a later snapshot');
 assert.match(serviceSource, /catch \(RuntimeException rejected\)[\s\S]*refreshCoordinator\.abort\(\)/, 'rejected refresh submission must not leave the service stuck in refreshing state');
 const gradleProperties = fs.readFileSync(path.join(pluginRoot, 'gradle.properties'), 'utf8');
-assert.match(gradleProperties, /^pluginUntilBuild=253\.\*$/m, 'verified JetBrains compatibility ceiling must remain explicit');
+assert.match(gradleProperties, /^pluginUntilBuild=261\.\*$/m, 'verified JetBrains compatibility ceiling must remain explicit');
 for (const sourceFile of ['DashboardUi.java', 'TrendChartPanel.java']) {
   const source = fs.readFileSync(path.join(pluginRoot, 'src/main/java/com/codearts/bar/toolwindow', sourceFile), 'utf8');
   assert.doesNotMatch(source, /JBUI\.scale\([0-9.]+f\)/, `${sourceFile} must not use deprecated JBUI.scale(float)`);
@@ -161,6 +214,7 @@ if (process.platform === 'win32') {
     const jarPath = path.join(jarDir, jar);
     const jarEntries = execFileSync('tar.exe', ['-tf', jarPath], { encoding: 'utf8' });
     assert.match(jarEntries, /cli\/src\/providers\/codearts\/jetbrains-cli\.js/);
+    assert.match(jarEntries, /cli\/src\/providers\/codearts\/session-export-cli\.js/);
     assert.match(jarEntries, /cli\/node_modules\/sql\.js\/dist\/sql-wasm\.wasm/);
     const jarExtractDir = path.join(extractDir, 'jar');
     fs.mkdirSync(jarExtractDir);

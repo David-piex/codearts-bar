@@ -57,6 +57,7 @@ function aggregateCacheKey(label, adapter, payload = {}, sources = []) {
     source: payload.source || 'all',
     model: payload.model || 'all',
     query: payload.query || '',
+    sessionQuery: payload.sessionQuery || '',
     sessionId: payload.sessionId || '',
     status: payload.status || '',
     project: payload.project || '',

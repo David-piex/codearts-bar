@@ -1,0 +1,262 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://codearts-bar.local/schemas/session-export-v1.json",
+  "title": "CodeArts Bar session export",
+  "oneOf": [
+    { "$ref": "#/$defs/sessionExport" },
+    { "$ref": "#/$defs/sessionBatchExport" }
+  ],
+  "$defs": {
+    "nullableTimestamp": {
+      "type": ["string", "null"],
+      "format": "date-time"
+    },
+    "nullableNumber": {
+      "type": ["number", "null"]
+    },
+    "tokenUsage": {
+      "type": "object",
+      "required": ["total", "input", "output", "reasoning", "cacheRead", "cacheWrite"],
+      "properties": {
+        "total": { "type": "number" },
+        "input": { "type": "number" },
+        "output": { "type": "number" },
+        "reasoning": { "type": "number" },
+        "cacheRead": { "type": "number" },
+        "cacheWrite": { "type": "number" }
+      },
+      "additionalProperties": false
+    },
+    "modelUsage": {
+      "type": "object",
+      "required": ["provider", "model", "total", "input", "output", "reasoning", "cacheRead", "cacheWrite", "calls", "errors", "cacheHitRate", "cacheHitDenominator"],
+      "properties": {
+        "provider": { "type": "string" },
+        "model": { "type": "string" },
+        "total": { "type": "number" },
+        "input": { "type": "number" },
+        "output": { "type": "number" },
+        "reasoning": { "type": "number" },
+        "cacheRead": { "type": "number" },
+        "cacheWrite": { "type": "number" },
+        "calls": { "type": "number" },
+        "errors": { "type": "number" },
+        "cacheHitRate": { "$ref": "#/$defs/nullableNumber" },
+        "cacheHitDenominator": { "type": "number" }
+      },
+      "additionalProperties": false
+    },
+    "sessionUsage": {
+      "type": "object",
+      "required": ["total", "input", "output", "reasoning", "cacheRead", "cacheWrite", "userTurns", "modelCalls", "errors", "models", "topModel"],
+      "properties": {
+        "total": { "type": "number" },
+        "input": { "type": "number" },
+        "output": { "type": "number" },
+        "reasoning": { "type": "number" },
+        "cacheRead": { "type": "number" },
+        "cacheWrite": { "type": "number" },
+        "userTurns": { "type": "number" },
+        "modelCalls": { "type": "number" },
+        "errors": { "type": "number" },
+        "models": { "type": "array", "items": { "$ref": "#/$defs/modelUsage" } },
+        "topModel": { "oneOf": [{ "$ref": "#/$defs/modelUsage" }, { "type": "null" }] },
+        "firstAt": { "type": "number" },
+        "lastAt": { "type": "number" },
+        "cacheHitRate": { "$ref": "#/$defs/nullableNumber" },
+        "cacheHitDenominator": { "type": "number" }
+      },
+      "additionalProperties": false
+    },
+    "source": {
+      "type": "object",
+      "required": ["id", "label"],
+      "properties": {
+        "id": { "type": "string" },
+        "label": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "session": {
+      "type": "object",
+      "required": ["id", "title", "directory", "projectId", "parentId", "version", "createdAt", "updatedAt", "archivedAt", "usage"],
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "directory": { "type": "string" },
+        "projectId": { "type": "string" },
+        "parentId": { "type": "string" },
+        "version": { "type": "string" },
+        "createdAt": { "$ref": "#/$defs/nullableTimestamp" },
+        "updatedAt": { "$ref": "#/$defs/nullableTimestamp" },
+        "archivedAt": { "$ref": "#/$defs/nullableTimestamp" },
+        "usage": { "$ref": "#/$defs/sessionUsage" }
+      },
+      "additionalProperties": false
+    },
+    "message": {
+      "type": "object",
+      "required": ["id", "role", "provider", "model", "createdAt", "updatedAt", "content", "error", "usage"],
+      "properties": {
+        "id": { "type": "string" },
+        "role": { "type": "string" },
+        "provider": { "type": "string" },
+        "model": { "type": "string" },
+        "createdAt": { "$ref": "#/$defs/nullableTimestamp" },
+        "updatedAt": { "$ref": "#/$defs/nullableTimestamp" },
+        "content": { "type": "string" },
+        "error": { "type": "string" },
+        "usage": { "$ref": "#/$defs/tokenUsage" }
+      },
+      "additionalProperties": false
+    },
+    "request": {
+      "type": "object",
+      "required": ["id", "messageId", "createdAt", "updatedAt", "provider", "model", "status", "ok", "errorType", "error", "latencyMs", "ttftMs", "firstContentMs", "outputTokensPerSec", "total", "input", "output", "reasoning", "cacheRead", "cacheWrite"],
+      "properties": {
+        "id": { "type": "string" },
+        "messageId": { "type": "string" },
+        "createdAt": { "$ref": "#/$defs/nullableTimestamp" },
+        "updatedAt": { "$ref": "#/$defs/nullableTimestamp" },
+        "provider": { "type": "string" },
+        "model": { "type": "string" },
+        "status": { "type": ["string", "number"] },
+        "ok": { "type": "boolean" },
+        "errorType": { "type": "string" },
+        "error": { "type": "string" },
+        "latencyMs": { "$ref": "#/$defs/nullableNumber" },
+        "ttftMs": { "$ref": "#/$defs/nullableNumber" },
+        "firstContentMs": { "$ref": "#/$defs/nullableNumber" },
+        "outputTokensPerSec": { "$ref": "#/$defs/nullableNumber" },
+        "total": { "type": "number" },
+        "input": { "type": "number" },
+        "output": { "type": "number" },
+        "reasoning": { "type": "number" },
+        "cacheRead": { "type": "number" },
+        "cacheWrite": { "type": "number" }
+      },
+      "additionalProperties": false
+    },
+    "tool": {
+      "type": "object",
+      "required": ["id", "messageId", "name", "title", "status", "startedAt", "endedAt", "durationMs", "error"],
+      "properties": {
+        "id": { "type": "string" },
+        "messageId": { "type": "string" },
+        "name": { "type": "string" },
+        "title": { "type": "string" },
+        "status": { "type": "string" },
+        "startedAt": { "$ref": "#/$defs/nullableTimestamp" },
+        "endedAt": { "$ref": "#/$defs/nullableTimestamp" },
+        "durationMs": { "$ref": "#/$defs/nullableNumber" },
+        "error": { "type": "string" },
+        "input": { "type": "string" },
+        "output": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "redaction": {
+      "type": "object",
+      "required": ["secrets", "localPaths", "contentIncluded", "reasoningIncluded", "toolIOIncluded", "errorsIncluded", "errorMode"],
+      "properties": {
+        "secrets": { "const": true },
+        "localPaths": { "type": "boolean" },
+        "contentIncluded": { "type": "boolean" },
+        "reasoningIncluded": { "type": "boolean" },
+        "toolIOIncluded": { "type": "boolean" },
+        "errorsIncluded": { "type": "boolean" },
+        "errorMode": { "enum": ["redacted-summary", "omitted"] }
+      },
+      "additionalProperties": false
+    },
+    "sessionCompleteness": {
+      "type": "object",
+      "required": ["complete", "sampled", "messages", "requests", "tools", "reasons", "capabilities", "parseFailures", "requiredFieldFailures"],
+      "properties": {
+        "complete": { "type": "boolean" },
+        "sampled": { "type": "boolean" },
+        "messages": { "type": "integer", "minimum": 0 },
+        "requests": { "type": "integer", "minimum": 0 },
+        "tools": { "type": "integer", "minimum": 0 },
+        "reasons": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "enum": ["part-table-missing", "message-json-invalid", "part-json-invalid", "session-required-fields-missing", "message-required-fields-missing", "part-required-fields-missing"] }
+        },
+        "capabilities": {
+          "type": "object",
+          "required": ["partTable"],
+          "properties": { "partTable": { "type": "boolean" } },
+          "additionalProperties": false
+        },
+        "parseFailures": {
+          "type": "object",
+          "required": ["messages", "parts"],
+          "properties": {
+            "messages": { "type": "integer", "minimum": 0 },
+            "parts": { "type": "integer", "minimum": 0 }
+          },
+          "additionalProperties": false
+        },
+        "requiredFieldFailures": {
+          "type": "object",
+          "required": ["session", "messages", "parts"],
+          "properties": {
+            "session": { "type": "integer", "minimum": 0 },
+            "messages": { "type": "integer", "minimum": 0 },
+            "parts": { "type": "integer", "minimum": 0 }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "batchCompleteness": {
+      "type": "object",
+      "required": ["complete", "sampled", "sessions", "messages", "requests", "tools", "reasons", "capabilities", "parseFailures", "requiredFieldFailures"],
+      "properties": {
+        "complete": { "type": "boolean" },
+        "sampled": { "type": "boolean" },
+        "sessions": { "type": "integer", "minimum": 0 },
+        "messages": { "type": "integer", "minimum": 0 },
+        "requests": { "type": "integer", "minimum": 0 },
+        "tools": { "type": "integer", "minimum": 0 },
+        "reasons": { "$ref": "#/$defs/sessionCompleteness/properties/reasons" },
+        "capabilities": { "$ref": "#/$defs/sessionCompleteness/properties/capabilities" },
+        "parseFailures": { "$ref": "#/$defs/sessionCompleteness/properties/parseFailures" },
+        "requiredFieldFailures": { "$ref": "#/$defs/sessionCompleteness/properties/requiredFieldFailures" }
+      },
+      "additionalProperties": false
+    },
+    "sessionExport": {
+      "type": "object",
+      "required": ["schemaVersion", "exportedAt", "source", "session", "usage", "messages", "requests", "tools", "completeness", "redaction"],
+      "properties": {
+        "schemaVersion": { "const": 1 },
+        "exportedAt": { "type": "string", "format": "date-time" },
+        "source": { "$ref": "#/$defs/source" },
+        "session": { "$ref": "#/$defs/session" },
+        "usage": { "$ref": "#/$defs/sessionUsage" },
+        "messages": { "type": "array", "items": { "$ref": "#/$defs/message" } },
+        "requests": { "type": "array", "items": { "$ref": "#/$defs/request" } },
+        "tools": { "type": "array", "items": { "$ref": "#/$defs/tool" } },
+        "completeness": { "$ref": "#/$defs/sessionCompleteness" },
+        "redaction": { "$ref": "#/$defs/redaction" }
+      },
+      "additionalProperties": false
+    },
+    "sessionBatchExport": {
+      "type": "object",
+      "required": ["schemaVersion", "kind", "exportedAt", "sessions", "completeness", "redaction"],
+      "properties": {
+        "schemaVersion": { "const": 1 },
+        "kind": { "const": "session-batch" },
+        "exportedAt": { "type": "string", "format": "date-time" },
+        "sessions": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/sessionExport" } },
+        "completeness": { "$ref": "#/$defs/batchCompleteness" },
+        "redaction": { "$ref": "#/$defs/redaction" }
+      },
+      "additionalProperties": false
+    }
+  }
+}

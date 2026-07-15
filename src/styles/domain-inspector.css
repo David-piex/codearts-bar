@@ -290,3 +290,6 @@
     .rename-actions { display:flex; justify-content:flex-end; gap:8px; margin-top:14px; }
     .rename-actions button { border:1px solid var(--line2); min-height:34px; padding:0 14px; border-radius:10px; background:#fff; color:#334155; font-weight:900; }
     .rename-actions button.primary { border-color:var(--blue); background:linear-gradient(180deg,#168cff,#0676e8); color:#fff; }
+    .export-options { display:grid; gap:10px; }
+    .export-options label { display:flex; grid-template-columns:none; align-items:center; gap:9px; min-height:30px; }
+    .export-options input { width:18px; height:18px; padding:0; box-shadow:none; }

@@ -3,6 +3,7 @@ package com.codearts.bar.service;
 import com.codearts.bar.cli.CliProcessRunner;
 import com.codearts.bar.cli.CliLocator;
 import com.codearts.bar.model.UsageSnapshot;
+import com.codearts.bar.model.SensitiveText;
 import com.codearts.bar.settings.CodeArtsSettings;
 import com.intellij.notification.NotificationGroupManager;
 import com.intellij.notification.NotificationType;
@@ -51,7 +52,7 @@ public final class CodeArtsDataService implements Disposable {
             } catch (InterruptedException interrupted) {
                 Thread.currentThread().interrupt();
             } catch (Exception error) {
-                String message = error.getMessage() == null ? error.toString() : error.getMessage();
+                String message = SensitiveText.safeSummary(error.getMessage() == null ? error.toString() : error.getMessage());
                 snapshot = UsageSnapshot.empty(message);
                 if (start.notifyOnError()) ApplicationManager.getApplication().invokeLater(() -> {
                     if (!disposed) NotificationGroupManager.getInstance().getNotificationGroup("CodeArts Bar")
@@ -80,7 +81,21 @@ public final class CodeArtsDataService implements Disposable {
             } catch (InterruptedException interrupted) {
                 Thread.currentThread().interrupt();
             } catch (Exception error) {
-                String message = error.getMessage() == null ? error.toString() : error.getMessage();
+                String message = SensitiveText.safeSummary(error.getMessage() == null ? error.toString() : error.getMessage());
+                ApplicationManager.getApplication().invokeLater(() -> { if (!disposed) onError.accept(message); });
+            }
+        });
+    }
+
+    public Future<?> exportSession(java.util.List<String> args, Consumer<JsonObject> onSuccess, Consumer<String> onError) {
+        return submitTracked(() -> {
+            try {
+                JsonObject result = runner.exportSession(CodeArtsSettings.getInstance().getState(), args);
+                ApplicationManager.getApplication().invokeLater(() -> { if (!disposed) onSuccess.accept(result); });
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+            } catch (Exception error) {
+                String message = SensitiveText.safeSummary(error.getMessage() == null ? error.toString() : error.getMessage());
                 ApplicationManager.getApplication().invokeLater(() -> { if (!disposed) onError.accept(message); });
             }
         });
@@ -116,7 +131,9 @@ public final class CodeArtsDataService implements Disposable {
         if (disposed) return;
         if (scheduled != null) scheduled.cancel(false);
         int seconds = Math.max(10, CodeArtsSettings.getInstance().getState().refreshSeconds);
-        scheduled = AppExecutorUtil.getAppScheduledExecutorService().scheduleWithFixedDelay(() -> refresh(false), 1, seconds, TimeUnit.SECONDS);
+        scheduled = AppExecutorUtil.getAppScheduledExecutorService().scheduleWithFixedDelay(() -> {
+            if (!listeners.isEmpty()) refresh(false);
+        }, 1, seconds, TimeUnit.SECONDS);
     }
 
     @Override public synchronized void dispose() {

@@ -13,6 +13,8 @@ const { runTests } = require('@vscode/test-electron');
   fs.mkdirSync(path.join(homeDir, 'AppData', 'Roaming'), { recursive: true });
   fs.mkdirSync(path.join(homeDir, 'AppData', 'Local'), { recursive: true });
   const resultFile = path.join(tempDir, 'result.json');
+  const exportDir = path.join(tempDir, 'exports');
+  fs.mkdirSync(exportDir, { recursive: true });
   const fixtureDb = path.join(root, 'tests', 'fixtures', 'opencode-fixture.db');
   try {
     await runTests({
@@ -23,6 +25,7 @@ const { runTests } = require('@vscode/test-electron');
       extensionTestsEnv: {
         ...process.env,
         CODEARTS_BAR_EXTENSION_HOST_RESULT: resultFile,
+        CODEARTS_BAR_EXTENSION_HOST_EXPORT_DIR: exportDir,
         CODEARTS_BAR_DB: fixtureDb,
         CODEARTS_BAR_CONFIG_DIR: path.join(tempDir, 'config'),
         CODEARTS_BAR_NOW_MS: '1783512000000',

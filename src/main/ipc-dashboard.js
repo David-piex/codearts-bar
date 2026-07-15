@@ -137,7 +137,7 @@ function registerDashboardIpc({
     }
   });
   ipcMain.handle('dashboard:getSessionSummary', async (_event, payload = {}) => {
-    try { return await localProvider.getSessionSummary(dashboardAggregatePayload(payload)); }
+    try { return await localProvider.getSessionSummary(dashboardAggregatePayload({ ...payload, query: payload.sessionQuery || '' })); }
     catch (error) {
       appendLog('warn', 'dashboard:getSessionSummary', error.message, { payload });
       return snapshotUsageFallback('session', payload) || { ok: false, error: '读取会话统计失败' };

@@ -2,62 +2,21 @@
 
 const fs = require('node:fs');
 const { envelope, failure } = require('../../protocol/envelope');
+const { databasePagePayload, analyticsPayload, ideDashboardPayload, sanitizeIdeValue } = require('../../protocol/query-results');
 const aggregation = require('./aggregation-engine');
 const pagination = require('./pagination');
 
-const DEFAULT_DAILY_LIMIT = 200000;
-const DEFAULT_WINDOW_HOURS = 24;
+function finite(value, fallback = 0) { const number = Number(value); return Number.isFinite(number) ? number : fallback; }
 
-function finite(value, fallback = 0) {
-  const number = Number(value);
-  return Number.isFinite(number) ? number : fallback;
-}
-
-function databasePagePayload(result = {}, options = {}) {
-  const pageSize = Math.max(1, Math.trunc(finite(result.limit, finite(options.pageSize, 50))));
-  const offset = Math.max(0, Math.trunc(finite(result.offset, (Math.max(1, Math.trunc(finite(options.page, 1))) - 1) * pageSize)));
-  const total = Math.max(0, Math.trunc(finite(result.total, 0)));
-  const page = Math.floor(offset / pageSize) + 1;
-  const items = (result.items || []).map((item) => { const { dbPath: _dbPath, ...safe } = item || {}; return safe; });
-  return envelope({ items, page, pageSize, total, pageCount: Math.max(1, Math.ceil(total / pageSize)), hasMore: Boolean(result.hasMore), strategy: result.strategy || 'database' }, { ...options, diagnostics: { adapter: result.nativeError ? 'sql.js' : 'node:sqlite', cache: null } });
-}
-
-function dashboardPayload(snapshot, options = {}) {
-  const requests = snapshot.requestLog || [];
-  const historicalRequestTotal = finite(snapshot.requestTotal, requests.length);
-  return envelope({
-    updatedAt: snapshot.updatedAt || '', dbPath: snapshot.dbPath || '', dbSize: finite(snapshot.dbSize), adapter: snapshot.adapter || '', config: snapshot.config || {}, status: snapshot.status || {}, usage: snapshot.usage || {},
-    trends: snapshot.trends || { hourly24h: [], daily14d: [] }, models: snapshot.models || [], modelsScope: snapshot.modelsScope || null, sources: snapshot.sourceStats || snapshot.sources || [],
-    sessions: (snapshot.sessions || []).filter((item) => !item.archived), sessionSummary: snapshot.sessionSummary || {}, requests,
-    requestTotal: requests.length, historicalRequestTotal, requestLogComplete: snapshot.requestLogComplete === true || historicalRequestTotal <= requests.length,
-    requestLogSampled: snapshot.requestLogSampled === true || historicalRequestTotal > requests.length, requestLogSampleLimit: finite(snapshot.requestLogSampleLimit, requests.length),
-    sourceStatsScope: snapshot.sourceStatsScope || null, providerStats: snapshot.providerStats || [], providerStatsScope: snapshot.providerStatsScope || null,
-    performance: snapshot.performance || {}, queue: snapshot.queue || {}, tools: snapshot.tools || {}, health: snapshot.health || {}, quota: snapshot.quota || {}, freshness: snapshot.freshness || {}, providers: snapshot.providers || [], process: snapshot.process || {},
-  }, { ...options, generatedAt: finite(snapshot.timestamp, Date.now()), diagnostics: { adapter: snapshot.adapter || '', cache: snapshot.freshness?.source || null } });
-}
 
 function readOption(args, name, fallback = null) {
   const index = args.indexOf(name);
   return index >= 0 && index + 1 < args.length ? args[index + 1] : fallback;
 }
 
-function usageFromBuckets(buckets = []) {
-  const fields = ['total', 'input', 'output', 'reasoning', 'cacheRead', 'cacheWrite', 'messages', 'errors', 'cacheHitDenominator'];
-  const usage = Object.fromEntries(fields.map((field) => [field, 0]));
-  for (const bucket of buckets || []) for (const field of fields) usage[field] += Number(bucket?.[field] || 0);
-  usage.cacheHitRate = usage.cacheHitDenominator > 0 ? (usage.cacheRead / usage.cacheHitDenominator) * 100 : null;
-  return usage;
-}
-
 function positiveNumber(value, fallback) {
   const number = Number(value);
   return Number.isFinite(number) && number > 0 ? number : fallback;
-}
-
-function nextDayStart(timestamp) {
-  const date = new Date(timestamp);
-  date.setHours(24, 0, 0, 0);
-  return date.getTime();
 }
 
 function databaseSize(source) {
@@ -71,7 +30,8 @@ function dashboardSnapshot(result, timestamp, settings) {
   const used = Number(today.total || 0);
   const limit = settings.dailyLimit;
   const usagePercent = limit > 0 ? Math.min(999, Math.max(0, (used / limit) * 100)) : 0;
-  const resetAt = nextDayStart(timestamp);
+  const resetDate = new Date(timestamp); resetDate.setHours(24, 0, 0, 0);
+  const resetAt = resetDate.getTime();
   const remaining = limit > 0 ? Math.max(0, limit - used) : null;
   const level = usagePercent >= 90 ? 'danger' : usagePercent >= 70 ? 'warning' : 'ok';
   const sources = Array.isArray(result.sources) ? result.sources : [];
@@ -92,6 +52,7 @@ function dashboardSnapshot(result, timestamp, settings) {
     config: settings,
     status: { label: `${Math.round(usagePercent)}%`, usagePercent, level, resetAt, remaining },
     usage,
+    expectedSources: result.expectedSources || [],
     trends: { hourly24h: result.buckets || [], daily14d: [] },
     models: result.modelStats || [],
     sourceStats: result.sourceStats || [],
@@ -112,8 +73,6 @@ function dashboardSnapshot(result, timestamp, settings) {
       note: 'dailyLimit 是本地显示软上限，不代表码道官方限制。',
     },
     freshness: { source: 'live', stale: false, ageMs: 0 },
-    providers: [],
-    process: {},
   };
 }
 
@@ -122,31 +81,34 @@ async function query(resource, args = []) {
   const pageSize = Math.max(1, Math.min(500, Math.trunc(Number(readOption(args, '--page-size', 50)) || 50)));
   const sessionId = readOption(args, '--session-id');
   const source = readOption(args, '--source');
+  const model = readOption(args, '--model');
+  const project = readOption(args, '--project');
   const search = readOption(args, '--search', '');
   const start = Math.max(0, Number(readOption(args, '--start', 0)) || 0);
   const end = Math.max(0, Number(readOption(args, '--end', 0)) || 0);
   const range = { start, end };
-  const pageOptions = { page, pageSize, sessionId, source, query: search, range };
+  const pageOptions = { page, pageSize, sessionId, source, model, project, query: search, range };
   if (resource === 'analytics') {
     const bucketMs = Math.max(60000, Number(readOption(args, '--bucket-ms', 3600000)) || 3600000);
     const offsetValue = readOption(args, '--bucket-offset-ms');
     const bucketOffsetMs = offsetValue == null ? undefined : Number(offsetValue);
-    const result = await aggregation.getDashboardAggregates({ source, range, timestamp: end || Date.now(), bucketMs, bucketOffsetMs });
+    const result = await aggregation.getDashboardAggregates({ source, model, range, timestamp: end || Date.now(), bucketMs, bucketOffsetMs, disableUsageRollup: true });
     if (!result?.ok) throw new Error(result?.error || 'Unable to aggregate local usage data.');
-    const buckets = Array.isArray(result.buckets) ? result.buckets : [];
+    return analyticsPayload(result, { ...pageOptions, bucketMs, bucketOffsetMs });
+  }
+  if (resource === 'filters') {
+    const result = await aggregation.getDashboardAggregates({ source, range, timestamp: end || Date.now(), bucketMs: 86400000, disableUsageRollup: true });
+    if (!result?.ok) throw new Error(result?.error || 'Unable to load local filter options.');
     return envelope({
-      start: result.start || start,
-      end: result.end || end,
-      bucketMs: result.bucketMs || bucketMs,
-      bucketOffsetMs: result.bucketOffsetMs ?? bucketOffsetMs ?? 0,
-      usage: usageFromBuckets(buckets),
-      trend: buckets,
       models: result.modelStats || [],
-      sources: result.sourceStats || [],
+      projects: (result.sessionSummary?.projects || []).map((item) => ({
+        id: item.key || item.directory || '__none', directory: item.directory || '', count: Number(item.count || 0),
+      })),
     }, pageOptions);
   }
+  if (resource === 'diagnostics') return envelope(sanitizeIdeValue(await aggregation.getDatabaseHealth({ source })));
   if (resource === 'sessions' || resource === 'requests') {
-    const payload = { limit: pageSize, offset: (page - 1) * pageSize, query: search, source, range };
+    const payload = { limit: pageSize, offset: (page - 1) * pageSize, query: search, source, model, project, range };
     const result = resource === 'sessions'
       ? await pagination.getSessionsPage({ ...payload, status: 'active' })
       : sessionId
@@ -157,22 +119,24 @@ async function query(resource, args = []) {
   if (resource === 'dashboard') {
     const timestamp = positiveNumber(process.env.CODEARTS_BAR_NOW_MS, Date.now());
     const settings = {
-      dailyLimit: positiveNumber(process.env.CODEARTS_BAR_DAILY_LIMIT, DEFAULT_DAILY_LIMIT),
-      windowHours: Math.min(24 * 365, positiveNumber(process.env.CODEARTS_BAR_WINDOW_HOURS, DEFAULT_WINDOW_HOURS)),
+      dailyLimit: positiveNumber(process.env.CODEARTS_BAR_DAILY_LIMIT, 200000),
+      windowHours: Math.min(8760, positiveNumber(process.env.CODEARTS_BAR_WINDOW_HOURS, 24)),
     };
     const result = await aggregation.getDashboardAggregates({ source, timestamp, windowHours: settings.windowHours, bucketMs: 3600000 });
     if (!result?.ok) throw new Error(result?.error || 'Unable to read local usage data.');
-    return dashboardPayload(dashboardSnapshot(result, result.timestamp || timestamp, settings), pageOptions);
+    return ideDashboardPayload(dashboardSnapshot(result, result.timestamp || timestamp, settings), pageOptions);
   }
   throw new Error(`Unknown query resource: ${resource}`);
 }
 
 async function run() {
   const args = process.argv.slice(2);
-  if (args[0] !== 'query') throw new Error('JetBrains CLI supports only query commands');
-  try { console.log(JSON.stringify(await query(args[1] || 'dashboard', args.slice(2)))); }
-  catch (error) { console.log(JSON.stringify(failure(error))); process.exitCode = 1; }
+  try {
+    if (args[0] !== 'query') throw new Error('JetBrains CLI supports only query commands');
+    console.log(JSON.stringify(await query(args[1] || 'dashboard', args.slice(2))));
+  }
+  catch (error) { console.log(JSON.stringify(failure(sanitizeIdeValue(error?.message || error, 'error')))); process.exitCode = 1; }
 }
 
-if (require.main === module) run().catch((error) => { console.log(JSON.stringify(failure(error))); process.exitCode = 1; });
-module.exports = { query, readOption, usageFromBuckets, positiveNumber, nextDayStart, dashboardSnapshot, databasePagePayload, dashboardPayload };
+if (require.main === module) run();
+module.exports = { query, dashboardSnapshot, databasePagePayload, dashboardPayload: ideDashboardPayload };

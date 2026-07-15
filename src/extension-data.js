@@ -5,8 +5,16 @@ const { buildHealth } = require('./health');
 const localProvider = require('./providers/codeartsLocal');
 const { fmtTime } = require('./core/format');
 const fs = require('fs');
+const path = require('path');
 const cacheMetrics = require('./core/cacheMetrics');
 const { redactSensitiveText } = require('./core/sensitive-text');
+const {
+  safeIdeText,
+  usageFromBuckets,
+  providerStatsFromModels,
+  performanceFromBuckets,
+  analyticsSourceCoverage,
+} = require('./protocol/query-results');
 
 const HOUR_MS = 3600000;
 const DAY_MS = 24 * HOUR_MS;
@@ -52,11 +60,30 @@ function extensionConfig(options = {}) {
 }
 
 function extensionCapabilities() {
-  return { performance: false, queue: false };
+  return { performance: true, queue: false, diagnostics: true, providerStats: true };
 }
 
 function emptyPerformance() {
   return { window: { latency: {}, ttft: {}, firstContentApprox: {}, outputTokensPerSec: {}, errorRate: 0 } };
+}
+
+function extensionCompleteness(result = {}, performance = {}) {
+  const sources = analyticsSourceCoverage(result);
+  const reasons = [];
+  if (sources.failed) reasons.push('source-read-failed');
+  if (sources.missing) reasons.push('source-coverage-missing');
+  return {
+    complete: reasons.length === 0,
+    sampled: false,
+    reasons,
+    sources,
+    metrics: performance.metricCompleteness || {
+      latency: performance.complete !== false,
+      firstContentApprox: false,
+      outputTokensPerSec: false,
+      ttft: false,
+    },
+  };
 }
 
 function currentUsageOptions(config, timestamp) {
@@ -103,6 +130,7 @@ async function getExtensionSummary(options = {}) {
     summaryOnly: true,
     aggregatePending: true,
     freshness: { stale: false, source: 'summary', ageMs: 0 },
+    completeness: extensionCompleteness(summary),
     perf: summary.perf || {},
   }, config);
 }
@@ -126,24 +154,29 @@ async function getExtensionDetails(options = {}) {
   const selectedRange = extensionRange(options, timestamp);
   const scope = { source: options.source || 'all', model: options.model || 'all' };
   const rangePayload = { start: selectedRange.start, endExclusive: selectedRange.endExclusive };
-  const [currentSummary, aggregates, sessionsPage, requestsPage] = await Promise.all([
+  const [currentSummary, aggregates, sessionsPage, requestsPage, databaseHealth] = await Promise.all([
     localProvider.getSummary(currentUsageOptions(config, timestamp)),
-    localProvider.getDashboardAggregates({ ...config, ...scope, timestamp, range: rangePayload, bucketMs: selectedRange.bucketMs }),
+    localProvider.getDashboardAggregates({ ...config, ...scope, timestamp, range: rangePayload, bucketMs: selectedRange.bucketMs, disableUsageRollup: true }),
     localProvider.getSessionsPage({ ...config, limit: 12, offset: 0, ...scope, status: 'active', range: rangePayload }),
     localProvider.getRequestsPage({ ...config, ...scope, limit: 40, offset: 0, range: rangePayload }),
+    localProvider.getDatabaseHealth({ ...config, source: scope.source, timestamp }),
   ]);
   if (!currentSummary?.ok || !currentSummary.usage) throw new Error(currentSummary?.error || '无法读取当前 CodeArts 使用摘要');
   if (!aggregates?.ok) throw new Error(aggregates?.error || '无法读取 CodeArts 聚合数据');
   const currentUsage = currentSummary.usage;
-  const rangeUsage = scopedUsage(aggregates.sourceStats || []);
+  const rangeUsage = aggregates.buckets?.length ? usageFromBuckets(aggregates.buckets) : scopedUsage(aggregates.sourceStats || []);
+  const providers = providerStatsFromModels(aggregates.modelStats || []);
+  const rangePerformance = aggregates.performance || performanceFromBuckets(aggregates.buckets || [], rangeUsage);
   const sessions = (sessionsPage?.items || []).map((item) => sessionView(item, timestamp));
   const requests = (requestsPage?.items || []).map((item) => ({
     id: item.id || '', time: item.time || item.createdAt || 0,
-    sessionTitle: redactSensitiveText(item.sessionTitle || '未命名会话'),
+    sessionTitle: safeIdeText(item.sessionTitle || '未命名会话', 500),
     source: item.source || '', sourceLabel: item.sourceLabel || item.source || '',
     provider: item.provider || '', model: item.model || '', status: item.status,
     ok: item.ok !== false, total: Number(item.total || 0), input: Number(item.input || 0), output: Number(item.output || 0),
-    cacheRead: Number(item.cacheRead || 0), cacheWrite: Number(item.cacheWrite || 0), latencyMs: item.latencyMs,
+    reasoning: Number(item.reasoning || 0), cacheRead: Number(item.cacheRead || 0), cacheWrite: Number(item.cacheWrite || 0), latencyMs: item.latencyMs,
+    ttftMs: item.ttftMs, firstContentMs: item.firstContentMs, outputTokensPerSec: item.outputTokensPerSec,
+    error: safeIdeText(item.error || ''),
   }));
   return applyDerived({
     ok: true,
@@ -156,13 +189,18 @@ async function getExtensionDetails(options = {}) {
     usage: { ...currentUsage, range: rangeUsage },
     trends: { hourly24h: selectedRange.bucketMs === HOUR_MS ? aggregates.buckets || [] : [], daily14d: selectedRange.bucketMs === DAY_MS ? aggregates.buckets || [] : [], range: aggregates.buckets || [] },
     models: aggregates.modelStats || [],
+    providerStats: providers,
     sessions,
     sessionTotal: Number(sessionsPage?.total || sessions.length),
     sessionTotalExact: true,
     requests,
     requestTotal: Number(requestsPage?.total || requests.length),
+    historicalRequestTotal: Number(requestsPage?.total || requests.length),
+    requestLogComplete: Number(requestsPage?.total || requests.length) <= requests.length,
+    requestLogSampled: Number(requestsPage?.total || requests.length) > requests.length,
+    requestLogSampleLimit: requests.length,
     capabilities: extensionCapabilities(),
-    performance: emptyPerformance(),
+    performance: { window: rangePerformance },
     queue: { window: {} },
     tools: { window: { byName: [] } },
     dbSize: sourceBytes(aggregates.sources),
@@ -171,9 +209,23 @@ async function getExtensionDetails(options = {}) {
     freshness: { stale: false, source: 'aggregates', ageMs: 0 },
     selectedRange,
     selectedScope: scope,
-    sourceErrors: (aggregates.sourceErrors || []).map((item) => ({ source: item.source || item.id || '', message: redactSensitiveText(item.message || item.error || '数据源读取失败') })),
+    projects: (aggregates.sessionSummary?.projects || []).map((item) => ({
+      id: item.key || item.directory || '__none',
+      label: item.directory ? path.basename(item.directory) || item.directory : '未关联项目',
+      directory: item.directory || '', count: Number(item.count || 0),
+    })),
+    diagnostics: {
+      items: (databaseHealth?.items || []).map((item) => ({
+        source: item.source || '', label: item.label || item.source || '', ok: item.ok !== false,
+        quickCheck: item.quickCheck || '', tables: (item.tables || []).length,
+        messages: Number(item.messageCount || 0), sessions: Number(item.sessionCount || 0),
+      })),
+      sourceErrors: (databaseHealth?.sourceErrors || []).map((item) => ({ source: item.source || '', message: safeIdeText(item.message || item.error || '数据库检查失败') })),
+    },
+    sourceErrors: (aggregates.sourceErrors || []).map((item) => ({ source: item.source || item.id || '', message: safeIdeText(item.message || item.error || '数据源读取失败') })),
+    completeness: extensionCompleteness(aggregates, rangePerformance),
     perf: { range: aggregates.perf || {} },
   }, config);
 }
 
-module.exports = { extensionConfig, extensionRange, getExtensionSummary, getExtensionDetails, scopedUsage, sessionView };
+module.exports = { extensionConfig, extensionRange, getExtensionSummary, getExtensionDetails, scopedUsage, sessionView, extensionCompleteness };

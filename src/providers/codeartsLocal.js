@@ -7,6 +7,7 @@ const logs = require('./codearts/logs');
 const sessionActions = require('./codearts/session-actions');
 const aggregation = require('./codearts/aggregation');
 const diagnostics = require('./codearts/diagnostics');
+const sessionExport = require('./codearts/session-export');
 
 module.exports = {
   ...sources,
@@ -16,4 +17,5 @@ module.exports = {
   ...sessionActions,
   ...aggregation,
   ...diagnostics,
+  ...sessionExport,
 };

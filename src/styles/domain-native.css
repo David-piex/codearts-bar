@@ -57,6 +57,10 @@
   scroll-behavior:auto;
   contain:layout style;
 }
+.content:has(.modal-backdrop) {
+  contain:none;
+  overflow:hidden;
+}
 .view-switching .table-card,
 .view-switching .chart-card,
 .view-switching .summary-card {

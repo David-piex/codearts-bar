@@ -15,6 +15,19 @@ public final class CliLocator {
     public static List<String> queryCommand(CodeArtsSettings.State settings, String resource, List<String> args) throws IOException {
         return queryCommand(settings, resource, args, CliLocator::embeddedCli);
     }
+    public static List<String> exportCommand(CodeArtsSettings.State settings, List<String> args) throws IOException {
+        String cli=trim(settings.cliPath),node=trim(settings.nodePath);
+        if(!node.isEmpty()&&!Files.isRegularFile(Path.of(node))) throw new IOException("Node.js 路径不存在，请在设置中重新选择可执行文件。");
+        if(!cli.isEmpty()&&!Files.isRegularFile(Path.of(cli))) throw new IOException("CodeArts Bar CLI 路径不存在，请在设置中重新选择文件或留空使用内嵌 CLI。");
+        List<String> exportArgs=new ArrayList<>(); exportArgs.add("export-session"); exportArgs.addAll(args);
+        if(!cli.isEmpty()) return commandFor(cli,node,exportArgs.toArray(String[]::new));
+        String dev=System.getProperty("codearts.bar.cli","");
+        if(!dev.isBlank()&&Files.isRegularFile(Path.of(dev))) return commandFor(dev,node,exportArgs.toArray(String[]::new));
+        Path queryEntry=embeddedCli();
+        Path exportEntry=queryEntry.getParent().resolve("session-export-cli.js");
+        if(!Files.isRegularFile(exportEntry)) throw new IOException("内嵌会话导出运行时缺失");
+        return commandFor(exportEntry.toString(),node,exportArgs.toArray(String[]::new));
+    }
     static List<String> queryCommand(CodeArtsSettings.State settings, String resource, List<String> args,
                                      EmbeddedCliProvider embeddedCliProvider) throws IOException {
         String cli=trim(settings.cliPath),node=trim(settings.nodePath);

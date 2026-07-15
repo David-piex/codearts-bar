@@ -391,7 +391,7 @@ function aggregateBundleForSourceSql(args) {
   // bundle and once again for every latency percentile. Querying normalized
   // token rows once keeps the exact SQL filtering/part-token semantics while
   // doing summaries, models, buckets, and percentiles in one JS pass.
-  const { source, db, tables, queryAll, payload, windows, trendRange } = args;
+  const { source, db, tables, queryAll, payload, sessionPayload = { ...payload, query: payload.sessionQuery || '' }, windows, trendRange } = args;
   const tokenRows = messageTokenRowsForSourceSql({ db, tables, queryAll, payload });
   const bucketMs = Math.max(60000, safeNumber(trendRange.bucketMs, 3600000));
   const bucketOffsetMs = safeNumber(trendRange.bucketOffsetMs, 0);
@@ -438,6 +438,8 @@ function aggregateBundleForSourceSql(args) {
     const usage = usageFor(modelRows.rows);
     const latencyValues = modelRows.latencyValues;
     const latency = agg.summarize(latencyValues);
+    const firstContent = agg.summarize(modelRows.rows.map((row) => row.firstContentMs));
+    const outputTokensPerSec = agg.summarize(modelRows.rows.map((row) => row.outputTokensPerSec));
     return {
       name: `${provider} / ${model}`,
       provider,
@@ -449,8 +451,8 @@ function aggregateBundleForSourceSql(args) {
       performance: {
         latency,
         ttft: agg.summarize([]),
-        firstContentApprox: agg.summarize([]),
-        outputTokensPerSec: agg.summarize([]),
+        firstContentApprox: firstContent,
+        outputTokensPerSec,
         totalTokensPerSec: agg.summarize([]),
       },
     };
@@ -497,7 +499,8 @@ function aggregateBundleForSourceSql(args) {
     },
     modelStats,
     trendBuckets,
-    sessionSummary: sessionSummaryForSourceSql(args),
+    performanceRows: tokenRows,
+    sessionSummary: sessionSummaryForSourceSql({ ...args, payload: sessionPayload }),
   };
 }
 
@@ -521,7 +524,23 @@ function messageTokenRowsForSourceSql({ db, tables, queryAll, payload = {} }) {
       case when message_completed >= message_created and message_created > 0 then message_completed - message_created else null end as latencyMs
     from assistant_tokens
     order by time_created asc`;
-  return queryAll(db, sql, params).map((row) => ({
+  const rows = queryAll(db, sql, params);
+  const partTimes = new Map();
+  if (tables.includes('part') && rows.length) {
+    const ids = rows.map((row) => row.id);
+    const chunkSize = 400;
+    for (let offset = 0; offset < ids.length; offset += chunkSize) {
+      const chunk = ids.slice(offset, offset + chunkSize);
+      const placeholders = chunk.map(() => '?').join(',');
+      const parts = queryAll(db, `select message_id, time_created, data from part where message_id in (${placeholders}) order by time_created asc, id asc`, chunk);
+      for (const part of parts) {
+        const type = (() => { try { return JSON.parse(part.data || '{}').type || ''; } catch { return ''; } })();
+        if (type === 'step-start' || type === 'step-finish') continue;
+        if (!partTimes.has(part.message_id)) partTimes.set(part.message_id, Number(part.time_created || 0));
+      }
+    }
+  }
+  return rows.map((row) => ({
     id: row.id,
     sessionId: row.sessionId,
     timeCreated: sqlNumber(row.timeCreated),
@@ -537,6 +556,10 @@ function messageTokenRowsForSourceSql({ db, tables, queryAll, payload = {} }) {
     messages: 1,
     errors: sqlNumber(row.error),
     latencyMs: row.latencyMs == null ? null : Number(row.latencyMs),
+    firstContentMs: partTimes.has(row.id) && Number(row.timeCreated || 0) > 0
+      ? Math.max(0, partTimes.get(row.id) - Number(row.timeCreated || 0)) : null,
+    outputTokensPerSec: row.latencyMs != null && Number(row.latencyMs) > 0
+      ? sqlNumber(row.output) / (Number(row.latencyMs) / 1000) : null,
   }));
 }
 

@@ -4,7 +4,7 @@ function renderSessionWorkspace(s, opts = {}){
   const content = sessionTable(s, opts);
   const tool = sessionBulkHtml(false);
   const count = sessionTableItems.length;
-  return `<div id="sessionOverviewSlot">${sessionOverviewHtml(s)}</div><div id="sessionToolbarSlot">${sessionSimpleToolbarHtml(s)}${sessionFilterContextHtml(s)}${sessionAdvancedHtml(s)}</div><section class="table-card session-workspace-card"><div class="table-toolbar session-toolbar"><input data-query="sessions" value="${esc(sessionQuery)}" placeholder="${TXT.sessionSearch}" /><div id="sessionBulkSlot" class="session-bulk-slot">${tool}</div><span class="muted row-count">${n(count)} ${TXT.rows}</span></div>${content}</section><div id="sessionModalSlot">${renderRenameSheet()}${renderBulkMetaSheet()}</div>`;
+  return `<div id="sessionOverviewSlot">${sessionOverviewHtml(s)}</div><div id="sessionToolbarSlot">${sessionSimpleToolbarHtml(s)}${sessionFilterContextHtml(s)}${sessionAdvancedHtml(s)}</div><section class="table-card session-workspace-card"><div class="table-toolbar session-toolbar"><input data-query="sessions" value="${esc(sessionQuery)}" placeholder="${TXT.sessionSearch}" /><div id="sessionBulkSlot" class="session-bulk-slot">${tool}</div><span class="muted row-count">${n(count)} ${TXT.rows}</span></div>${content}</section><div id="sessionModalSlot">${renderRenameSheet()}${renderBulkMetaSheet()}${renderExportSheet()}</div>`;
 }
 function renderTable(rows, s){
   if(tableTab === 'sessions'){ tableTab = 'requests'; localStorage.setItem('statsTableTab', tableTab); }

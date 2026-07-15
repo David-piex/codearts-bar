@@ -4,7 +4,7 @@
 
 CodeArts Bar 在本机读取 CodeArts Agent 生成的 SQLite 数据，提供 **Windows 桌面端、VS Code / CodeArts 扩展、JetBrains 插件和 CLI**。它用于查看 token 用量、缓存命中、模型与来源趋势、性能指标和最近会话；原始数据库、日志和 prompt 不会上传。
 
-当前版本：**1.16.34**。
+当前版本：**1.16.35**。
 
 [下载 Windows 版本](https://gitee.com/dtse01/codearts-bar/releases) · [安装 VS Code 扩展](#vs-code--codearts-扩展) · [使用 CLI](#cli) · [从源码运行](#从源码运行)
 
@@ -15,9 +15,9 @@ CodeArts Bar 在本机读取 CodeArts Agent 生成的 SQLite 数据，提供 **W
 | 入口 | 适合场景 | 提供内容 |
 | --- | --- | --- |
 | **Windows Desktop** | 完整分析和会话管理 | 托盘应用、使用分析、日期/来源/模型筛选、诊断中心、会话固定/重命名/归档 |
-| **VS Code / CodeArts 扩展** | 编码时快速查看 | 活动栏概览、趋势、模型排行、来源分布、最近会话、Hover Tooltip 和空数据状态 |
-| **JetBrains 插件** | 在 IDEA、PyCharm、WebStorm、GoLand 中查看 | 使用分析 / 会话管理 / 诊断三项主导航、数据库分页会话与请求、脱敏诊断 |
-| **CLI / npm 包** | 终端、脚本和诊断 | 文本统计、JSON 快照、运行时检查、数据源诊断和配置 |
+| **VS Code / CodeArts 扩展** | 编码时查看与导出 | 使用分析、日期/来源/模型筛选、会话与请求数据库分页、搜索、详情、诊断和单会话导出 |
+| **JetBrains 插件** | 在 IDEA、PyCharm、WebStorm、GoLand 中查看与导出 | 使用分析、完整筛选、数据库分页、请求详情、数据源诊断和单会话导出 |
+| **CLI / npm 包** | 终端、脚本和诊断 | 文本统计、JSON 快照、运行时检查、数据源诊断、配置和单会话导出 |
 
 ## 主要能力
 
@@ -28,7 +28,19 @@ CodeArts Bar 在本机读取 CodeArts Agent 生成的 SQLite 数据，提供 **W
 - **真实数据库分页**：请求、会话和详情按需读取，不把全部记录一次性塞进界面。
 - **完整统计口径**：总量、趋势、模型和来源来自完整数据库聚合；当前页只作为明细样本，并在界面明确标注。
 - **本地诊断**：检查数据库路径、SQLite adapter、缓存、日志和上次异常退出状态。
+- **会话导出**：Desktop、VS Code、JetBrains 和 CLI 支持 JSON、Markdown、真实 XLSX；Desktop 额外支持批量导出。
+- **导出隐私**：默认脱敏凭据、用户名和本机路径，不包含推理及工具输入输出；可在导出前调整内容范围。
 - **平滑冷启动**：先显示 Summary Skeleton 和核心指标，再在后台补趋势、模型及会话聚合。
+
+## 1.16.35 更新
+
+- VS Code 与 JetBrains 的核心只读能力已对齐 Desktop 的数据语义：共享日期、来源、模型、Provider、项目、性能、缓存、错误和完整性口径。
+- VS Code 已补齐会话/请求数据库分页、会话搜索与项目筛选、请求详情和数据库健康诊断；插件隐藏后会降低或取消后台查询。
+- JetBrains 已补齐筛选、Provider、完整性、数据库健康诊断和导出隐私选项；Tool Window 隐藏后会取消分析、分页和诊断任务。
+- 三端会话支持 JSON、Markdown、Excel 导出；Excel 为真正的 `.xlsx`，并通过 Microsoft Excel 与 LibreOffice 往返验证。
+- 导出直接读取完整会话，不受界面分页或 2000 条 Snapshot 样本上限影响；JSON、Markdown、XLSX 使用同一规范化数据模型。
+- JetBrains 安装用户无需另装 JDK；插件支持 JetBrains IDE 2024.2 至 2026.1。运行内嵌查询和导出仍需要 Node.js 18+，低版本会得到明确提示。
+- Windows Desktop 已规避虚拟机/远程桌面软件渲染路径的间歇性白屏；Renderer 异常时会进行一次受限恢复，正式包需稳定运行 5 秒才通过发布门禁。
 
 ## 界面预览
 
@@ -80,7 +92,7 @@ CodeArts Bar 在本机读取 CodeArts Agent 生成的 SQLite 数据，提供 **W
 codeartsBar.dbPath
 ```
 
-扩展保持轻量：它先加载 Summary，面板可见后再补齐趋势、模型和会话聚合；完整会话管理仍由桌面端承担。
+扩展先加载 Summary，面板可见后再补齐趋势、模型、会话与请求数据。它支持只读搜索、筛选、数据库分页、请求详情、诊断和单会话 JSON/Markdown/XLSX 导出；重命名、固定和归档等写操作仍由桌面端承担。
 
 ### JetBrains 插件
 
@@ -89,9 +101,11 @@ codeartsBar.dbPath
 3. 点击齿轮菜单，选择 **Install Plugin from Disk...**，然后选择下载的 ZIP。
 4. 安装并重启 IDE 后，打开右侧 **CodeArts Bar** 工具窗口。
 
-插件工具窗口使用 **使用分析 / 会话管理 / 诊断** 三项主导航。使用分析包含 Token、缓存、软上限、趋势和模型/来源视图；会话管理支持搜索、来源筛选、数据库分页，以及从会话列表进入请求列表和请求明细；诊断页支持重试、打开设置或数据目录，并复制脱敏报告。
+插件工具窗口使用 **使用分析 / 会话管理 / 诊断** 三项主导航。使用分析包含 Token、缓存、软上限、趋势、模型、Provider 和来源视图；会话管理支持搜索、项目/来源筛选、数据库分页、请求明细和单会话 JSON/Markdown/XLSX 导出；诊断页读取真实数据库健康状态，并支持重试、打开设置或数据目录及复制脱敏报告。会话重命名、固定和归档仍在桌面端完成。
 
-安装和使用插件**不需要单独安装 JDK**，它运行在 JetBrains IDE 自带的 Java Runtime 上。插件内置共享 CLI 资源，但读取本地数据仍需要系统可执行的 Node.js 18 或更高版本；自动发现失败时，可在 **Settings | Tools | CodeArts Bar** 中配置 Node.js、CLI 或 `opencode.db` 路径。会话搜索和分页直接查询本地数据库，不受概览快照条数限制。只有从源码构建 JetBrains 插件时才需要 JDK 21。
+当前插件支持 JetBrains IDE 2024.2 至 2026.1（build `242` 至 `261.*`）。安装和使用插件**不需要单独安装 JDK**，它运行在 IDE 自带的 Java Runtime 上。插件内置共享 CLI 资源，但读取本地数据仍需要系统可执行的 Node.js 18 或更高版本；自动发现失败时，可在 **Settings | Tools | CodeArts Bar** 中配置 Node.js、CLI 或 `opencode.db` 路径。会话搜索和分页直接查询本地数据库，不受概览快照条数限制。
+
+从源码构建需要带 `javac` 的 Java 21 或更高版本。Windows 构建脚本会自动发现独立安装或 Toolbox 安装的 IDEA JBR 21+；macOS 和 Linux 需通过 `CODEARTS_BAR_JAVA_HOME`、`JAVA_HOME` 或 `PATH` 提供 Java 21+ 编译器。
 
 ### CLI
 
@@ -114,6 +128,7 @@ codearts-bar stats                 # 文本统计
 codearts-bar snapshot              # JSON 快照
 codearts-bar runtime               # Node / SQLite 运行时
 codearts-bar diagnose              # 数据源、日志和缓存诊断
+codearts-bar export-session --session-id <id> --format xlsx --output <path>
 codearts-bar config show           # 查看配置与配置文件位置
 codearts-bar config set --db "D:\path\to\opencode.db"
 ```
@@ -230,7 +245,7 @@ CodeArts Bar 不估算或反向推测 token。它读取本地 `opencode.db` 中 
 - 极大的历史数据库可能需要等待后台 rollup / sidecar 缓存完成。
 - 数据准确性取决于本地数据库结构以及 CodeArts Agent 已写入记录的完整性。
 - 当前正式桌面产物为 Windows x64；macOS / Linux 需要额外实机回归与打包适配。
-- VS Code 扩展定位为轻量概览，不包含桌面端全部会话管理能力。
+- VS Code 与 JetBrains 提供只读查看、筛选、分页、诊断和导出，不包含桌面端的会话重命名、固定、归档与恢复等写能力。
 
 ## 开发与验证
 
@@ -240,7 +255,7 @@ npm run verify               # 完整本地验证，包含 Electron 与 VS Code 
 npm run verify:ci            # Windows CI：验证、压力测试和视觉回归
 npm run test:visual          # 七场景像素回归
 npm run build:extension      # 生成 release/codearts-bar-status.vsix
-npm run build:jetbrains      # 生成 JetBrains 插件 ZIP（需要 JDK 21）
+npm run build:jetbrains      # 生成 JetBrains 插件 ZIP（需要 JDK 21+ 或带 javac 的 IDEA JBR 21+）
 npm run build:app            # 生成 Windows 安装版与便携版
 npm run pack:npm             # 生成精简 npm 包
 node src/cli.js self-test --fixture-db tests/fixtures/opencode-fixture.db --config-dir .cache/self-test-config --now-ms 1783512000000

@@ -14,6 +14,7 @@ import com.intellij.openapi.Disposable;
 import com.intellij.openapi.options.ShowSettingsUtil;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.DialogWrapper;
+import com.intellij.openapi.ui.Messages;
 import com.intellij.openapi.ui.SimpleToolWindowPanel;
 import com.intellij.openapi.ui.ValidationInfo;
 import com.intellij.ui.JBColor;
@@ -84,18 +85,24 @@ final class CodeArtsDashboardPanel extends SimpleToolWindowPanel implements Disp
     private final JBLabel quotaMeta = mutedLabel("每日软上限");
     private final TrendChartPanel chart = new TrendChartPanel();
     private final JComboBox<AnalyticsRange> usageRange = new JComboBox<>(AnalyticsRange.values());
+    private final JComboBox<String> analyticsModel = new JComboBox<>(new String[]{"全部模型"});
+    private final JComboBox<String> analyticsSource = new JComboBox<>(new String[]{"全部来源", "桌面端", "CLI", "自定义"});
 
     private final DefaultTableModel modelTable = model(new String[]{"模型", "Token", "请求", "P95"});
     private final DefaultTableModel sourceTable = model(new String[]{"来源", "Token", "请求", "错误"});
+    private final DefaultTableModel providerTable = model(new String[]{"Provider", "Token", "请求", "错误"});
     private final DefaultTableModel sessionTable = model(new String[]{"会话", "Token", "更新"});
     private final DefaultTableModel requestTable = model(new String[]{"请求", "Token", "耗时", "状态"});
     private final DashboardUi.PolishedTable modelGrid = table(modelTable, "暂无模型统计");
     private final DashboardUi.PolishedTable sourceGrid = table(sourceTable, "暂无来源统计");
+    private final DashboardUi.PolishedTable providerGrid = table(providerTable, "暂无 Provider 统计");
     private final DashboardUi.PolishedTable sessionGrid = table(sessionTable, "正在读取会话...");
     private final DashboardUi.PolishedTable requestGrid = table(requestTable, "选择会话后查看请求");
 
     private final SearchTextField sessionSearch = new SearchTextField(false);
     private final JComboBox<String> sessionSource = new JComboBox<>(new String[]{"全部来源", "桌面端", "CLI", "自定义"});
+    private final JComboBox<String> sessionModel = new JComboBox<>(new String[]{"全部模型"});
+    private final JComboBox<UsageSnapshot.ProjectInfo> sessionProject = new JComboBox<>();
     private final JComboBox<AnalyticsRange> sessionTimeRange = new JComboBox<>(new AnalyticsRange[]{
             AnalyticsRange.ALL_TIME, AnalyticsRange.TODAY, AnalyticsRange.LAST_24_HOURS,
             AnalyticsRange.LAST_7_DAYS, AnalyticsRange.LAST_14_DAYS, AnalyticsRange.LAST_30_DAYS,
@@ -110,6 +117,7 @@ final class CodeArtsDashboardPanel extends SimpleToolWindowPanel implements Disp
     private final SessionInspectorHeader sessionInspector = new SessionInspectorHeader();
     private final JButton openSessionFolder = button("打开目录", this::openSelectedSessionFolder);
     private final JButton copySessionId = button("复制 ID", this::copySelectedSessionId);
+    private final JButton exportSessionButton = button("导出", this::showSessionExportMenu);
 
     private final JPanel requestDetailPanel = new RoundedPanel(new BorderLayout(0, JBUI.scale(8)), 8, SURFACE_ALT, false);
     private final CardLayout requestContentLayout = new CardLayout();
@@ -121,7 +129,9 @@ final class CodeArtsDashboardPanel extends SimpleToolWindowPanel implements Disp
     private final JBLabel requestReasoning = factValue();
     private final JBLabel requestCache = factValue();
     private final JBLabel requestTtft = factValue();
+    private final JBLabel requestFirstContent = factValue();
     private final JBLabel requestSpeed = factValue();
+    private final JBLabel requestError = mutedLabel("");
 
     private final JBLabel diagnosticTitle = new JBLabel("正在检查本地数据");
     private final JBLabel diagnosticMeta = mutedLabel("读取完成后会显示数据库与性能摘要");
@@ -131,6 +141,8 @@ final class CodeArtsDashboardPanel extends SimpleToolWindowPanel implements Disp
     private final AtomicLong analyticsQueryGeneration = new AtomicLong();
     private final AtomicLong sessionQueryGeneration = new AtomicLong();
     private final AtomicLong requestQueryGeneration = new AtomicLong();
+    private final AtomicLong filterQueryGeneration = new AtomicLong();
+    private final AtomicLong diagnosticsQueryGeneration = new AtomicLong();
     private final QueryDisplayState analyticsDisplay = new QueryDisplayState();
     private final QueryDisplayState sessionDisplay = new QueryDisplayState();
 
@@ -138,6 +150,8 @@ final class CodeArtsDashboardPanel extends SimpleToolWindowPanel implements Disp
     private Future<?> analyticsQueryTask;
     private Future<?> sessionQueryTask;
     private Future<?> requestQueryTask;
+    private Future<?> filterQueryTask;
+    private Future<?> diagnosticsQueryTask;
     private UsageSnapshot current = UsageSnapshot.empty("等待首次刷新");
     private List<UsageSnapshot.SessionInfo> sessionRows = List.of();
     private List<UsageSnapshot.RequestInfo> requestRows = List.of();
@@ -148,6 +162,7 @@ final class CodeArtsDashboardPanel extends SimpleToolWindowPanel implements Disp
     private String selectedSessionId = "";
     private String selectedSessionSource = "";
     private String selectedSessionDirectory = "";
+    private String selectedSessionTitle = "";
     private String selectedRequestKey = "";
     private boolean requestDetailVisible;
     private String activeView = VIEW_ANALYTICS;
@@ -161,6 +176,7 @@ final class CodeArtsDashboardPanel extends SimpleToolWindowPanel implements Disp
     private AnalyticsRange appliedUsageRange;
     private AnalyticsRange appliedSessionRange;
     private String displayedDataSource = "";
+    private boolean loadingFilterOptions;
 
     CodeArtsDashboardPanel(Project project) {
         super(true, true);
@@ -172,6 +188,7 @@ final class CodeArtsDashboardPanel extends SimpleToolWindowPanel implements Disp
         ensureCustomRangeDefaults(settings, true);
         ensureCustomRangeDefaults(settings, false);
         usageRange.setSelectedItem(appliedUsageRange);
+        sessionProject.addItem(new UsageSnapshot.ProjectInfo("", "", 0));
         sessionTimeRange.setSelectedItem(appliedSessionRange);
         configureAccessibility();
         updateRangeDescriptions();
@@ -182,8 +199,7 @@ final class CodeArtsDashboardPanel extends SimpleToolWindowPanel implements Disp
         setContent(content());
         setToolbar(toolbar());
         allowNarrow(this);
-        subscription = service.subscribe(this::render);
-        service.refresh(false);
+        activateDataSubscription();
     }
 
     private void configureAccessibility() {
@@ -191,9 +207,14 @@ final class CodeArtsDashboardPanel extends SimpleToolWindowPanel implements Disp
         usageRange.getAccessibleContext().setAccessibleDescription("筛选所有使用分析指标的时间范围");
         sessionSearch.getTextEditor().getAccessibleContext().setAccessibleName("搜索会话");
         sessionSource.getAccessibleContext().setAccessibleName("会话来源");
+        sessionModel.getAccessibleContext().setAccessibleName("会话模型筛选");
         sessionTimeRange.getAccessibleContext().setAccessibleName("会话时间范围");
         modelGrid.getAccessibleContext().setAccessibleName("模型用量表");
         sourceGrid.getAccessibleContext().setAccessibleName("数据源用量表");
+        providerGrid.getAccessibleContext().setAccessibleName("Provider 用量表");
+        analyticsModel.getAccessibleContext().setAccessibleName("分析模型筛选");
+        analyticsSource.getAccessibleContext().setAccessibleName("分析来源筛选");
+        sessionProject.getAccessibleContext().setAccessibleName("会话项目筛选");
         sessionGrid.getAccessibleContext().setAccessibleName("会话列表");
         requestGrid.getAccessibleContext().setAccessibleName("请求列表");
         diagnostics.getAccessibleContext().setAccessibleName("脱敏诊断报告");
@@ -211,6 +232,12 @@ final class CodeArtsDashboardPanel extends SimpleToolWindowPanel implements Disp
         installNumberRenderer(sourceGrid, 2, value -> number(value.longValue()));
         installNumberRenderer(sourceGrid, 3, value -> number(value.longValue()));
         setColumnWidths(sourceGrid, 150, 76, 58, 56);
+
+        installRichRenderer(providerGrid, 0);
+        installNumberRenderer(providerGrid, 1, value -> tokens(value.longValue()));
+        installNumberRenderer(providerGrid, 2, value -> number(value.longValue()));
+        installNumberRenderer(providerGrid, 3, value -> number(value.longValue()));
+        setColumnWidths(providerGrid, 150, 76, 58, 56);
 
         sessionGrid.setAutoCreateRowSorter(false);
         sessionGrid.setRowSorter(null);
@@ -256,6 +283,10 @@ final class CodeArtsDashboardPanel extends SimpleToolWindowPanel implements Disp
             @Override public void changedUpdate(DocumentEvent event) { scheduleSearch(); }
         });
         sessionSource.addActionListener(event -> startNewSearch());
+        sessionModel.addActionListener(event -> { if (!loadingFilterOptions) startNewSearch(); });
+        sessionProject.addActionListener(event -> { if (!loadingFilterOptions) startNewSearch(); });
+        analyticsModel.addActionListener(event -> { if (!loadingFilterOptions) loadAnalyticsRange(); });
+        analyticsSource.addActionListener(event -> loadAnalyticsRange());
         sessionTimeRange.addActionListener(event -> {
             if (changingSessionRange) return;
             AnalyticsRange range = selectedSessionRange();
@@ -292,6 +323,7 @@ final class CodeArtsDashboardPanel extends SimpleToolWindowPanel implements Disp
 
         openSessionFolder.setEnabled(false);
         copySessionId.setEnabled(false);
+        exportSessionButton.setEnabled(false);
         updatePagerButtons();
     }
 
@@ -399,6 +431,15 @@ final class CodeArtsDashboardPanel extends SimpleToolWindowPanel implements Disp
         body.add(metrics);
         body.add(Box.createVerticalStrut(JBUI.scale(10)));
 
+        JPanel analyticsFilters = transparent(new FlowLayout(FlowLayout.LEFT, JBUI.scale(6), 0));
+        analyticsModel.setPreferredSize(new Dimension(JBUI.scale(180), analyticsModel.getPreferredSize().height));
+        analyticsFilters.add(new JBLabel("模型"));
+        analyticsFilters.add(analyticsModel);
+        analyticsFilters.add(new JBLabel("来源"));
+        analyticsFilters.add(analyticsSource);
+        body.add(analyticsFilters);
+        body.add(Box.createVerticalStrut(JBUI.scale(10)));
+
         JPanel cacheCard = progressCard("缓存命中率", cacheRateValue, cacheProgress, cacheRateMeta);
         JPanel quotaCard = progressCard("每日软上限", quotaValue, quotaProgress, quotaMeta);
         quotaCard.remove(quotaMeta);
@@ -435,15 +476,18 @@ final class CodeArtsDashboardPanel extends SimpleToolWindowPanel implements Disp
         JPanel deck = new JPanel(layout);
         deck.setOpaque(false);
         deck.add(tableSurface(modelGrid), "models");
+        deck.add(tableSurface(providerGrid), "providers");
         deck.add(tableSurface(sourceGrid), "sources");
 
         ButtonGroup group = new ButtonGroup();
         ViewToggleButton models = viewButton("模型", true, () -> layout.show(deck, "models"));
+        ViewToggleButton providers = viewButton("Provider", false, () -> layout.show(deck, "providers"));
         ViewToggleButton sources = viewButton("数据源", false, () -> layout.show(deck, "sources"));
         group.add(models);
+        group.add(providers);
         group.add(sources);
-        JPanel switcher = segmentedBar(models, sources);
-        switcher.setPreferredSize(new Dimension(JBUI.scale(132), JBUI.scale(34)));
+        JPanel switcher = segmentedBar(models, providers, sources);
+        switcher.setPreferredSize(new Dimension(JBUI.scale(230), JBUI.scale(34)));
 
         root.add(sectionHeader("模型与来源", "用于定位主要消耗和异常来源", switcher), BorderLayout.NORTH);
         root.add(deck, BorderLayout.CENTER);
@@ -456,7 +500,7 @@ final class CodeArtsDashboardPanel extends SimpleToolWindowPanel implements Disp
         root.setBorder(JBUI.Borders.empty(14));
 
         sessionSummary.setForeground(MUTED);
-        JPanel title = sectionHeader("会话管理", "搜索会话并在详情区检查请求", sessionSummary);
+        JPanel title = sectionHeader("会话管理", "插件支持查看和导出；重命名、归档等写操作请在 Desktop 中完成", sessionSummary);
         root.add(title, BorderLayout.NORTH);
 
         RoundedPanel sessionArea = new RoundedPanel(new BorderLayout(0, JBUI.scale(7)), 10, SURFACE);
@@ -464,10 +508,14 @@ final class CodeArtsDashboardPanel extends SimpleToolWindowPanel implements Disp
         JPanel filters = transparent(new BorderLayout(JBUI.scale(6), 0));
         filters.add(sessionSearch, BorderLayout.CENTER);
         sessionSource.setPreferredSize(new Dimension(JBUI.scale(92), sessionSource.getPreferredSize().height));
+        sessionModel.setPreferredSize(new Dimension(JBUI.scale(132), sessionModel.getPreferredSize().height));
+        sessionProject.setPreferredSize(new Dimension(JBUI.scale(132), sessionProject.getPreferredSize().height));
         sessionTimeRange.setPreferredSize(new Dimension(JBUI.scale(112), sessionTimeRange.getPreferredSize().height));
-        JPanel filterMenus = transparent(new GridLayout(1, 2, JBUI.scale(6), 0));
+        JPanel filterMenus = transparent(new GridLayout(1, 4, JBUI.scale(6), 0));
         filterMenus.add(sessionTimeRange);
         filterMenus.add(sessionSource);
+        filterMenus.add(sessionModel);
+        filterMenus.add(sessionProject);
         filters.add(filterMenus, BorderLayout.EAST);
         filters.addComponentListener(new ComponentAdapter() {
             private boolean stacked;
@@ -502,6 +550,7 @@ final class CodeArtsDashboardPanel extends SimpleToolWindowPanel implements Disp
         JPanel inspectorActions = transparent(new FlowLayout(FlowLayout.RIGHT, JBUI.scale(6), 0));
         inspectorActions.add(openSessionFolder);
         inspectorActions.add(copySessionId);
+        inspectorActions.add(exportSessionButton);
         stretch(inspectorActions);
         inspectorTop.add(inspectorActions);
         requestArea.add(inspectorTop, BorderLayout.NORTH);
@@ -594,6 +643,7 @@ final class CodeArtsDashboardPanel extends SimpleToolWindowPanel implements Disp
             if (sessionsDirty) loadSessionPage();
             else if (!selectedSessionId.isBlank() && requestsDirty) loadRequestPage(false);
         }
+        if (VIEW_DIAGNOSTICS.equals(view)) loadDatabaseDiagnostics();
     }
 
     private void render(UsageSnapshot snapshot) {
@@ -606,7 +656,7 @@ final class CodeArtsDashboardPanel extends SimpleToolWindowPanel implements Disp
             return;
         }
 
-        String nextDataSource = DataSourceIdentity.of(snapshot.dbPath());
+        String nextDataSource = snapshot.adapter();
         if (!displayedDataSource.isBlank() && !displayedDataSource.equals(nextDataSource)) {
             clearDisplayedDataSource();
         }
@@ -637,6 +687,8 @@ final class CodeArtsDashboardPanel extends SimpleToolWindowPanel implements Disp
         sessionsDirty = true;
         requestsDirty = true;
         if (VIEW_SESSIONS.equals(activeView)) loadSessionPage();
+        if (VIEW_DIAGNOSTICS.equals(activeView)) loadDatabaseDiagnostics();
+        loadFilterOptions();
         loadAnalyticsRange();
     }
 
@@ -675,9 +727,13 @@ final class CodeArtsDashboardPanel extends SimpleToolWindowPanel implements Disp
         analyticsQueryGeneration.incrementAndGet();
         sessionQueryGeneration.incrementAndGet();
         requestQueryGeneration.incrementAndGet();
+        filterQueryGeneration.incrementAndGet();
+        diagnosticsQueryGeneration.incrementAndGet();
         cancelQuery(analyticsQueryTask);
         cancelQuery(sessionQueryTask);
         cancelQuery(requestQueryTask);
+        cancelQuery(filterQueryTask);
+        cancelQuery(diagnosticsQueryTask);
         displayedDataSource = "";
         hasRenderedData = false;
         hasRenderedAnalytics = false;
@@ -726,6 +782,10 @@ final class CodeArtsDashboardPanel extends SimpleToolWindowPanel implements Disp
         if (!query.isEmpty()) args.addAll(List.of("--search", query));
         String source = selectedSourceId();
         if (!source.isBlank()) args.addAll(List.of("--source", source));
+        Object modelFilter = sessionModel.getSelectedItem();
+        if (sessionModel.getSelectedIndex() > 0 && modelFilter != null) args.addAll(List.of("--model", modelFilter.toString()));
+        UsageSnapshot.ProjectInfo projectFilter = (UsageSnapshot.ProjectInfo) sessionProject.getSelectedItem();
+        if (projectFilter != null && !projectFilter.id().isBlank()) args.addAll(List.of("--project", projectFilter.id()));
         appendSessionRangeArgs(args);
         String queryLabel = sessionQueryLabel(query);
 
@@ -769,11 +829,13 @@ final class CodeArtsDashboardPanel extends SimpleToolWindowPanel implements Disp
         selectedSessionId = row.id();
         selectedSessionSource = row.source();
         selectedSessionDirectory = row.directory();
+        selectedSessionTitle = safeText(empty(row.title(), "无标题会话"));
         sessionInspector.setSession(safeText(empty(row.title(), "无标题会话")),
                 sourceLabel(row.source()) + " · " + empty(row.model(), "未识别模型") + " · " + date(row.updatedAt()),
                 tokens(row.total()), number(row.requests()), null);
         openSessionFolder.setEnabled(!selectedSessionDirectory.isBlank() && new File(selectedSessionDirectory).isDirectory());
         copySessionId.setEnabled(!selectedSessionId.isBlank());
+        exportSessionButton.setEnabled(!selectedSessionId.isBlank());
 
         requestPage = 1;
         requestsDirty = true;
@@ -804,10 +866,12 @@ final class CodeArtsDashboardPanel extends SimpleToolWindowPanel implements Disp
         selectedSessionId = "";
         selectedSessionSource = "";
         selectedSessionDirectory = "";
+        selectedSessionTitle = "";
         sessionGrid.clearSelection();
         sessionInspector.setEmpty();
         openSessionFolder.setEnabled(false);
         copySessionId.setEnabled(false);
+        exportSessionButton.setEnabled(false);
         requestQueryGeneration.incrementAndGet();
         cancelQuery(requestQueryTask);
         requestRows = List.of();
@@ -898,7 +962,9 @@ final class CodeArtsDashboardPanel extends SimpleToolWindowPanel implements Disp
         requestReasoning.setText(tokens(row.reasoning()));
         requestCache.setText(tokens(row.cacheRead()) + " / " + tokens(row.cacheWrite()));
         requestTtft.setText(duration(row.ttftMs()));
+        requestFirstContent.setText(duration(row.firstContentMs()));
         requestSpeed.setText(row.outputTokensPerSec() == null ? "--" : new DecimalFormat("0.0/s").format(row.outputTokensPerSec()));
+        requestError.setText(row.error().isBlank() ? "" : "错误：" + safeText(row.error()));
         requestContentLayout.show(requestContentDeck, "detail");
         requestContentDeck.revalidate();
     }
@@ -923,9 +989,10 @@ final class CodeArtsDashboardPanel extends SimpleToolWindowPanel implements Disp
         requestDetailTitle.setText("请求详情");
         requestDetailMeta.setText("选择一条请求查看 Token 拆分与性能");
         requestDetailMeta.setToolTipText(null);
-        for (JBLabel value : new JBLabel[]{requestInput, requestOutput, requestReasoning, requestCache, requestTtft, requestSpeed}) {
+        for (JBLabel value : new JBLabel[]{requestInput, requestOutput, requestReasoning, requestCache, requestTtft, requestFirstContent, requestSpeed}) {
             value.setText("--");
         }
+        requestError.setText("");
         requestContentLayout.show(requestContentDeck, "list");
         requestContentDeck.revalidate();
         requestContentDeck.repaint();
@@ -958,11 +1025,15 @@ final class CodeArtsDashboardPanel extends SimpleToolWindowPanel implements Disp
         long queryBucketMs = calendarRebucket ? transitionBucketMs : window.bucketMs();
         long midpoint = window.start() + (window.end() - window.start()) / 2;
         long bucketOffsetMs = zone.getRules().getOffset(java.time.Instant.ofEpochMilli(midpoint)).getTotalSeconds() * 1_000L;
-        List<String> args = List.of(
+        List<String> args = new ArrayList<>(List.of(
                 "--start", Long.toString(window.start()),
                 "--end", Long.toString(window.end()),
                 "--bucket-ms", Long.toString(queryBucketMs),
-                "--bucket-offset-ms", Long.toString(bucketOffsetMs));
+                "--bucket-offset-ms", Long.toString(bucketOffsetMs)));
+        Object selectedModel = analyticsModel.getSelectedItem();
+        if (analyticsModel.getSelectedIndex() > 0 && selectedModel != null) args.addAll(List.of("--model", selectedModel.toString()));
+        String selectedAnalyticsSource = selectedAnalyticsSourceId();
+        if (!selectedAnalyticsSource.isBlank()) args.addAll(List.of("--source", selectedAnalyticsSource));
         String label = window.label();
         refreshState.setText("正在更新 " + label + "...");
         analyticsQueryTask = service.query("analytics", args, data -> {
@@ -1229,7 +1300,8 @@ final class CodeArtsDashboardPanel extends SimpleToolWindowPanel implements Disp
 
     private void renderAnalyticsData(UsageSnapshot.AnalyticsData data, String label, boolean hourly) {
         UsageSnapshot.UsageWindow usage = data.usage();
-        usageHero.setMetrics(tokens(usage.total()), number(usage.total()), number(usage.messages()), label + " · 本地统计");
+        String completeness = data.sampled() ? "抽样数据" : data.complete() ? "完整数据" : "部分数据";
+        usageHero.setMetrics(tokens(usage.total()), number(usage.total()), number(usage.messages()), label + " · " + completeness);
         inputMetric.setMetric(tokens(usage.input()), ratio(usage.input(), usage.total()));
         outputMetric.setMetric(tokens(usage.output()), ratio(usage.output(), usage.total()));
         cacheWriteMetric.setMetric(tokens(usage.cacheWrite()), ratio(usage.cacheWrite(), usage.total()));
@@ -1242,7 +1314,18 @@ final class CodeArtsDashboardPanel extends SimpleToolWindowPanel implements Disp
         cacheRateMeta.setText("命中 " + tokens(usage.cacheRead()) + " · 创建 " + tokens(usage.cacheWrite()));
         chart.setData(data.trend(), hourly);
         fillModels(data.models());
+        fillProviders(data.providers());
         fillSources(data.sources());
+        UsageSnapshot.Performance performance = data.performance();
+        diagnosticLatencyMetric.setMetric(duration(performance.latencyP95()), number(performance.samples()) + " 个样本");
+        diagnosticErrorMetric.setMetric(number(performance.errors()), performance.errorRate() == null ? "无错误率" : percent(performance.errorRate() * 100));
+        UsageSnapshot.MetricCompleteness metrics = data.metrics();
+        String metricState = "延迟 " + (metrics.latency() ? "完整" : "部分")
+                + " · 首内容 " + (metrics.firstContentApprox() ? "完整" : "部分")
+                + " · 输出速度 " + (metrics.outputTokensPerSec() ? "完整" : "部分")
+                + " · TTFT " + (metrics.ttft() ? "完整" : "不可用");
+        health.setToolTipText(metricState);
+        updateFilterOptions(data.models(), data.projects());
     }
 
     private void fillModels(List<UsageSnapshot.ModelUsage> rows) {
@@ -1286,7 +1369,7 @@ final class CodeArtsDashboardPanel extends SimpleToolWindowPanel implements Disp
         diagnosticTitle.setText(empty(snapshot.health().label(), healthy ? "本地数据正常" : "发现需要检查的问题"));
         diagnosticTitle.setForeground(healthy ? SUCCESS : CACHE_WRITE);
         diagnosticMeta.setText(empty(snapshot.health().message(), healthy ? "数据库与适配器可用" : "请查看下方技术详情"));
-        diagnosticDatabaseMetric.setMetric(empty(new File(snapshot.dbPath()).getName(), "未知"), snapshot.adapter());
+        diagnosticDatabaseMetric.setMetric("本地 SQLite", snapshot.adapter());
         diagnosticLatencyMetric.setMetric(duration(snapshot.performance().latencyP95()), number(snapshot.performance().samples()) + " 个样本");
         diagnosticErrorMetric.setMetric(number(snapshot.performance().errors()), healthy ? "未发现健康问题" : snapshot.health().issues().size() + " 项提示");
         diagnosticSessionMetric.setMetric(number(snapshot.sessionTotal()), number(snapshot.sessionActive()) + " 个活跃");
@@ -1294,8 +1377,7 @@ final class CodeArtsDashboardPanel extends SimpleToolWindowPanel implements Disp
         StringBuilder report = new StringBuilder();
         report.append("数据健康\n").append(safeText(snapshot.health().label())).append(" · ").append(safeText(snapshot.health().message())).append('\n');
         for (String issue : snapshot.health().issues()) report.append(" - ").append(safeText(issue)).append('\n');
-        report.append("\n数据库\n文件：").append(new File(snapshot.dbPath()).getName())
-                .append("\n路径哈希：").append(Integer.toHexString(snapshot.dbPath().hashCode()))
+        report.append("\n数据库\n位置：本机（路径未传入插件界面）")
                 .append("\n大小：").append(number(snapshot.dbSize())).append(" bytes")
                 .append("\n适配器：").append(snapshot.adapter())
                 .append("\n协议：v").append(snapshot.protocolVersion());
@@ -1325,10 +1407,11 @@ final class CodeArtsDashboardPanel extends SimpleToolWindowPanel implements Disp
         headingRow.add(button("返回请求", this::clearSelectedRequestState), BorderLayout.EAST);
         requestDetailPanel.add(headingRow, BorderLayout.NORTH);
 
-        JPanel facts = groupedGrid(3, 2,
+        JPanel facts = groupedGrid(4, 2,
                 fact("输入", requestInput), fact("输出", requestOutput),
                 fact("推理", requestReasoning), fact("缓存命中 / 创建", requestCache),
-                fact("TTFT", requestTtft), fact("输出速度", requestSpeed));
+                fact("TTFT", requestTtft), fact("首内容", requestFirstContent),
+                fact("输出速度", requestSpeed), fact("状态", requestError));
         requestDetailPanel.add(facts, BorderLayout.CENTER);
     }
 
@@ -1350,6 +1433,182 @@ final class CodeArtsDashboardPanel extends SimpleToolWindowPanel implements Disp
         refreshState.setText("已复制会话 ID");
     }
 
+    void setDashboardVisible(boolean visible) {
+        if (visible) activateDataSubscription();
+        else deactivateDataSubscription();
+    }
+
+    private void activateDataSubscription() {
+        if (disposed || subscription != null) return;
+        subscription = service.subscribe(this::render);
+        service.refresh(false);
+    }
+
+    private void deactivateDataSubscription() {
+        if (subscription == null) return;
+        try { subscription.close(); } catch (Exception ignored) { }
+        subscription = null;
+        analyticsQueryGeneration.incrementAndGet();
+        sessionQueryGeneration.incrementAndGet();
+        requestQueryGeneration.incrementAndGet();
+        filterQueryGeneration.incrementAndGet();
+        diagnosticsQueryGeneration.incrementAndGet();
+        cancelQuery(analyticsQueryTask);
+        cancelQuery(sessionQueryTask);
+        cancelQuery(requestQueryTask);
+        cancelQuery(filterQueryTask);
+        cancelQuery(diagnosticsQueryTask);
+    }
+
+    private void fillProviders(List<UsageSnapshot.ProviderUsage> rows) {
+        clear(providerTable);
+        for (UsageSnapshot.ProviderUsage row : rows) {
+            providerTable.addRow(new Object[]{new RichText(empty(row.name(), "unknown"), "Provider"), row.total(), row.requests(), row.errors()});
+        }
+    }
+
+    record SessionExportOptions(boolean includeContent, boolean includeToolIO, boolean redactPaths, boolean includeErrors) {
+        static SessionExportOptions defaults() {
+            return new SessionExportOptions(true, false, true, true);
+        }
+
+        void appendCliArgs(List<String> args) {
+            if (!includeContent) args.add("--no-content");
+            if (includeToolIO) args.add("--include-tool-io");
+            if (!redactPaths) args.add("--no-redact-paths");
+            if (!includeErrors) args.add("--no-errors");
+        }
+    }
+
+    private void updateFilterOptions(List<UsageSnapshot.ModelUsage> models, List<UsageSnapshot.ProjectInfo> projects) {
+        String selectedModel = analyticsModel.getSelectedIndex() > 0 ? String.valueOf(analyticsModel.getSelectedItem()) : "";
+        String selectedSessionModel = sessionModel.getSelectedIndex() > 0 ? String.valueOf(sessionModel.getSelectedItem()) : "";
+        String selectedProject = sessionProject.getSelectedItem() instanceof UsageSnapshot.ProjectInfo item ? item.id() : "";
+        loadingFilterOptions = true;
+        analyticsModel.removeAllItems();
+        analyticsModel.addItem("全部模型");
+        for (UsageSnapshot.ModelUsage model : models) analyticsModel.addItem(empty(model.model(), model.name()));
+        if (!selectedModel.isBlank()) analyticsModel.setSelectedItem(selectedModel);
+        sessionModel.removeAllItems();
+        sessionModel.addItem("全部模型");
+        for (UsageSnapshot.ModelUsage model : models) sessionModel.addItem(empty(model.model(), model.name()));
+        if (!selectedSessionModel.isBlank()) sessionModel.setSelectedItem(selectedSessionModel);
+        sessionProject.removeAllItems();
+        sessionProject.addItem(new UsageSnapshot.ProjectInfo("", "", 0));
+        for (UsageSnapshot.ProjectInfo item : projects) sessionProject.addItem(item);
+        for (int index = 0; index < sessionProject.getItemCount(); index++) {
+            if (selectedProject.equals(sessionProject.getItemAt(index).id())) { sessionProject.setSelectedIndex(index); break; }
+        }
+        loadingFilterOptions = false;
+    }
+
+    private void loadFilterOptions() {
+        long generation = filterQueryGeneration.incrementAndGet();
+        cancelQuery(filterQueryTask);
+        filterQueryTask = service.query("filters", List.of(), data -> {
+            if (disposed || generation != filterQueryGeneration.get()) return;
+            updateFilterOptions(UsageSnapshot.filterModels(data), UsageSnapshot.filterProjects(data));
+        }, message -> {
+            if (disposed || generation != filterQueryGeneration.get()) return;
+            refreshState.setToolTipText("筛选选项加载失败：" + message);
+        });
+    }
+
+    private void showSessionExportMenu() {
+        if (selectedSessionId.isBlank()) return;
+        JPopupMenu menu = new JPopupMenu();
+        JMenuItem excel = new JMenuItem("Excel (.xlsx)");
+        JMenuItem markdown = new JMenuItem("Markdown (.md)");
+        JMenuItem json = new JMenuItem("JSON (.json)");
+        excel.addActionListener(event -> chooseSessionExport("xlsx", "xlsx"));
+        markdown.addActionListener(event -> chooseSessionExport("md", "md"));
+        json.addActionListener(event -> chooseSessionExport("json", "json"));
+        menu.add(excel); menu.add(markdown); menu.add(json);
+        menu.show(exportSessionButton, 0, exportSessionButton.getHeight());
+    }
+
+    private void chooseSessionExport(String format, String extension) {
+        SessionExportOptionsDialog optionsDialog = new SessionExportOptionsDialog();
+        if (!optionsDialog.showAndGet()) return;
+        SessionExportOptions options = optionsDialog.options();
+        JFileChooser chooser = new JFileChooser();
+        chooser.setDialogTitle("导出会话为 " + extension.toUpperCase());
+        chooser.setSelectedFile(new File(safeExportFileName(selectedSessionTitle, extension)));
+        if (chooser.showSaveDialog(this) != JFileChooser.APPROVE_OPTION) return;
+        File selected = chooser.getSelectedFile();
+        if (!selected.getName().toLowerCase().endsWith("." + extension)) selected = new File(selected.getParentFile(), selected.getName() + "." + extension);
+        if (selected.exists() && Messages.showYesNoDialog(project,
+                "文件已存在，是否覆盖？\n" + selected.getName(), "确认覆盖导出文件",
+                Messages.getWarningIcon()) != Messages.YES) return;
+        File outputFile = selected;
+        List<String> args = new ArrayList<>(List.of("--session-id", selectedSessionId, "--source", selectedSessionSource, "--format", format, "--output", outputFile.getAbsolutePath()));
+        options.appendCliArgs(args);
+        refreshState.setForeground(MUTED);
+        refreshState.setText("正在导出会话...");
+        exportSessionButton.setEnabled(false);
+        service.exportSession(args, result -> {
+            exportSessionButton.setEnabled(true);
+            refreshState.setText("会话已导出：" + outputFile.getName());
+        }, message -> {
+            exportSessionButton.setEnabled(true);
+            showQueryError("会话导出失败：" + message);
+        });
+    }
+
+    static String safeExportFileName(String title, String extension) {
+        String stem = (title == null || title.isBlank() ? "codearts-session" : title)
+                .replaceAll("[<>:\"/\\\\|?*\\x00-\\x1f]", "_")
+                .replaceAll("[. ]+$", "");
+        if (stem.isBlank()) stem = "codearts-session";
+        if (stem.matches("(?i)^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\\..*)?$")) stem = "_" + stem;
+        int[] codePoints = stem.codePoints().limit(100).toArray();
+        stem = new String(codePoints, 0, codePoints.length);
+        return stem + "." + extension;
+    }
+
+    private void loadDatabaseDiagnostics() {
+        long generation = diagnosticsQueryGeneration.incrementAndGet();
+        cancelQuery(diagnosticsQueryTask);
+        diagnosticsQueryTask = service.query("diagnostics", List.of(), data -> {
+            if (disposed || generation != diagnosticsQueryGeneration.get()) return;
+            var items = data.has("items") && data.get("items").isJsonArray() ? data.getAsJsonArray("items") : new com.google.gson.JsonArray();
+            var errors = data.has("sourceErrors") && data.get("sourceErrors").isJsonArray() ? data.getAsJsonArray("sourceErrors") : new com.google.gson.JsonArray();
+            long sessions = 0, messages = 0;
+            int quickCheckFailures = 0;
+            StringBuilder report = new StringBuilder("数据库健康\n");
+            for (var element : items) {
+                if (!element.isJsonObject()) continue;
+                JsonObject item = element.getAsJsonObject();
+                long sessionCount = item.has("sessionCount") ? item.get("sessionCount").getAsLong() : 0;
+                long messageCount = item.has("messageCount") ? item.get("messageCount").getAsLong() : 0;
+                String quickCheck = item.has("quickCheck") ? item.get("quickCheck").getAsString() : "unknown";
+                if (!"ok".equalsIgnoreCase(quickCheck)) quickCheckFailures++;
+                sessions += sessionCount; messages += messageCount;
+                report.append(" - ").append(safeText(item.has("label") ? item.get("label").getAsString() : "本地数据源"))
+                        .append("：quick_check=").append(safeText(quickCheck))
+                        .append(" · ").append(sessionCount).append(" 会话 · ").append(messageCount).append(" 消息\n");
+            }
+            for (var element : errors) if (element.isJsonObject()) {
+                JsonObject error = element.getAsJsonObject();
+                report.append(" - 读取失败：").append(SensitiveText.safeSummary(error.has("message") ? error.get("message").getAsString() : "数据源读取失败")).append('\n');
+            }
+            int issueCount = errors.size() + quickCheckFailures;
+            diagnosticTitle.setText(issueCount == 0 ? "数据库检查正常" : quickCheckFailures > 0 ? "数据库完整性检查异常" : "部分数据源不可用");
+            diagnosticTitle.setForeground(issueCount == 0 ? SUCCESS : quickCheckFailures > 0 ? DANGER : CACHE_WRITE);
+            diagnosticMeta.setText(items.size() + " 个数据源 · quick_check 与表结构已检查");
+            diagnosticDatabaseMetric.setMetric(number(items.size()), issueCount == 0 ? "全部可读" : issueCount + " 个异常");
+            diagnosticErrorMetric.setMetric(number(issueCount), issueCount == 0 ? "未发现数据库异常" : "数据库健康提示");
+            diagnosticSessionMetric.setMetric(number(sessions), number(messages) + " 条消息");
+            diagnostics.setText(report.toString());
+            diagnostics.setCaretPosition(0);
+        }, message -> {
+            if (disposed || generation != diagnosticsQueryGeneration.get()) return;
+            diagnosticTitle.setText("数据库健康读取失败");
+            diagnosticTitle.setForeground(DANGER);
+            diagnosticMeta.setText(SensitiveText.safeSummary(message));
+        });
+    }
+
     private void copyDiagnostics() {
         diagnostics.selectAll();
         diagnostics.copy();
@@ -1364,6 +1623,15 @@ final class CodeArtsDashboardPanel extends SimpleToolWindowPanel implements Disp
 
     private String selectedSourceId() {
         return switch (sessionSource.getSelectedIndex()) {
+            case 1 -> "desktop";
+            case 2 -> "cli";
+            case 3 -> "custom";
+            default -> "";
+        };
+    }
+
+    private String selectedAnalyticsSourceId() {
+        return switch (analyticsSource.getSelectedIndex()) {
             case 1 -> "desktop";
             case 2 -> "cli";
             case 3 -> "custom";
@@ -1540,15 +1808,6 @@ final class CodeArtsDashboardPanel extends SimpleToolWindowPanel implements Disp
     @Override public void dispose() {
         disposed = true;
         searchTimer.stop();
-        analyticsQueryGeneration.incrementAndGet();
-        sessionQueryGeneration.incrementAndGet();
-        requestQueryGeneration.incrementAndGet();
-        cancelQuery(analyticsQueryTask);
-        cancelQuery(sessionQueryTask);
-        cancelQuery(requestQueryTask);
-        if (subscription != null) {
-            try { subscription.close(); }
-            catch (Exception ignored) { }
-        }
+        deactivateDataSubscription();
     }
 }

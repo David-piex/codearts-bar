@@ -164,7 +164,10 @@ function sessionWhere(payload = {}) {
   if (end) { where.push('time_updated < ?'); params.push(end); }
   if (payload.status === 'active') where.push('time_archived is null');
   else if (payload.status === 'archived') where.push('time_archived is not null');
-  if (payload.project && payload.project !== 'all') { where.push('directory = ?'); params.push(payload.project); }
+  if (payload.project && payload.project !== 'all') {
+    if (payload.project === '__none') where.push("(directory is null or trim(directory) = '')");
+    else { where.push('directory = ?'); params.push(payload.project); }
+  }
   if (payload.model && payload.model !== 'all') {
     const modelWhere = [
       `${jsonExtractExpr('session_message.data', '$.role')} = 'assistant'`,

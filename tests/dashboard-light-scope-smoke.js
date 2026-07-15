@@ -2,7 +2,15 @@
 
 const assert = require('node:assert/strict');
 const localProvider = require('../src/providers/codeartsLocal');
-const { buildDashboardLightPair, dashboardAggregatePayload, matchesPageFilters, usageScopeKeyForPayload, applyUsageDerivedFields } = require('../src/main/dashboard-light');
+const {
+  buildDashboardLightPair,
+  dashboardAggregatePayload,
+  defaultRequestPagePayload,
+  defaultSessionPagePayload,
+  matchesPageFilters,
+  usageScopeKeyForPayload,
+  applyUsageDerivedFields,
+} = require('../src/main/dashboard-light');
 
 async function main(){
   const oldStart = Date.UTC(2026, 5, 13, 2, 42);
@@ -21,6 +29,10 @@ async function main(){
     usageScopeKeyForPayload({ rangeKey: 'customTime', start: oldStart + 1, endExclusive: oldEnd }),
     'custom range bounds must be part of the scope identity'
   );
+  const splitSearchPayload = { query: 'request-only', sessionQuery: '' };
+  assert.equal(defaultRequestPagePayload(splitSearchPayload).query, 'request-only');
+  assert.equal(defaultSessionPagePayload(splitSearchPayload).query, '', 'analytics query must not filter session pagination');
+  assert.equal(defaultSessionPagePayload({ ...splitSearchPayload, sessionQuery: 'session-only' }).query, 'session-only');
 
   const canonical = {
     ok: true,

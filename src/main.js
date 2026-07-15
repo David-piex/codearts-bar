@@ -1,6 +1,6 @@
 'use strict';
 
-const { app, Tray, shell, clipboard, Notification, BrowserWindow, ipcMain } = require('electron');
+const { app, Tray, shell, clipboard, Notification, BrowserWindow, ipcMain, dialog } = require('electron');
 const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
@@ -10,6 +10,8 @@ const { spawn } = require('node:child_process');
 // renderer crashes were observed in the portable Windows build (exit code
 // 0x80000003), so keep the desktop surface on Electron's stable software path.
 app.disableHardwareAcceleration();
+app.commandLine.appendSwitch('disable-accelerated-2d-canvas');
+app.commandLine.appendSwitch('use-angle', 'swiftshader');
 const { getSnapshotWithCache, snapshotToText, errorSnapshot, fmtInt } = require('./codeartsData');
 const { loadSettings, saveSettings, watchSettings, closeSettingsStore } = require('./settings');
 const { diagnose } = require('./diagnose');
@@ -394,6 +396,7 @@ function openDashboardWindow() {
       version: app.getVersion(),
       userDataIsolated: Boolean(process.env.CODEARTS_BAR_SMOKE_USER_DATA),
       userDataName: path.basename(app.getPath('userData') || ''),
+      stableMs: 5000,
       onReady: quitApp,
     } : null,
     onClosed: () => { dashboardWindow = null; },
@@ -523,7 +526,7 @@ registerDashboardIpc({
   errorSnapshot,
   SESSION_PAGE_SIZE,
 });
-registerSessionIpc({ ipcMain, clipboard, localProvider, openSessionDir, openCodeArts, openLogFile, patchSessionInMemory });
+registerSessionIpc({ ipcMain, clipboard, dialog, BrowserWindow, localProvider, openSessionDir, openCodeArts, openLogFile, patchSessionInMemory });
 
 if (lifecycle.requestSingleInstance(app, { refreshLight, openDashboardWindow })) {
   app.whenReady().then(() => {

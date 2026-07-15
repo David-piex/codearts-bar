@@ -35,6 +35,16 @@ const {
   sessionSummaryForSource,
 } = require('./aggregation-workers');
 
+function dashboardSessionSummaryPayload(payload = {}) {
+  return { ...payload, query: payload.sessionQuery || '' };
+}
+
+function explicitSessionSummaryPayload(payload = {}) {
+  return 'sessionQuery' in payload
+    ? dashboardSessionSummaryPayload(payload)
+    : payload;
+}
+
 function getSummaryNative(payload = {}) {
   return timeAggregateSync('summary', 'node:sqlite', payload, () => {
     const rollupBundle = dashboardBundleFromUsageRollups(payload, 'node:sqlite');
@@ -150,19 +160,21 @@ async function getModelStats(payload = {}) {
   return aggregateError('CODEARTS_BAR_FORCE_SQLJS=1', await getModelStatsSqlJs(payload));
 }
 function getSessionSummaryNative(payload = {}) {
-  return timeAggregateSync('sessionSummary', 'node:sqlite', payload, () => {
-    const rollupSummary = sessionSummaryFromUsageRollups(payload, 'node:sqlite');
+  const sessionPayload = explicitSessionSummaryPayload(payload);
+  return timeAggregateSync('sessionSummary', 'node:sqlite', sessionPayload, () => {
+    const rollupSummary = sessionSummaryFromUsageRollups(sessionPayload, 'node:sqlite');
     if (rollupSummary) return rollupSummary;
-    const result = runNativeAggregate(payload, (args) => nativeSql.sessionSummaryForSourceSql({ ...args, payload }));
-    return mergeSessionSummaries(result.items, payload, result.errors);
+    const result = runNativeAggregate(sessionPayload, (args) => nativeSql.sessionSummaryForSourceSql({ ...args, payload: sessionPayload }));
+    return mergeSessionSummaries(result.items, sessionPayload, result.errors);
   });
 }
 async function getSessionSummarySqlJs(payload = {}) {
-  return timeAggregateAsync('sessionSummary', 'sql.js', payload, async () => {
-    const rollupSummary = sessionSummaryFromUsageRollups(payload, 'sql.js');
+  const sessionPayload = explicitSessionSummaryPayload(payload);
+  return timeAggregateAsync('sessionSummary', 'sql.js', sessionPayload, async () => {
+    const rollupSummary = sessionSummaryFromUsageRollups(sessionPayload, 'sql.js');
     if (rollupSummary) return rollupSummary;
-    const result = await runSqlJsAggregate(payload, (args) => nativeSql.sessionSummaryForSourceSql({ ...args, payload }));
-    return mergeSessionSummaries(result.items, payload, result.errors);
+    const result = await runSqlJsAggregate(sessionPayload, (args) => nativeSql.sessionSummaryForSourceSql({ ...args, payload: sessionPayload }));
+    return mergeSessionSummaries(result.items, sessionPayload, result.errors);
   });
 }
 async function getSessionSummary(payload = {}) {
@@ -174,8 +186,9 @@ async function getSessionSummary(payload = {}) {
 }
 function mergeDashboardAggregateBundle(items = [], payload = {}, errors = []) {
   const trendRange = normalizeTrendRange(payload);
+  const expectedSources = sourceList(payload).map((source) => source.id);
   const summary = mergeSummaryParts(items.map((x) => x.summary), payload);
-  const sessionSummary = mergeSessionSummaries(items.map((x) => x.sessionSummary).filter(Boolean), payload, errors);
+  const sessionSummary = mergeSessionSummaries(items.map((x) => x.sessionSummary).filter(Boolean), dashboardSessionSummaryPayload(payload), errors);
   const single = items.length === 1 ? items[0] : null;
   const hideLatencySamples = (item = {}) => {
     const samples = Array.isArray(item._latencyValues) ? item._latencyValues : [];
@@ -201,6 +214,24 @@ function mergeDashboardAggregateBundle(items = [], payload = {}, errors = []) {
       return agg.cacheMetrics.withCacheHitMetrics({ ...model, sources: source ? [source] : [] });
     }).sort((a, b) => b.total - a.total)
     : mergeModelStats(items.map((x) => x.modelStats || []));
+  const performanceRows = items.flatMap((item) => item.performanceRows || []);
+  const performance = {
+    samples: performanceRows.length,
+    completed: performanceRows.filter((row) => Number.isFinite(Number(row.latencyMs))).length,
+    errors: performanceRows.filter((row) => Number(row.errors || 0) > 0).length,
+    latency: agg.summarize(performanceRows.map((row) => row.latencyMs)),
+    ttft: agg.summarize([]),
+    firstContentApprox: agg.summarize(performanceRows.map((row) => row.firstContentMs)),
+    outputTokensPerSec: agg.summarize(performanceRows.map((row) => row.outputTokensPerSec)),
+  };
+  performance.errorRate = performance.samples ? performance.errors / performance.samples : 0;
+  performance.complete = performance.completed === performance.samples;
+  performance.metricCompleteness = {
+    latency: performance.complete,
+    firstContentApprox: performance.firstContentApprox.count === performance.samples,
+    outputTokensPerSec: performance.outputTokensPerSec.count === performance.completed,
+    ttft: false,
+  };
   const rollups = items.map((x) => x.usageRollup).filter(Boolean);
   const out = {
     ok: true,
@@ -214,8 +245,10 @@ function mergeDashboardAggregateBundle(items = [], payload = {}, errors = []) {
     buckets,
     sourceStats,
     modelStats,
+    performance,
     sessionSummary,
     sourceErrors: errors,
+    expectedSources,
   };
   if (rollups.length) {
     out.perf = {
@@ -269,7 +302,11 @@ function sessionSummaryFromUsageRollups(payload = {}, adapter = 'node:sqlite', s
   return merged;
 }
 function attachSessionSummaryFromRollupOrSql(part, args, payload = {}, adapter = 'node:sqlite') {
-  if (!part.sessionSummary && usageRollup.canUseSessionSummaryRollup(payload)) {
+  // Usage rollups describe analytics rows. Always rebuild the session portion
+  // from its own scope so an embedded/canonical summary cannot leak across
+  // query, project, model, or range filters.
+  part.sessionSummary = null;
+  if (usageRollup.canUseSessionSummaryRollup(payload)) {
     const sessionRollup = usageRollup.readSessionSummaryRollupForSource(args.source);
     if (sessionRollup.ok) {
       part.sessionSummary = usageRollup.sessionSummaryPartFromRollup(sessionRollup, payload);
@@ -327,24 +364,25 @@ function getDashboardAggregatesNative(payload = {}) {
     const windows = timeWindows(payload);
     const trendRange = normalizeTrendRange(payload);
     const queryTrendRange = { ...trendRange, bucketMs: trendRange.queryBucketMs, bucketOffsetMs: trendRange.queryBucketOffsetMs };
+    const sessionPayload = dashboardSessionSummaryPayload(payload);
     const result = runNativeAggregate(payload, (args) => {
       if (usageRollup.canUseUsageRollup(payload)) {
         const compact = usageRollup.readCompactUsageRollupForSource(args.source);
         if (compact.ok && usageRollup.compactRollupIsSafeForDashboard(compact, { payload, windows, trendRange })) {
           const part = usageRollup.dashboardPartFromCompactRollup(compact, { payload, windows, trendRange });
-          return attachSessionSummaryFromRollupOrSql(part, args, payload, 'node:sqlite');
+          return attachSessionSummaryFromRollupOrSql(part, args, sessionPayload, 'node:sqlite');
         }
         const rollup = usageRollup.readUsageRollupForSource(args.source);
         if (rollup.ok) {
           const part = usageRollup.dashboardPartFromUsageRollup(rollup, { payload, windows, trendRange });
-          return attachSessionSummaryFromRollupOrSql(part, args, payload, 'node:sqlite');
+          return attachSessionSummaryFromRollupOrSql(part, args, sessionPayload, 'node:sqlite');
         }
-        const part = nativeSql.aggregateBundleForSourceSql({ ...args, payload, windows, trendRange: queryTrendRange });
+        const part = nativeSql.aggregateBundleForSourceSql({ ...args, payload, sessionPayload, windows, trendRange: queryTrendRange });
         usageRollup.scheduleUsageRollupBuild(args.source, { adapter: 'node:sqlite', delayMs: 500 });
         part.usageRollup = { status: 'miss-pass-through', previousReason: rollup.reason || null, rowCount: null };
         return part;
       }
-      return nativeSql.aggregateBundleForSourceSql({ ...args, payload, windows, trendRange: queryTrendRange });
+      return nativeSql.aggregateBundleForSourceSql({ ...args, payload, sessionPayload, windows, trendRange: queryTrendRange });
     });
     return mergeDashboardAggregateBundle(result.items, payload, result.errors);
   });
@@ -354,24 +392,25 @@ async function getDashboardAggregatesSqlJs(payload = {}) {
     const windows = timeWindows(payload);
     const trendRange = normalizeTrendRange(payload);
     const queryTrendRange = { ...trendRange, bucketMs: trendRange.queryBucketMs, bucketOffsetMs: trendRange.queryBucketOffsetMs };
+    const sessionPayload = dashboardSessionSummaryPayload(payload);
     const result = await runSqlJsAggregate(payload, (args) => {
       if (usageRollup.canUseUsageRollup(payload)) {
         const compact = usageRollup.readCompactUsageRollupForSource(args.source);
         if (compact.ok && usageRollup.compactRollupIsSafeForDashboard(compact, { payload, windows, trendRange })) {
           const part = usageRollup.dashboardPartFromCompactRollup(compact, { payload, windows, trendRange });
-          return attachSessionSummaryFromRollupOrSql(part, args, payload, 'sql.js');
+          return attachSessionSummaryFromRollupOrSql(part, args, sessionPayload, 'sql.js');
         }
         const rollup = usageRollup.readUsageRollupForSource(args.source);
         if (rollup.ok) {
           const part = usageRollup.dashboardPartFromUsageRollup(rollup, { payload, windows, trendRange });
-          return attachSessionSummaryFromRollupOrSql(part, args, payload, 'sql.js');
+          return attachSessionSummaryFromRollupOrSql(part, args, sessionPayload, 'sql.js');
         }
-        const part = nativeSql.aggregateBundleForSourceSql({ ...args, payload, windows, trendRange: queryTrendRange });
+        const part = nativeSql.aggregateBundleForSourceSql({ ...args, payload, sessionPayload, windows, trendRange: queryTrendRange });
         usageRollup.scheduleUsageRollupBuild(args.source, { adapter: 'sql.js', delayMs: 500 });
         part.usageRollup = { status: 'miss-pass-through', previousReason: rollup.reason || null, rowCount: null };
         return part;
       }
-      return nativeSql.aggregateBundleForSourceSql({ ...args, payload, windows, trendRange: queryTrendRange });
+      return nativeSql.aggregateBundleForSourceSql({ ...args, payload, sessionPayload, windows, trendRange: queryTrendRange });
     });
     return mergeDashboardAggregateBundle(result.items, payload, result.errors);
   });

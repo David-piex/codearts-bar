@@ -1,5 +1,6 @@
 'use strict';
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
 const path = require('node:path');
 const { execFileSync, spawnSync } = require('node:child_process');
 const { jetbrainsPayload } = require('../src/jetbrains-payload');
@@ -77,6 +78,39 @@ assert.equal(analyticsPage.data.usage.total, 220);
 assert.equal(analyticsPage.data.models.length, 2);
 assert.equal(analyticsPage.data.sources.length, 1);
 assert.equal(analyticsPage.data.trend.length, 1);
+const filtersOutput = execFileSync(process.execPath, [path.join(__dirname, '..', 'src', 'cli.js'), 'query', 'filters'], { encoding: 'utf8', env: { ...process.env, CODEARTS_BAR_DB: path.join(__dirname, 'fixtures', 'opencode-fixture.db') } });
+const filtersPage = JSON.parse(filtersOutput);
+assert.equal(filtersPage.ok, true);
+assert.equal(filtersPage.data.models.length, 2);
+assert.ok(filtersPage.data.projects.length > 0);
+const diagnosticsOutput = execFileSync(process.execPath, [path.join(__dirname, '..', 'src', 'providers', 'codearts', 'jetbrains-cli.js'), 'query', 'diagnostics'], { encoding: 'utf8', env: { ...process.env, CODEARTS_BAR_DB: path.join(__dirname, 'fixtures', 'opencode-fixture.db') } });
+const diagnosticsPage = JSON.parse(diagnosticsOutput);
+assert.equal(diagnosticsPage.ok, true);
+assert.equal(diagnosticsPage.data.items[0].quickCheck, 'ok');
+assert.equal(diagnosticsPage.data.items[0].sessionCount, 2);
+assert.equal(diagnosticsPage.data.items[0].messageCount, 5);
+assert.equal('dbPath' in diagnosticsPage.data.items[0], false);
+const modelFilteredOutput = execFileSync(process.execPath, [path.join(__dirname, '..', 'src', 'cli.js'), 'query', 'requests', '--model', 'multi-model'], { encoding: 'utf8', env: { ...process.env, CODEARTS_BAR_DB: path.join(__dirname, 'fixtures', 'opencode-fixture.db') } });
+const modelFiltered = JSON.parse(modelFilteredOutput);
+assert.equal(modelFiltered.data.total, 2);
+assert.ok(modelFiltered.data.items.every((item) => item.model === 'multi-model'));
+assert.ok(modelFiltered.data.items.every((item) => typeof item.input === 'number' && typeof item.output === 'number'));
+const projectFilteredOutput = execFileSync(process.execPath, [path.join(__dirname, '..', 'src', 'cli.js'), 'query', 'sessions', '--project', 'C:/fixture'], { encoding: 'utf8', env: { ...process.env, CODEARTS_BAR_DB: path.join(__dirname, 'fixtures', 'opencode-fixture.db') } });
+const projectFiltered = JSON.parse(projectFilteredOutput);
+assert.equal(projectFiltered.data.total, 2);
+assert.ok(projectFiltered.data.items.every((item) => item.directory === 'C:/fixture'));
+const exportTarget = path.join(__dirname, '.cli-no-errors.json');
+try {
+  const exportOutput = execFileSync(process.execPath, [path.join(__dirname, '..', 'src', 'cli.js'), 'export-session', '--session-id', 'ses_fixture', '--format', 'json', '--output', exportTarget, '--no-errors'], { encoding: 'utf8', env: { ...process.env, CODEARTS_BAR_DB: path.join(__dirname, 'fixtures', 'opencode-fixture.db') } });
+  assert.equal(JSON.parse(exportOutput).ok, true);
+  const exported = JSON.parse(fs.readFileSync(exportTarget, 'utf8'));
+  assert.equal(exported.redaction.errorsIncluded, false);
+  assert.ok(exported.messages.every((item) => item.error === ''));
+  assert.ok(exported.requests.every((item) => item.error === ''));
+  assert.ok(exported.tools.every((item) => item.error === ''));
+} finally {
+  fs.rmSync(exportTarget, { force: true });
+}
 const fractionalPageOutput = execFileSync(process.execPath, [path.join(__dirname, '..', 'src', 'cli.js'), 'query', 'sessions', '--page', '1.5', '--page-size', '1.8'], { encoding: 'utf8', env: { ...process.env, CODEARTS_BAR_DB: path.join(__dirname, 'fixtures', 'opencode-fixture.db') } });
 const fractionalPage = JSON.parse(fractionalPageOutput);
 assert.equal(fractionalPage.data.page, 1);
@@ -87,4 +121,12 @@ const failurePayload = JSON.parse(failureResult.stdout);
 assert.equal(failurePayload.protocolVersion, 1);
 assert.equal(failurePayload.ok, false);
 assert.match(failurePayload.error, /不存在|no such file|ENOENT/i);
+const privateFailure = spawnSync(process.execPath, [path.join(__dirname, '..', 'src', 'providers', 'codearts', 'jetbrains-cli.js'), 'query', 'unknown'], {
+  encoding: 'utf8',
+  env: { ...process.env, CODEARTS_BAR_DB: 'C:\\Users\\private-user\\token=secret\\missing.db' },
+});
+const privateFailurePayload = JSON.parse(privateFailure.stdout);
+assert.equal(privateFailurePayload.ok, false);
+assert.equal(JSON.stringify(privateFailurePayload).includes('private-user'), false);
+assert.equal(JSON.stringify(privateFailurePayload).includes('secret'), false);
 console.log('ok - JetBrains payload protocol v1');

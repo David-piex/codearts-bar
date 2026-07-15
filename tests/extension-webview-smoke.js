@@ -20,6 +20,10 @@ const dashboardSource = fs.readFileSync(
   path.join(extensionDir, "dashboard.js"),
   "utf8",
 );
+const sessionExportSource = fs.readFileSync(
+  path.join(extensionDir, "session-export.js"),
+  "utf8",
+);
 const modelSource = fs.readFileSync(
   path.join(extensionDir, "webview", "model.js"),
   "utf8",
@@ -130,9 +134,21 @@ assert.match(dashboardSource, /postDetails/);
 assert.doesNotMatch(dashboardSource, /\bbroadcast\s*\(/, "unscoped summary broadcasts must not bypass target generations");
 assert.match(dashboardSource, /webview-ready/);
 assert.match(dashboardSource, /message\?\.type === "range"/);
+assert.match(dashboardSource, /message\?\.type === "sessionsPage"/);
+assert.match(dashboardSource, /message\?\.type === "exportSession"/);
+assert.match(extensionSource, /async function querySessionsPage\(options = \{\}\)/);
+assert.match(extensionSource, /async function exportSession\(session, format = "json"\)/);
+assert.match(extensionSource, /exportSessionWithPrivacy/);
+assert.match(sessionExportSource, /showQuickPick/);
+assert.match(sessionExportSource, /canPickMany:\s*true/);
+assert.match(clientSource, /type: "sessionsPage"/);
+assert.match(clientSource, /type: "exportSession"/);
+for (const format of ['xlsx', 'md', 'json']) assert.match(viewsSource, new RegExp(`data-session-export="${format}"`));
 assert.match(dashboardSource, /onDidChangeVisibility/, "sidebar visibility must control heavy detail aggregation");
 assert.match(dashboardSource, /onDidChangeViewState/, "panel visibility must control heavy detail aggregation");
 assert.match(dashboardSource, /some\(\(target\) => target\.visible\)/, "hidden retained webviews must not keep detail refresh active");
+assert.match(extensionSource, /Math\.max\(configured, 300000\)/, "hidden VS Code webviews must reduce summary polling to at least five minutes");
+assert.match(dashboardSource, /if \(!target\.visible\) target\.generation \+= 1/, "hiding a VS Code target must invalidate its in-flight detail generation");
 assert.match(dashboardSource, /!target\?\.visible \|\| !this\.targets\.has\(target\) \|\| target\.generation !== generation/, "detail payloads must only target the current visible webview generation");
 assert.match(dashboardSource, /visibleTargets\(\)/, "details must be scheduled per visible webview");
 assert.match(dashboardSource, /target\.generation === request\.generation/, "stale detail requests must not commit");
@@ -143,6 +159,7 @@ assert.doesNotMatch(extensionSource, /md\.isTrusted\s*=\s*true/, "status tooltip
 assert.match(extensionSource, /capabilities\?\.performance !== false/, "unsupported performance fields must stay out of the status tooltip");
 assert.match(extensionSource, /capabilities\?\.queue !== false/, "unsupported queue fields must stay out of the status tooltip");
 assert.match(dashboardSource, /require\("\.\/webview\/model"\)/);
+assert.match(dashboardSource, /safeIdeText\(error\?\.message/, "VS Code operation failures must use the IDE-safe summary boundary");
 assert.match(clientSource, /vscode\.getState\(\)/);
 assert.match(clientSource, /vscode\.setState/);
 assert.match(clientSource, /message\.type === "snapshot" \|\| message\.type === "details"/);
@@ -184,11 +201,13 @@ assert.match(
 );
 assert.match(responsiveCss, /prefers-reduced-motion/);
 assert.match(responsiveCss, /body\[data-mode="sidebar"\]/);
-assert.match(componentCss, /\.performance-surface\.performance-unavailable \.performance-grid \{ grid-template-columns: repeat\(5/, "local data status must stay a compact strip when performance metrics are unavailable");
-for (const id of ["dataAdapter", "dataSources", "dataRequests", "dataSessions", "dbSize"]) assert.match(htmlSource, new RegExp(`id="${id}"`), `missing data status field ${id}`);
+for (const id of ["latencyAvg", "latencyP95", "performanceErrors", "providerCount", "dataAdapter", "dataSources", "dataRequests", "dataSessions", "dbSize", "performanceComplete", "diagnosticDetail"]) assert.match(htmlSource, new RegExp(`id="${id}"`), `missing performance or data-health field ${id}`);
 assert.ok((htmlSource.match(/\\u5f53\\u524d\\u8303\\u56f4/g) || []).length >= 2, "model, source and request sections must disclose the selected scope");
-for (const id of ["sourceFilter", "modelFilter", "metricInput", "metricOutput", "metricCacheWrite", "metricCacheRead", "requests"]) assert.match(htmlSource, new RegExp(`id="${id}"`), `missing full-analysis control ${id}`);
+for (const id of ["sourceFilter", "modelFilter", "projectFilter", "metricInput", "metricOutput", "metricCacheWrite", "metricCacheRead", "requests", "providers", "requestPrevious", "requestNext"]) assert.match(htmlSource, new RegExp(`id="${id}"`), `missing full-analysis control ${id}`);
+assert.match(htmlSource, /Desktop/, "unsupported VS Code session writes must be explained instead of exposing broken controls");
 assert.match(clientSource, /type: "filter"/);
+assert.match(clientSource, /type: "requestsPage"/);
+assert.match(clientSource, /project: projectFilter/);
 assert.match(viewsSource, /function requests\(snapshot\)/);
 assert.match(viewsSource, /snapshot\.requestTotal/);
 const { viewModel: directViewModel } = require('../extension/webview/model');
@@ -203,6 +222,10 @@ assert.match(clientSource, /function setMenuOpen\(name, next\)/);
 assert.match(clientSource, /event\.key === "Escape"/);
 assert.match(clientSource, /generation < latestGeneration/, "webview must ignore stale detail messages");
 assert.match(clientSource, /customDraftDirty/, "realtime refresh must preserve active custom date input");
+assert.match(clientSource, /if \(!databasePagesLoaded\) \{[\s\S]*?views\.sessions\(snapshot\);[\s\S]*?views\.requests\(snapshot\);[\s\S]*?\}/, "detail refreshes must not replace database-backed pages with snapshot samples");
+assert.match(clientSource, /sessionPage, requestPage, selectedRequestId/, "persisted state must include both pages and the selected request");
+assert.match(clientSource, /sessionSearch: element\("#sessionSearch"\)/, "persisted state must include the session search");
+assert.match(clientSource, /scrollTop: Number\(document\.scrollingElement\?\.scrollTop/, "persisted state must include scroll position");
 assert.match(clientSource, /function dataRangeText\(\)/, "unapplied custom date drafts must not relabel committed data");
 assert.match(foundationCss, /\.control-menu\s*\{[\s\S]*?position:\s*absolute/, "controlled menus must overlay instead of resizing the workbench");
 assert.match(htmlSource, /id="rangeStart" type="text" inputmode="numeric"/);
@@ -231,6 +254,7 @@ vm.runInNewContext(
       if (name === "vscode") return dashboardFakeVscode;
       if (name === "./webview/html") return { dashboardHtml: () => "" };
       if (name === "./webview/model") return { viewModel: (value) => value };
+      if (name === "./protocol/query-results") return require("../src/protocol/query-results");
       return require(name);
     },
     module: dashboardModule,
@@ -312,9 +336,14 @@ const moduleValue = { exports: {} };
 vm.runInNewContext(
   modelSource,
   {
-    require: (name) => (name === "vscode" ? fakeVscode : require(name)),
+    require: (name) => name === "vscode"
+      ? fakeVscode
+      : name === "../protocol/query-results"
+        ? require("../src/protocol/query-results")
+        : require(name),
     module: moduleValue,
     exports: moduleValue.exports,
+    __dirname: path.join(extensionDir, "webview"),
     console,
     Date,
     Math,
@@ -348,6 +377,7 @@ const view = viewModel({
   performance: { window: {} },
   queue: { window: {} },
   tools: { window: { byName: [] } },
+  completeness: { complete: false, sampled: false, reasons: ["source-read-failed"], sources: { expected: 2, read: 1, failed: 1, missing: 0 }, metrics: { latency: true } },
 });
 assert.equal(view.ok, true);
 assert.equal(view.capabilities.performance, false);
@@ -361,6 +391,9 @@ assert.equal(missingCacheView.usage.week.cacheHitRate, 45.7);
 assert.equal(view.models[0].name, "GLM");
 assert.equal(view.sources[0].label, "桌面端");
 assert.equal(view.sessions.length, 1);
+assert.equal(view.completeness.complete, false);
+assert.deepEqual(view.completeness.reasons, ["source-read-failed"]);
+assert.equal(view.completeness.sources.failed, 1);
 assert.equal(
   Object.prototype.hasOwnProperty.call(view.sources[0], "dbPath"),
   false,
@@ -371,4 +404,129 @@ assert.match(extensionSource, /async function deactivate/);
 assert.match(extensionSource, /closeSqlJsWorker/);
 assert.match(extensionSource, /closeSettingsStore/);
 assert.equal((extensionSource.match(/context\.subscriptions\.push\(\{ dispose:/g) || []).length, 1, "refresh rescheduling should not accumulate disposables");
-console.log("ok - extension webview smoke");
+
+const { exportSessionWithPrivacy } = require("../extension/session-export");
+
+function exportHarness({ choose, saveUri }) {
+  const calls = { quickPick: [], save: [], export: [], info: [] };
+  const vscode = {
+    Uri: { file: (value) => ({ fsPath: value }) },
+    window: {
+      async showQuickPick(items, options) {
+        calls.quickPick.push({ items, options });
+        return choose(items);
+      },
+      async showSaveDialog(options) {
+        calls.save.push(options);
+        return saveUri;
+      },
+      showInformationMessage(message) { calls.info.push(message); },
+    },
+  };
+  const localProvider = {
+    safeFileStem: (value) => `safe-${value}`,
+    async exportSessionToFile(options) {
+      calls.export.push(options);
+      return { path: options.outputPath, format: options.format, bytes: 321 };
+    },
+  };
+  return { calls, vscode, localProvider };
+}
+
+(async () => {
+  const defaults = exportHarness({
+    choose: (items) => items.filter((item) => item.picked),
+    saveUri: { fsPath: "C:\\exports\\session.xlsx" },
+  });
+  const defaultResult = await exportSessionWithPrivacy({
+    vscode: defaults.vscode,
+    localProvider: defaults.localProvider,
+    providerOptions: { dbPath: "fixture.db", useSavedSettings: false },
+    session: { id: "session-1", title: "demo", source: "desktop" },
+    format: "xlsx",
+  });
+  assert.equal(defaultResult.ok, true);
+  assert.equal(defaults.calls.quickPick.length, 1);
+  assert.equal(defaults.calls.quickPick[0].options.canPickMany, true);
+  assert.match(defaults.calls.quickPick[0].options.placeHolder, /\u51ed\u636e\u59cb\u7ec8\u8131\u654f/);
+  assert.deepEqual(
+    defaults.calls.quickPick[0].items.map((item) => [item.privacyKey, item.picked]),
+    [
+      ["includeContent", true],
+      ["redactPaths", true],
+      ["includeToolIO", false],
+      ["includeReasoning", false],
+      ["includeErrors", true],
+    ],
+  );
+  assert.equal(
+    defaults.calls.quickPick[0].items.some((item) => /credential|secret|\u51ed\u636e|\u5bc6\u94a5/i.test(item.privacyKey)),
+    false,
+    "credential redaction must not have a disable option",
+  );
+  assert.deepEqual(defaults.calls.export, [{
+    dbPath: "fixture.db",
+    useSavedSettings: false,
+    sessionId: "session-1",
+    source: "desktop",
+    format: "xlsx",
+    outputPath: "C:\\exports\\session.xlsx",
+    includeContent: true,
+    includeReasoning: false,
+    includeToolIO: false,
+    redactPaths: true,
+    includeErrors: true,
+  }]);
+  assert.equal(defaults.calls.info.length, 1);
+
+  const custom = exportHarness({
+    choose: (items) => items.filter((item) => ["includeReasoning", "includeToolIO"].includes(item.privacyKey)),
+    saveUri: { fsPath: "C:\\exports\\session.md" },
+  });
+  await exportSessionWithPrivacy({
+    vscode: custom.vscode,
+    localProvider: custom.localProvider,
+    session: { id: "session-2", source: "cli" },
+    format: "md",
+  });
+  assert.deepEqual(
+    {
+      includeContent: custom.calls.export[0].includeContent,
+      includeReasoning: custom.calls.export[0].includeReasoning,
+      includeToolIO: custom.calls.export[0].includeToolIO,
+      redactPaths: custom.calls.export[0].redactPaths,
+      includeErrors: custom.calls.export[0].includeErrors,
+    },
+    { includeContent: false, includeReasoning: true, includeToolIO: true, redactPaths: false, includeErrors: false },
+  );
+
+  const privacyCanceled = exportHarness({ choose: () => undefined, saveUri: { fsPath: "unused.json" } });
+  const privacyCanceledResult = await exportSessionWithPrivacy({
+    vscode: privacyCanceled.vscode,
+    localProvider: privacyCanceled.localProvider,
+    session: { id: "session-3" },
+    format: "json",
+  });
+  assert.deepEqual(privacyCanceledResult, { ok: false, canceled: true, stage: "privacy" });
+  assert.equal(privacyCanceled.calls.save.length, 0, "privacy cancellation must not open the save dialog");
+  assert.equal(privacyCanceled.calls.export.length, 0, "privacy cancellation must not write a file");
+
+  const saveCanceled = exportHarness({
+    choose: (items) => items.filter((item) => item.picked),
+    saveUri: undefined,
+  });
+  const saveCanceledResult = await exportSessionWithPrivacy({
+    vscode: saveCanceled.vscode,
+    localProvider: saveCanceled.localProvider,
+    session: { id: "session-4" },
+    format: "json",
+  });
+  assert.deepEqual(saveCanceledResult, { ok: false, canceled: true, stage: "save" });
+  assert.equal(saveCanceled.calls.export.length, 0, "save cancellation must not write a file");
+  assert.equal(saveCanceled.calls.info.length, 0);
+
+  console.log("ok - extension webview and export privacy smoke");
+})().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});

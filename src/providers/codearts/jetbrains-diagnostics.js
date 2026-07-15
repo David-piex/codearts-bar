@@ -10,4 +10,6 @@ function safeDbError(error) {
   return '数据源 数据源异常';
 }
 
-module.exports = { safeDbError };
+function getDatabaseDiagnostics() { return {}; }
+
+module.exports = { safeDbError, getDatabaseDiagnostics };

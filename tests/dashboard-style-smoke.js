@@ -82,6 +82,11 @@ assert.match(cssBundle, /:has\(\.date-range-control\.open\) \.filters\{overflow:
 assert.match(cssBundle, /\.analytics-advanced-copy/);
 assert.match(cssBundle, /\.analytics-advanced-shell\.collapsed\{[^}]*content-visibility:visible!important/);
 assert.match(cssBundle, /\.table-page-field/);
+assert.match(
+  cssBundle,
+  /\.content:has\(\.modal-backdrop\)\{contain:none;overflow:hidden\}/,
+  'fixed dialogs must remain viewport-centered when the dashboard content is scrolled',
+);
 const generatedRenderer = fs.readFileSync(path.join(__dirname, "..", "src", "dashboard-renderer.js"), "utf8");
 const rendererEntry = fs.readFileSync(path.join(__dirname, "..", "src", "dashboard", "renderer-entry.js"), "utf8");
 const rendererBundler = fs.readFileSync(path.join(__dirname, "..", "src", "build-dashboard-renderer.js"), "utf8");

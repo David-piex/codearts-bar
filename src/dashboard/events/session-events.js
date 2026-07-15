@@ -1,4 +1,8 @@
 async function handleDashboardSessionClick(e){
+    const exportCancel = e.target.closest('[data-export-cancel]');
+    const exportBackdrop = e.target?.dataset?.modalBackdrop === 'export';
+    if(exportCancel || exportBackdrop){ exportDialog = null; patchSessionModalOrRender(); throw DASHBOARD_EVENT_HANDLED; }
+    if(e.target.closest('[data-export-confirm]')){ await confirmExportSheet(); throw DASHBOARD_EVENT_HANDLED; }
     const bulkMetaCancel = e.target.closest('[data-bulk-meta-cancel]');
     const bulkMetaBackdrop = e.target?.dataset?.modalBackdrop === 'bulk-meta';
     if(bulkMetaCancel || bulkMetaBackdrop){
@@ -203,9 +207,7 @@ async function handleDashboardSessionClick(e){
         throw DASHBOARD_EVENT_HANDLED;
       }
       if(action === 'copy-summary') await navigator.clipboard.writeText(items.map(sessionSummaryText).join('\n\n---\n\n'));
-      if(action === 'copy-markdown') await navigator.clipboard.writeText(items.map(sessionMarkdown).join('\n\n---\n\n'));
-      if(action === 'copy-json') await navigator.clipboard.writeText(JSON.stringify(items, null, 2));
-      if(action === 'copy-csv') await navigator.clipboard.writeText(sessionCsv(items));
+      if(action.startsWith('export-')){ openExportSheet(items, action.slice(7), true); throw DASHBOARD_EVENT_HANDLED; }
       if(action === 'archive' || action === 'restore'){
         setRefreshState(TXT.refresh);
         const nextArchived = action === 'archive';
@@ -248,12 +250,11 @@ async function handleDashboardSessionClick(e){
         throw DASHBOARD_EVENT_HANDLED;
       }
       if(action.dataset.sessionAction === 'copy-summary'){ await ensureSessionRequests(item, 12); await navigator.clipboard.writeText(sessionSummaryText(item)); }
-      if(action.dataset.sessionAction === 'copy-markdown'){ await ensureSessionRequests(item, 80); await navigator.clipboard.writeText(sessionMarkdown(item)); }
-      if(action.dataset.sessionAction === 'copy-requests-json'){ await ensureSessionRequests(item, 200); await navigator.clipboard.writeText(JSON.stringify(sessionRequests(item, 200), null, 2)); }
       if(action.dataset.sessionAction === 'copy') await ipcRenderer.invoke('dashboard:copySession', item);
       if(action.dataset.sessionAction === 'copy-id') await navigator.clipboard.writeText(item.id || '');
       if(action.dataset.sessionAction === 'copy-path') await navigator.clipboard.writeText(item.directory || '');
       if(action.dataset.sessionAction === 'copy-json') await navigator.clipboard.writeText(JSON.stringify(item, null, 2));
+      if(action.dataset.sessionAction.startsWith('export-')){ openExportSheet([item], action.dataset.sessionAction.slice(7), false); throw DASHBOARD_EVENT_HANDLED; }
       if(action.dataset.sessionAction === 'archive'){
         setRefreshState(TXT.refresh);
         const nextArchived = action.dataset.archive !== 'false';

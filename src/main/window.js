@@ -64,6 +64,32 @@ function createSettingsWindow({ appDir, appendLog, onClosed }) {
 }
 
 function createDashboardWindow({ appDir, isQuitting, hideToTray, appendLog, recordCrash, recordRendererError, clearRendererError, packageSmoke, onClosed }) {
+  const packageSmokeStableMs = Math.max(1000, Number(packageSmoke?.stableMs || 5000));
+  let packageSmokeTimer = null;
+  let rendererRecoveryCount = 0;
+  let rendererRecoveryTimer = null;
+  const clearPackageSmokeTimer = () => {
+    if (!packageSmokeTimer) return;
+    clearTimeout(packageSmokeTimer);
+    packageSmokeTimer = null;
+  };
+  const schedulePackageSmokeSuccess = () => {
+    if (!packageSmoke?.resultPath) return;
+    clearPackageSmokeTimer();
+    packageSmokeTimer = setTimeout(() => {
+      packageSmokeTimer = null;
+      if (!win || win.isDestroyed() || win.webContents.isDestroyed()) return;
+      writePackageSmokeResult({ ...packageSmoke, appendLog }, {
+        ok: true,
+        event: 'dashboard-stable',
+        didFinishLoad: true,
+        rendererStableMs: packageSmokeStableMs,
+        rendererRecoveryCount,
+        title: win.getTitle(),
+      });
+      packageSmoke.onReady?.();
+    }, packageSmokeStableMs);
+  };
   const nativeSurface = process.platform === 'darwin'
     ? { titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 14, y: 15 }, vibrancy: 'under-window', visualEffectState: 'active', transparent: true, roundedCorners: true }
     : {};
@@ -96,10 +122,11 @@ function createDashboardWindow({ appDir, isQuitting, hideToTray, appendLog, reco
       try { win.setSkipTaskbar(false); } catch {}
       if (packageSmoke?.resultPath) {
         writePackageSmokeResult({ ...packageSmoke, appendLog }, {
+          ok: false,
+          event: 'dashboard-ready',
           readyToShow: true,
           title: win.getTitle(),
         });
-        setTimeout(() => packageSmoke.onReady?.(), 120);
       }
       win.show();
       win.focus();
@@ -109,18 +136,44 @@ function createDashboardWindow({ appDir, isQuitting, hideToTray, appendLog, reco
     clearRendererError?.();
     if (!packageSmoke?.resultPath) return;
     writePackageSmokeResult({ ...packageSmoke, appendLog }, {
+      ok: false,
+      event: 'dashboard-loaded',
       didFinishLoad: true,
       title: win.getTitle(),
     });
+    schedulePackageSmokeSuccess();
   });
   win.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL) => {
     appendLog?.('error', 'dashboard', 'did-fail-load', { errorCode, errorDescription, validatedURL });
     console.error('[dashboard] did-fail-load', errorCode, errorDescription, validatedURL);
   });
   win.webContents.on('render-process-gone', (_event, details) => {
+    clearPackageSmokeTimer();
     appendLog?.('error', 'dashboard', 'render-process-gone', details);
     recordCrash?.('renderer_process_gone', new Error(details?.reason || 'render-process-gone'), details);
     console.error('[dashboard] render-process-gone', details);
+    const canRecover = details?.reason === 'crashed' && rendererRecoveryCount < 1 && !isQuitting?.();
+    if (packageSmoke?.resultPath) {
+      writePackageSmokeResult({ ...packageSmoke, appendLog }, {
+        ok: false,
+        event: 'renderer-gone',
+        fatal: !canRecover,
+        rendererRecoveryCount,
+        rendererGone: details || null,
+      });
+    }
+    if (!canRecover) return;
+    rendererRecoveryCount += 1;
+    appendLog?.('warn', 'dashboard', 'renderer-recovery-reload', { attempt: rendererRecoveryCount });
+    rendererRecoveryTimer = setTimeout(() => {
+      rendererRecoveryTimer = null;
+      if (!win || win.isDestroyed() || win.webContents.isDestroyed() || isQuitting?.()) return;
+      try { win.webContents.reloadIgnoringCache(); }
+      catch (error) {
+        appendLog?.('error', 'dashboard', 'renderer-recovery-failed', { message: error.message });
+        recordRendererError?.('recovery_failed', error, { attempt: rendererRecoveryCount });
+      }
+    }, 250);
   });
   win.webContents.on('unresponsive', () => {
     appendLog?.('warn', 'dashboard', 'unresponsive');
@@ -139,7 +192,12 @@ function createDashboardWindow({ appDir, isQuitting, hideToTray, appendLog, reco
       hideToTray?.();
     }
   });
-  win.on('closed', () => { if (typeof onClosed === 'function') onClosed(); });
+  win.on('closed', () => {
+    clearPackageSmokeTimer();
+    if (rendererRecoveryTimer) clearTimeout(rendererRecoveryTimer);
+    rendererRecoveryTimer = null;
+    if (typeof onClosed === 'function') onClosed();
+  });
   return win;
 }
 

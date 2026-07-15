@@ -38,6 +38,17 @@ try {
   assert.equal(packedBytes.subarray(0, 2).toString("ascii"), "#!");
   const packedRun = spawnSync(process.execPath, [packedBin, ...selfTestArgs], { cwd: path.join(unpacked, "package"), encoding: "utf8", timeout: 30000, env: fixtureEnv });
   assert.equal(packedRun.status, 0, packedRun.stderr || packedRun.stdout);
+  const { DatabaseSync } = require('node:sqlite');
+  const database = new DatabaseSync(fixtureDb, { readOnly: true });
+  const sessionId = database.prepare('select id from session order by time_updated desc limit 1').get().id;
+  database.close();
+  const exportPath = path.join(temp, 'packed-session.xlsx');
+  const packedExport = spawnSync(process.execPath, [packedBin, 'export-session', '--session-id', sessionId, '--format', 'xlsx', '--output', exportPath], {
+    cwd: path.join(unpacked, 'package'), encoding: 'utf8', timeout: 30000, env: fixtureEnv,
+  });
+  assert.equal(packedExport.status, 0, packedExport.stderr || packedExport.stdout);
+  assert.equal(JSON.parse(packedExport.stdout).format, 'xlsx');
+  assert.equal(fs.readFileSync(exportPath).subarray(0, 2).toString('ascii'), 'PK', 'packed CLI must create a real XLSX archive');
 } finally {
   fs.rmSync(temp, { recursive: true, force: true });
 }

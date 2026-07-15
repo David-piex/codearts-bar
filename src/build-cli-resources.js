@@ -134,6 +134,7 @@ function build() {
   let manifestOptions = {};
   if (process.env.CODEARTS_BAR_CLI_BUNDLE === '1') {
     const relativeEntry = path.relative(root, entry).replace(/\\/g, '/');
+    const jetbrainsEntry = path.basename(entry).toLowerCase() === 'jetbrains-cli.js';
     const bundleFile = path.join(outDir, ...relativeEntry.split('/'));
     fs.mkdirSync(path.dirname(bundleFile), { recursive: true });
     const bundleInput = prepareBundleEntry();
@@ -145,7 +146,7 @@ function build() {
         platform: 'node',
         target: 'node18',
         format: 'cjs',
-        external: ['sql.js'],
+        external: ['sql.js', ...(jetbrainsEntry ? ['../../protocol/query-results'] : [])],
         minify: true,
         charset: 'utf8',
         legalComments: 'none',
@@ -154,8 +155,39 @@ function build() {
     } finally {
       bundleInput.cleanup();
     }
+    const packagedFiles = [{ rel: relativeEntry, file: bundleFile }];
     files = [bundleFile];
-    manifestOptions = { entry: relativeEntry, packagedFiles: [{ rel: relativeEntry, file: bundleFile }] };
+    if (jetbrainsEntry) {
+      const protocolEntry = path.join(srcDir, 'protocol', 'query-results.js');
+      const protocolRelative = path.relative(root, protocolEntry).replace(/\\/g, '/');
+      const protocolTarget = path.join(outDir, ...protocolRelative.split('/'));
+      fs.mkdirSync(path.dirname(protocolTarget), { recursive: true });
+      require('esbuild').buildSync({
+        entryPoints: [protocolEntry], outfile: protocolTarget, bundle: true, platform: 'node', target: 'node18',
+        format: 'cjs', minify: true, charset: 'utf8', legalComments: 'none', sourcemap: false,
+      });
+      files.push(protocolTarget);
+      packagedFiles.push({ rel: protocolRelative, file: protocolTarget });
+      const exportEntry = path.join(srcDir, 'providers', 'codearts', 'session-export-cli.js');
+      const exportRelative = path.relative(root, exportEntry).replace(/\\/g, '/');
+      const exportBundle = path.join(outDir, ...exportRelative.split('/'));
+      require('esbuild').buildSync({
+        entryPoints: [exportEntry],
+        outfile: exportBundle,
+        bundle: true,
+        platform: 'node',
+        target: 'node18',
+        format: 'cjs',
+        external: ['sql.js'],
+        minify: true,
+        charset: 'utf8',
+        legalComments: 'none',
+        sourcemap: false,
+      });
+      files.push(exportBundle);
+      packagedFiles.push({ rel: exportRelative, file: exportBundle });
+    }
+    manifestOptions = { entry: relativeEntry, packagedFiles };
   } else {
     scan(entry);
     files = [...required].sort();

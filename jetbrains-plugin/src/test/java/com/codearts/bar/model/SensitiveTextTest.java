@@ -24,4 +24,16 @@ class SensitiveTextTest {
         assertEquals("", SensitiveText.redact(null));
         assertEquals("", SensitiveText.redact(""));
     }
+
+    @Test void safeSummaryRemovesPathsStacksAndLimitsLength() {
+        String value = "failure token=secret Bearer abc.def at C:\\Users\\private-user\\file.js and /home/private-linux/file.js "
+                + "x".repeat(600) + "\nprivate-stack-frame";
+        String summary = SensitiveText.safeSummary(value);
+        assertFalse(summary.contains("secret"));
+        assertFalse(summary.contains("private-user"));
+        assertFalse(summary.contains("private-linux"));
+        assertFalse(summary.contains("private-stack-frame"));
+        assertTrue(summary.contains("[path]"));
+        assertTrue(summary.length() <= 500);
+    }
 }

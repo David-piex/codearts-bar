@@ -6,6 +6,7 @@ const path = require("node:path");
 const { performance } = require("node:perf_hooks");
 const localProvider = require(path.join(__dirname, "..", "src", "providers", "codeartsLocal.js"));
 const { redactSensitiveText } = require(path.join(__dirname, "..", "src", "core", "sensitive-text.js"));
+const { viewModel } = require(path.join(__dirname, "..", "extension", "webview", "model.js"));
 
 const root = path.join(__dirname, "..");
 const source = fs.readFileSync(path.join(root, "src", "extension-data.js"), "utf8");
@@ -23,7 +24,7 @@ const data = require(path.join(root, "src", "extension-data.js"));
   const firstMs = performance.now() - firstStart;
   assert.equal(summary.ok, true);
   assert.equal(summary.summaryOnly, true);
-  assert.equal(summary.capabilities.performance, false);
+  assert.equal(summary.capabilities.performance, true);
   assert.ok(summary.usage?.all);
   assert.deepEqual(summary.trends, { hourly24h: [], daily14d: [] });
   const hotStart = performance.now();
@@ -37,11 +38,15 @@ const data = require(path.join(root, "src", "extension-data.js"));
   const detailsMs = performance.now() - detailsStart;
   assert.equal(details.ok, true);
   assert.equal(details.summaryOnly, false);
-  assert.equal(details.capabilities.performance, false);
+  assert.equal(details.capabilities.performance, true);
   assert.ok(Array.isArray(details.trends.hourly24h));
   assert.ok(Array.isArray(details.trends.daily14d));
   assert.ok(Array.isArray(details.models));
   assert.ok(Array.isArray(details.sourceStats));
+  assert.ok(Array.isArray(details.providerStats));
+  assert.ok(Array.isArray(details.projects));
+  assert.ok(Array.isArray(details.diagnostics.items));
+  assert.equal(typeof details.performance.window.errorRate, 'number');
   assert.ok(Array.isArray(details.sessions));
   assert.ok(details.sessions.length <= 8);
   assert.ok(details.requestTotal >= details.requests.length);
@@ -103,6 +108,36 @@ const data = require(path.join(root, "src", "extension-data.js"));
     assert.equal(currentSummaryOptions.model, "all");
     assert.equal("range" in currentSummaryOptions, false);
     assert.equal("rangePreset" in currentSummaryOptions, false);
+  } finally {
+    Object.assign(localProvider, original);
+  }
+  const privateFailure = 'failure {"access_token":"snapshot-secret"} Bearer snapshot-bearer at C:\\Users\\private-win-user\\project\\file.js and /home/private-linux-user/project/file.js\nprivate-stack-frame';
+  try {
+    localProvider.getSummary = async () => ({ ok: true, usage: { today: {}, window: {}, week: {}, all: {} }, sources: [] });
+    localProvider.getDashboardAggregates = async () => ({
+      ok: true,
+      buckets: [],
+      modelStats: [],
+      sources: [{ id: 'read-source' }],
+      expectedSources: ['read-source', 'failed-source'],
+      sourceStats: [{ source: 'read-source', total: 0, messages: 0 }],
+      sourceErrors: [{ source: 'failed-source', message: privateFailure }],
+      performance: { samples: 0, complete: true, metricCompleteness: { latency: true, firstContentApprox: false, outputTokensPerSec: false, ttft: false } },
+    });
+    localProvider.getSessionsPage = async () => ({ items: [], total: 0 });
+    localProvider.getRequestsPage = async () => ({ items: [{ id: 'private', sessionTitle: privateFailure, error: privateFailure }], total: 1 });
+    localProvider.getDatabaseHealth = async () => ({ items: [], sourceErrors: [{ source: 'failed-source', message: privateFailure }] });
+    const privateDetails = await data.getExtensionDetails({ ...options, rangePreset: 'custom', range: { start: customStart, end: customEnd } });
+    const privateView = viewModel(privateDetails);
+    assert.equal(privateView.completeness.complete, false);
+    assert.deepEqual(privateView.completeness.reasons, ['source-read-failed']);
+    assert.deepEqual(privateView.completeness.sources, { expected: 2, read: 1, failed: 1, missing: 0 });
+    const serialized = JSON.stringify(privateView);
+    for (const forbidden of ['snapshot-secret', 'snapshot-bearer', 'private-win-user', 'private-linux-user', 'private-stack-frame']) {
+      assert.equal(serialized.includes(forbidden), false, `VS Code snapshot leaked ${forbidden}`);
+    }
+    assert.match(privateView.requests[0].error, /\[path\]/);
+    assert.equal(privateView.requests[0].error.includes('\n'), false);
   } finally {
     Object.assign(localProvider, original);
   }

@@ -1,5 +1,4 @@
-/* Final native workbench layer. Loaded last to keep product-wide visual policy explicit. */
-/* 1.16.33 native workbench finish: opaque surfaces, hairlines and one accent. */
+/* native workbench finish: opaque surfaces, hairlines and one accent */
 :root {
   --radius-sm: 6px;
   --radius-md: 8px;

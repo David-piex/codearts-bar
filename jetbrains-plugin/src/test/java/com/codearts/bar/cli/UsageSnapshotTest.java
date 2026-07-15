@@ -23,6 +23,7 @@ class UsageSnapshotTest {
         assertEquals(12, snapshot.requests().getFirst().cacheWrite());
         assertEquals(200, snapshot.requests().getFirst().status());
         assertEquals("成功", snapshot.requests().getFirst().displayStatus());
+        assertEquals("db", snapshot.dbPath(), "legacy payloads remain readable during protocol rollout");
     }
 
     @Test void omitsNonNumericRequestStatusInsteadOfRenderingErrorZero() {
@@ -69,7 +70,9 @@ class UsageSnapshotTest {
                 java.util.List.of(
                         new UsageSnapshot.TrendPoint(march28Late, "", 10, 6, 4, 1),
                         new UsageSnapshot.TrendPoint(march29Late, "", 20, 12, 8, 2)),
-                java.util.List.of(), java.util.List.of());
+                java.util.List.of(), java.util.List.of(), java.util.List.of(), java.util.List.of(),
+                new UsageSnapshot.Performance(0,0,null,null,null,null,null,null,null), true, false,
+                new UsageSnapshot.MetricCompleteness(false,false,false,false));
 
         var rebucketed = UsageSnapshot.withLocalDailyTrend(data, start, end, berlin);
         assertEquals(2, rebucketed.trend().size());
@@ -91,7 +94,9 @@ class UsageSnapshotTest {
                 java.util.List.of(
                         new UsageSnapshot.TrendPoint(firstUse, "", 12, 7, 5, 1),
                         new UsageSnapshot.TrendPoint(secondUse, "", 30, 18, 12, 3)),
-                java.util.List.of(), java.util.List.of());
+                java.util.List.of(), java.util.List.of(), java.util.List.of(), java.util.List.of(),
+                new UsageSnapshot.Performance(0,0,null,null,null,null,null,null,null), true, false,
+                new UsageSnapshot.MetricCompleteness(false,false,false,false));
 
         var rebucketed = UsageSnapshot.withLocalDailyTrend(data, start, end, berlin);
         assertEquals(2, rebucketed.trend().size());

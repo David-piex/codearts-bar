@@ -268,6 +268,30 @@ async function main() {
   });
   assert.doesNotMatch(elements.get("app").innerHTML, /rename-sheet/);
 
+  const invokeBeforeExportFailure = ipcRenderer.invoke;
+  ipcRenderer.invoke = async (channel, ...args) => {
+    if(channel === "dashboard:exportSession") throw new Error("disk full");
+    return invokeBeforeExportFailure(channel, ...args);
+  };
+  await vm.runInContext(`(() => {
+    exportDialog = { items: [snapshot.sessions[0]], format: 'json', bulk: false };
+    return confirmExportSheet();
+  })()`, context);
+  assert.equal(vm.runInContext("exportDialog", context), null);
+  assert.equal(elements.get("refreshState").textContent, "disk full");
+  ipcRenderer.invoke = invokeBeforeExportFailure;
+
+  ipcRenderer.invoke = async (channel, ...args) => {
+    if(channel === "dashboard:exportSession") return { ok: false, code: "SESSION_EXPORT_NOT_FOUND", message: "会话已被删除，请刷新会话列表后重试", retryable: false };
+    return invokeBeforeExportFailure(channel, ...args);
+  };
+  await vm.runInContext(`(() => {
+    exportDialog = { items: [snapshot.sessions[0]], format: 'json', bulk: false };
+    return confirmExportSheet();
+  })()`, context);
+  assert.equal(elements.get("refreshState").textContent, "会话已被删除，请刷新会话列表后重试");
+  ipcRenderer.invoke = invokeBeforeExportFailure;
+
   const simpleHtml = elements.get("app").innerHTML;
   assert.doesNotMatch(simpleHtml, /session-advanced-shell/);
   assert.doesNotMatch(simpleHtml, /session-saved-views/);

@@ -11,6 +11,15 @@ const extensionPkg = JSON.parse(fs.readFileSync(path.join(extensionDir, "package
 const providerDir = path.join(root, "src", "providers", "codearts");
 const coreDir = path.join(root, "src", "core");
 const protocolDir = path.join(root, "src", "protocol");
+assert.ok(extensionPkg.files.includes('vendor/session-xlsx.js'), 'extension package should whitelist the XLSX runtime');
+assert.ok(fs.existsSync(path.join(extensionDir, 'vendor', 'session-xlsx.js')), 'prepared extension should contain the XLSX runtime');
+assert.ok(extensionPkg.files.includes('session-export.js'), 'extension package should whitelist the export privacy workflow');
+assert.ok(fs.existsSync(path.join(extensionDir, 'session-export.js')), 'prepared extension should contain the export privacy workflow');
+assert.equal(
+  fs.readFileSync(path.join(extensionDir, 'session-export.js'), 'utf8'),
+  fs.readFileSync(path.join(root, 'extension', 'session-export.js'), 'utf8'),
+  'prepared export privacy workflow should match the extension source',
+);
 assert.ok(extensionPkg.files.includes("extension-data.js"), "extension package should include staged data loader");
 assert.ok(fs.existsSync(path.join(extensionDir, "extension-data.js")), "prepared extension should contain extension-data.js");
 const requiredProviderFiles = fs.readdirSync(providerDir)

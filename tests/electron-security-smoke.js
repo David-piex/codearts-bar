@@ -31,6 +31,10 @@ assert.doesNotMatch(settingsRenderer, /require\(['"]electron['"]\)/);
 assert.match(dashboardEntry, /window\.codeartsApi/);
 assert.match(settingsRenderer, /window\.codeartsApi/);
 assert.match(mainSource, /closeSqlJsWorker/);
+assert.match(mainSource, /appendSwitch\(['"]disable-accelerated-2d-canvas['"]\)/);
+assert.match(mainSource, /appendSwitch\(['"]use-angle['"],\s*['"]swiftshader['"]\)/);
+assert.match(windowSource, /rendererRecoveryCount\s*<\s*1/);
+assert.match(windowSource, /reloadIgnoringCache\(\)/);
 assert.match(releaseSource, /build-dashboard-css\.js/);
 
 console.log("ok - electron security smoke");

@@ -72,5 +72,33 @@ class CliProcessRunnerTest {
                 () -> new CliProcessRunner().execute(new CodeArtsSettings.State(),
                         List.of(temp.resolve("missing-node/node.exe").toString(), "script.js")));
         assertTrue(error.getMessage().contains("Node.js"));
+        assertTrue(error.getMessage().contains("18"));
+    }
+
+    @Test void parsesAndEnforcesTheSupportedNodeVersion() throws Exception {
+        assertEquals(18, CliProcessRunner.parseNodeMajor("v18.20.8\n"));
+        assertEquals(24, CliProcessRunner.parseNodeMajor("24.1.0"));
+        assertEquals(0, CliProcessRunner.parseNodeMajor("unknown"));
+        assertDoesNotThrow(() -> CliProcessRunner.requireSupportedNodeVersion(18));
+        IOException old = assertThrows(IOException.class,
+                () -> CliProcessRunner.requireSupportedNodeVersion(16));
+        assertTrue(old.getMessage().contains("检测到 16"));
+        assertTrue(old.getMessage().contains("18"));
+        IOException unknown = assertThrows(IOException.class,
+                () -> CliProcessRunner.requireSupportedNodeVersion(0));
+        assertTrue(unknown.getMessage().contains("无法确认"));
+    }
+
+    @Test void redactsCliFailurePayloadAtTheProcessBoundary() throws Exception {
+        String node = CliLocator.findOnPath(System.getProperty("os.name", "").startsWith("Windows") ? "node.exe" : "node");
+        String privateError = "failure token=secret Bearer abc.def at C:\\Users\\private-user\\file.js and /home/private-linux/file.js\nprivate-stack-frame";
+        String script = "console.log(JSON.stringify({ok:false,error:process.argv[1]}));process.exitCode=1";
+        IOException error = assertThrows(IOException.class, () -> new CliProcessRunner().execute(
+                new CodeArtsSettings.State(), List.of(node, "-e", script, privateError)));
+        assertFalse(error.getMessage().contains("secret"));
+        assertFalse(error.getMessage().contains("private-user"));
+        assertFalse(error.getMessage().contains("private-linux"));
+        assertFalse(error.getMessage().contains("private-stack-frame"));
+        assertTrue(error.getMessage().contains("[path]"));
     }
 }

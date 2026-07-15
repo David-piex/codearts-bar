@@ -30,6 +30,8 @@ assert.equal(pkg.main, "src/main.js", "Electron package entry should be src/main
 assert.match(mainSource, /CODEARTS_BAR_PACKAGE_SMOKE/, "main process should expose package smoke startup hook");
 assert.match(mainSource, /CODEARTS_BAR_SMOKE_USER_DATA/, "package smoke should support isolated userData");
 assert.match(windowSource, /dashboard-ready/, "dashboard window should write package smoke ready event");
+assert.match(windowSource, /dashboard-stable/, "dashboard package smoke should require a renderer stability window");
+assert.match(windowSource, /rendererStableMs/, "dashboard package smoke should report renderer stability duration");
 assert.match(windowSource, /userDataIsolated/, "package smoke result should prove isolated userData was used");
 
 const extraResources = runtimeBuild.extraResources || [];

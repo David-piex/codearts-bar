@@ -65,6 +65,12 @@ function waitForPackageReady({ child, resultFile, timeoutMs = 45000 }) {
     let exit = null;
     const timer = setInterval(() => {
       const result = readJsonSafe(resultFile);
+      if (result?.fatal) {
+        clearInterval(timer);
+        try { child.kill(); } catch {}
+        reject(new Error(`release package renderer failed before stability window: ${JSON.stringify(result)}`));
+        return;
+      }
       if (result?.ok) {
         clearInterval(timer);
         resolve({ result, stdout, stderr, exit });
@@ -130,11 +136,12 @@ function waitForPackageReady({ child, resultFile, timeoutMs = 45000 }) {
     });
     const { result } = await waitForPackageReady({ child, resultFile });
     assert.equal(result.app, "CodeArts Bar");
-    assert.equal(result.event, "dashboard-ready");
+    assert.equal(result.event, "dashboard-stable");
     assert.equal(result.version, pkg.version);
     assert.equal(result.userDataIsolated, true, "release package smoke must use isolated userData");
     assert.equal(result.userDataName, "userData", "release package smoke should not use the real userData directory");
     assert.equal(result.readyToShow || result.didFinishLoad, true);
+    assert.ok(result.rendererStableMs >= 5000, "release package renderer should remain alive for at least 5 seconds");
     const elapsed = Date.now() - start;
     console.log(`ok - release package smoke artifact=${path.basename(artifact)} elapsed=${elapsed}ms appElapsed=${result.elapsedMs ?? "n/a"}ms`);
   } finally {

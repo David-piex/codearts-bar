@@ -21,6 +21,8 @@ const logs = [];
 const app = new EventEmitter();
 app.getPath = () => secretHome;
 app.getVersion = () => "0.0.0-test";
+const processRef = new EventEmitter();
+processRef.pid = 4321;
 
 (async () => {
   try {
@@ -29,7 +31,7 @@ app.getVersion = () => "0.0.0-test";
       app,
       appendLog: (level, scope, message, detail) => logs.push({ level, scope, message, detail }),
       now: () => Date.UTC(2026, 6, 9, 10, 0, 0),
-      processRef: new EventEmitter(),
+      processRef,
       setIntervalFn: () => ({ unref() {} }),
       clearIntervalFn: () => {},
     });
@@ -37,7 +39,7 @@ app.getVersion = () => "0.0.0-test";
     const markerPath = path.join(secretHome, "codearts-bar-runtime.json");
     fs.writeFileSync(markerPath, JSON.stringify({
       app: "CodeArts Bar",
-      version: "0.0.0-test",
+      version: "0.0.0-old",
       pid: 1234,
       startedAt: "2026-07-09T09:00:00.000Z",
       updatedAt: "2026-07-09T09:01:00.000Z",
@@ -48,7 +50,9 @@ app.getVersion = () => "0.0.0-test";
     assert.equal(state.ok, false);
     assert.ok(state.issues.some((issue) => issue.code === "last_crash_detected"));
 
-    reporter.markCleanExit();
+    const cleanMarker = reporter.markCleanExit();
+    assert.equal(cleanMarker.version, "0.0.0-test");
+    assert.equal(cleanMarker.pid, 4321);
     state = reporter.getCrashState();
     assert.equal(state.issues.some((issue) => issue.code === "last_crash_detected"), false);
 

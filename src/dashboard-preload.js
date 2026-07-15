@@ -21,6 +21,8 @@ const invokeChannels = new Set([
   'dashboard:openSession',
   'dashboard:openCodeArtsSession',
   'dashboard:copySession',
+  'dashboard:exportSession',
+  'dashboard:exportSessions',
   'dashboard:openLogs',
   'dashboard:archiveSession',
   'dashboard:renameSession',

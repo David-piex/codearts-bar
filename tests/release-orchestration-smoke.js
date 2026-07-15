@@ -13,6 +13,12 @@ const {
 } = require('../src/release');
 
 const version = require('../package.json').version;
+const releaseSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'release.js'), 'utf8');
+assert.match(
+  releaseSource,
+  /build-session-xlsx\.js[\s\S]*build-dashboard-renderer\.js/,
+  'release must rebuild the XLSX runtime before staging any client package',
+);
 assert.deepEqual(artifactNames(version), [
   `CodeArts-Bar-Setup-${version}-x64.exe`,
   `CodeArts-Bar-Setup-${version}-x64.exe.blockmap`,

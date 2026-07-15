@@ -3,7 +3,7 @@
   "limits": {
     "rendererBytesMax": 330000,
     "cssBytesMax": 220000,
-    "jetbrainsZipBytesMax": 550000,
+    "jetbrainsZipBytesMax": 950000,
     "snapshotMsMax": 1000,
     "coverageLinesMin": 75,
     "coverageFunctionsMin": 73,

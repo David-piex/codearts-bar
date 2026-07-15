@@ -3,14 +3,16 @@
 const vscode = require("vscode");
 const { dashboardHtml } = require("./webview/html");
 const { viewModel } = require("./webview/model");
+const { safeIdeText } = require("./protocol/query-results");
 
 class DashboardHost {
-  constructor(context, getSnapshot, refreshSnapshot, loadDetails, openDataFolder) {
+  constructor(context, getSnapshot, refreshSnapshot, loadDetails, openDataFolder, operations = {}) {
     this.context = context;
     this.getSnapshot = getSnapshot;
     this.refreshSnapshot = refreshSnapshot;
     this.loadDetails = loadDetails;
     this.openDataFolder = openDataFolder;
+    this.operations = operations;
     this.targets = new Set();
     this.panel = null;
   }
@@ -59,6 +61,33 @@ class DashboardHost {
     if (message?.type === "refresh") return this.refreshSnapshot({ details: true, reason: "webview-refresh", target });
     if (message?.type === "range") return this.loadDetails?.({ reason: "webview-range", rangePreset: message.preset, range: message.range, target });
     if (message?.type === "filter") return this.loadDetails?.({ reason: "webview-filter", source: message.source, model: message.model, target });
+    if (message?.type === "sessionsPage") {
+      try {
+        const result = await this.operations.querySessionsPage?.(message);
+        if (target.visible) target.webview.postMessage({ type: "sessionsPage", payload: result });
+      } catch (error) {
+        if (target.visible) target.webview.postMessage({ type: "sessionsPage", payload: { ok: false, error: safeIdeText(error?.message || "会话加载失败") } });
+      }
+      return undefined;
+    }
+    if (message?.type === "requestsPage") {
+      try {
+        const result = await this.operations.queryRequestsPage?.(message);
+        if (target.visible) target.webview.postMessage({ type: "requestsPage", payload: result });
+      } catch (error) {
+        if (target.visible) target.webview.postMessage({ type: "requestsPage", payload: { ok: false, error: safeIdeText(error?.message || "请求加载失败") } });
+      }
+      return undefined;
+    }
+    if (message?.type === "exportSession") {
+      try {
+        const result = await this.operations.exportSession?.(message.session, message.format);
+        if (target.visible) target.webview.postMessage({ type: "sessionExported", payload: result });
+      } catch (error) {
+        if (target.visible) target.webview.postMessage({ type: "sessionExported", payload: { ok: false, error: safeIdeText(error?.message || "会话导出失败") } });
+      }
+      return undefined;
+    }
     if (message?.type === "openDashboard") return this.openPanel();
     if (message?.type === "openData") return this.openDataFolder();
     if (message?.type === "settings")
@@ -70,11 +99,14 @@ class DashboardHost {
 
   remove(target) {
     this.targets.delete(target);
+    this.operations.onVisibilityChanged?.(this.hasTargets());
   }
   setVisible(target, visible, reason = "visibility") {
     if (!target) return;
     const becameVisible = !target.visible && Boolean(visible);
     target.visible = Boolean(visible);
+    if (!target.visible) target.generation += 1;
+    this.operations.onVisibilityChanged?.(this.hasTargets());
     if (!becameVisible) return;
     this.postSnapshot(target);
     this.loadDetails?.({ reason, target });
@@ -174,6 +206,7 @@ class DashboardHost {
     );
     panel.__target = this.attach(panel.webview, "dashboard");
     panel.__target.visible = panel.visible;
+    this.operations.onVisibilityChanged?.(this.hasTargets());
     panel.onDidChangeViewState((event) =>
       this.setVisible(panel.__target, event.webviewPanel.visible, "panel-visible"),
     );
@@ -193,6 +226,7 @@ class OverviewViewProvider {
   resolveWebviewView(view) {
     this.target = this.host.attach(view.webview, "sidebar");
     this.target.visible = view.visible;
+    this.host.operations.onVisibilityChanged?.(this.host.hasTargets());
     view.onDidChangeVisibility(() =>
       this.host.setVisible(this.target, view.visible, "sidebar-visible"),
     );

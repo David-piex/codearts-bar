@@ -13,6 +13,7 @@ const { envelope, failure } = require('./protocol/envelope');
 const { getSessionsPage, getRequestsPage, getSessionRequestsPage } = require('./providers/codearts/pagination');
 const localProvider = require('./providers/codeartsLocal');
 const { sanitizeText } = require('./diagnostics-report');
+const { exportSessionToFile } = require('./providers/codearts/session-export');
 
 const cmd = process.argv[2] || 'snapshot';
 const rest = process.argv.slice(3);
@@ -70,6 +71,11 @@ async function run() {
     if (cmd === 'query') {
       const resource = rest[0] || 'dashboard';
       const optionArgs = rest.slice(1);
+      if (['dashboard', 'analytics', 'filters', 'sessions', 'requests'].includes(resource)) {
+        const { query } = require('./providers/codearts/jetbrains-cli');
+        console.log(JSON.stringify(await query(resource, optionArgs), null, 2));
+        return;
+      }
       const readOption = (name, fallback = null) => { const index = optionArgs.indexOf(name); return index >= 0 ? optionArgs[index + 1] : fallback; };
       const page = Math.max(1, Math.trunc(Number(readOption('--page', 1)) || 1));
       const pageSize = Math.max(1, Math.min(500, Math.trunc(Number(readOption('--page-size', 50)) || 50)));
@@ -155,6 +161,25 @@ async function run() {
       console.log(json ? JSON.stringify(report, null, 2) : reportToText(report));
       return;
     }
+    if (cmd === 'export-session') {
+      const sessionId = readArg(rest, '--session-id');
+      const format = String(readArg(rest, '--format', 'json')).toLowerCase();
+      const outputPath = readArg(rest, '--output');
+      const result = await exportSessionToFile({
+        sessionId,
+        format,
+        outputPath,
+        source: readArg(rest, '--source'),
+        dbPath: readArg(rest, '--db'),
+        includeContent: !rest.includes('--no-content'),
+        includeReasoning: rest.includes('--include-reasoning'),
+        includeToolIO: rest.includes('--include-tool-io'),
+        redactPaths: !rest.includes('--no-redact-paths'),
+        includeErrors: !rest.includes('--no-errors'),
+      });
+      console.log(JSON.stringify({ ok: true, path: result.path, format: result.format, bytes: result.bytes }, null, 2));
+      return;
+    }
     if (cmd === 'config') {
       const sub = rest[0] || 'show';
       if (sub === 'show') console.log(JSON.stringify({ path: settingsPath(), settings: loadSettings() }, null, 2));
@@ -194,6 +219,8 @@ Usage:
   codearts-bar runtime              查看 Node / SQLite 运行时
   codearts-bar official-cache       查看官方 stats 缓存状态
   codearts-bar diagnose [--json]    诊断数据源/日志/缓存
+  codearts-bar export-session --session-id <id> --format <json|md|xlsx> [--output <path>]
+                                    导出完整会话；默认脱敏路径并排除推理与工具输入输出
   codearts-bar config show          查看配置
   codearts-bar config set --db <p> --daily-limit <n> --refresh-ms <n> --official-stats-ttl-ms <n>
   codearts-bar self-test --fixture-db <path> --config-dir <temp> --now-ms <ms>

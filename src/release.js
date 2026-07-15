@@ -176,6 +176,7 @@ function buildRelease(options = {}) {
   fs.mkdirSync(paths.workDir, { recursive: true });
   let replaced = false;
   try {
+    runNode(path.join(root, 'src', 'build-session-xlsx.js'), [], { env: releaseEnv });
     runNode(path.join(root, 'src', 'build-dashboard-renderer.js'), [], { env: releaseEnv });
     runNode(path.join(root, 'src', 'build-dashboard-css.js'), [], { env: releaseEnv });
     runNode(path.join(root, 'src', 'build-cli-resources.js'), [], { env: releaseEnv });

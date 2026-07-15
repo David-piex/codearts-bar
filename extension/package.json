@@ -2,7 +2,7 @@
   "name": "codearts-bar-status",
   "displayName": "\u7801\u9053 \u00b7 \u4f7f\u7528\u5206\u6790",
   "description": "\u5728 VS Code / CodeArts Agent \u4e2d\u53ef\u89c6\u5316\u672c\u5730 token \u7528\u91cf\u3001\u8d8b\u52bf\u3001\u6a21\u578b\u3001\u6570\u636e\u6e90\u4e0e\u6700\u8fd1\u4f1a\u8bdd\u3002",
-  "version": "1.16.34",
+  "version": "1.16.35",
   "publisher": "local-codearts",
   "license": "MIT",
   "engines": {
@@ -163,6 +163,7 @@
     "providers/codearts/usage-rollup-calc.js",
     "providers/codearts/usage-rollup.js",
     "dashboard.js",
+    "session-export.js",
     "media/codearts.svg",
     "webview/html.js",
     "webview/model.js",

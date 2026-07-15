@@ -212,7 +212,7 @@ function defaultSessionPagePayload(payload = {}) {
     status: payload.status || 'active',
     project: payload.project || 'all',
     range: payload.range || {},
-    query: payload.sessionQuery || payload.query || '',
+    query: payload.sessionQuery || '',
   };
 }
 

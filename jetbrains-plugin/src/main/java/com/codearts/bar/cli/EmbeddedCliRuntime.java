@@ -10,6 +10,7 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
+import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.LinkOption;
@@ -252,16 +253,26 @@ final class EmbeddedCliRuntime {
     }
 
     static synchronized boolean repairAfterFailure(List<String> command) {
-        if (cachedEntry == null || command == null || command.stream().noneMatch(cachedEntry.toString()::equals)) return false;
+        if (cachedEntry == null || command == null) return false;
         try {
             ClassLoader loader = EmbeddedCliRuntime.class.getClassLoader();
             Path root = runtimeRootForEntry(loader, cachedEntry);
+            if (!commandUsesRuntime(command, root)) return false;
             if (runtimeIsIntact(loader, root)) return false;
             Path entry = materialize(loader, root.getParent(), root);
             cachedEntry = entry;
             cachedFiles = snapshotRuntimeFiles(root);
             return true;
         } catch (IOException ignored) { return false; }
+    }
+
+    private static boolean commandUsesRuntime(List<String> command, Path root) {
+        for (String value : command) {
+            try {
+                if (Path.of(value).toAbsolutePath().normalize().startsWith(root)) return true;
+            } catch (InvalidPathException ignored) { }
+        }
+        return false;
     }
 
     private static boolean runtimeIsIntact(ClassLoader loader, Path root) throws IOException {

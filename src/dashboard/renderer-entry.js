@@ -85,6 +85,7 @@ let renameDraft = '';
 let bulkMetaOpen = false;
 let bulkMetaTagsDraft = '';
 let bulkMetaNoteDraft = '';
+let exportDialog = null;
 let savedSessionViews = [];
 let savedSessionViewNameDraft = '';
 let sessionAdvancedOpen = false;
