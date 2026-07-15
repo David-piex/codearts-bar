@@ -1,11 +1,13 @@
 "use strict";
 
 const vscode = require("vscode");
+const fs = require("node:fs");
 const path = require("node:path");
 const { snapshotToText, errorSnapshot, fmtInt, fmtMs } = require("./codeartsData");
 const { getExtensionSummary, getExtensionDetails } = require("./extension-data");
 const { DashboardHost, OverviewViewProvider } = require("./dashboard");
 const localProvider = require("./providers/codeartsLocal");
+const { databaseFingerprint } = require("./core/source-fingerprint");
 const { closeSettingsStore } = require("./settings");
 
 let statusItem;
@@ -13,6 +15,10 @@ let timer;
 let lastSnapshot;
 let refreshPromise;
 let dashboardHost;
+let summaryCache = null;
+let summaryCacheKey = "";
+let summaryCachedAt = 0;
+const SUMMARY_CACHE_TTL_MS = 30000;
 
 const T = {
   app: "\u7801\u9053 Bar",
@@ -214,7 +220,19 @@ async function refresh(options = {}) {
   const c = config();
   refreshPromise = (async () => {
     try {
-      lastSnapshot = await getExtensionSummary(c);
+      const sources = localProvider.listDataSources({ ...c, useSavedSettings: false });
+      const fingerprint = databaseFingerprint(fs, sources);
+      const cacheKey = JSON.stringify({ dbPath: c.dbPath || "", dailyLimit: c.dailyLimit, windowHours: c.windowHours, fingerprint });
+      if (summaryCache?.ok && cacheKey === summaryCacheKey && Date.now() - summaryCachedAt < SUMMARY_CACHE_TTL_MS) {
+        lastSnapshot = summaryCache;
+      } else {
+        lastSnapshot = await getExtensionSummary(c);
+        if (lastSnapshot?.ok) {
+          summaryCache = lastSnapshot;
+          summaryCacheKey = cacheKey;
+          summaryCachedAt = Date.now();
+        }
+      }
     } catch (error) {
       lastSnapshot = errorSnapshot(error, c.dbPath);
     }
@@ -316,6 +334,9 @@ async function deactivate() {
   closeSettingsStore?.();
   dashboardHost = null;
   lastSnapshot = null;
+  summaryCache = null;
+  summaryCacheKey = "";
+  summaryCachedAt = 0;
 }
 
 module.exports = { activate, deactivate };

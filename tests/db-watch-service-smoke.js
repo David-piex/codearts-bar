@@ -10,11 +10,16 @@ global.setTimeout = (fn, delay) => { const token={fn,delay,unref(){}}; delays.pu
 global.clearTimeout = () => {};
 try {
   let visible = true;
-  const fakeFs = { existsSync: () => false, statSync: () => ({ mtimeMs: 1, size: 1 }), watch: () => ({ close() {} }) };
+  let mtimeMs = 1;
+  let changes = 0;
+  const fakeFs = { existsSync: () => false, statSync: () => ({ mtimeMs, size: 1 }), watch: () => ({ close() {} }) };
   const settings = { dbWatchVisiblePollMs: 4000, dbWatchHiddenPollMs: 15000 };
-  const service = createDbWatchService({ fs: fakeFs, loadSettings: () => settings, localProvider: { watchTargets: () => ['db'] }, dashboardWindowVisible: () => visible });
+  const service = createDbWatchService({ fs: fakeFs, loadSettings: () => settings, localProvider: { watchTargets: () => ['db'] }, dashboardWindowVisible: () => visible, onDatabaseChange: () => { changes += 1; } });
   service.schedule();
   assert.equal(delays.at(-1), 4000);
+  mtimeMs = 2;
+  callbacks[0].fn();
+  assert.equal(changes, 1);
   visible = false;
   service.reschedulePoll();
   assert.equal(delays.at(-1), 15000);

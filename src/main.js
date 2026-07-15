@@ -15,6 +15,8 @@ const { loadSettings, saveSettings, watchSettings, closeSettingsStore } = requir
 const { diagnose } = require('./diagnose');
 const { notificationEvents } = require('./health');
 const localProvider = require('./providers/codeartsLocal');
+const { nativeSqliteStatus } = require('./providers/codearts/sqlite');
+const { scheduleUsageRollupMaintenance } = require('./providers/codearts/usage-rollup-maintenance');
 const dashboardLight = require('./main/dashboard-light');
 const trayUi = require('./main/tray');
 const mainWindow = require('./main/window');
@@ -22,6 +24,7 @@ const { createLogger } = require('./main/logger');
 const { createCrashReporter } = require('./main/crash-reporter');
 const { createDbWatchService } = require('./main/db-watch-service');
 const { createLatestTaskQueue } = require('./main/latest-task-queue');
+const { ScoredCache } = require('./core/scored-cache');
 const lifecycle = require('./main/lifecycle');
 const { registerDashboardIpc } = require('./main/ipc-dashboard');
 const { registerSettingsIpc } = require('./main/ipc-settings');
@@ -53,10 +56,11 @@ let forcedExitTimer = null;
 let trayHintShown = false;
 let fullRefreshInFlight = null;
 let lightRefreshInFlight = null;
+let rollupRefreshTimer = null;
 let stopSettingsWatch = null;
 const dashboardLightQueues = new Map();
-const dashboardSnapshotCache = new Map();
-const dashboardUsageSnapshotCache = new Map();
+const dashboardSnapshotCache = new ScoredCache(24);
+const dashboardUsageSnapshotCache = new ScoredCache(24);
 let canonicalSnapshotGeneration = 0;
 
 const trayAssetsDir = path.join(__dirname, '..', 'assets');
@@ -78,7 +82,40 @@ const dbWatchService = createDbWatchService({
   dashboardWindowVisible,
   refreshLightAndPush,
   refreshTraySummaryOnly,
+  onDatabaseChange: () => {
+    const settings = loadSettings();
+    const adapter = process.env.CODEARTS_BAR_FORCE_SQLJS === '1' || !nativeSqliteStatus().available ? 'sql.js' : 'node:sqlite';
+    for (const source of localProvider.listDataSources(settings)) {
+      scheduleUsageRollupMaintenance(source, {
+        adapter,
+        minNewRows: 100,
+        cooldownMs: 60 * 60 * 1000,
+        lastBuildMs: Number(settings.rollupMaintenance?.bySource?.[source.id] || settings.rollupMaintenance?.lastRollupBuildMs || 0),
+        delayMs: 50,
+        onBuilt: handleUsageRollupBuilt,
+      });
+    }
+  },
 });
+function handleUsageRollupBuilt({ source, result, completedAt }) {
+  const status = String(result?.usageRollup?.status || '');
+  if (status.includes('failed')) return;
+  const current = loadSettings();
+  saveSettings({
+    rollupMaintenance: {
+      lastRollupBuildMs: completedAt,
+      bySource: { ...(current.rollupMaintenance?.bySource || {}), [source.id || 'unknown']: completedAt },
+    },
+  });
+  if (rollupRefreshTimer) clearTimeout(rollupRefreshTimer);
+  rollupRefreshTimer = setTimeout(() => {
+    rollupRefreshTimer = null;
+    if (dashboardWindowVisible()) refreshLightAndPush('rollup-built');
+    else refreshTraySummaryOnly();
+  }, 150);
+  rollupRefreshTimer.unref?.();
+}
+localProvider.setUsageRollupBuildListener?.(handleUsageRollupBuilt);
 
 function markCanonicalSnapshot(snap) {
   if (!snap?.ok) return snap;
@@ -141,6 +178,9 @@ function cleanupRuntime() {
     clearInterval(refreshTimer);
     refreshTimer = null;
   }
+  if (rollupRefreshTimer) clearTimeout(rollupRefreshTimer);
+  rollupRefreshTimer = null;
+  localProvider.setUsageRollupBuildListener?.(null);
   dbWatchService.cleanup();
   stopSettingsWatch?.();
   closeSettingsStore();
@@ -320,6 +360,20 @@ function triggerRefreshSoon(reason = 'watch') {
 function scheduleDbWatch() {
   return dbWatchService.schedule();
 }
+function warmupSqlJsFallback() {
+  if (process.env.CODEARTS_BAR_DISABLE_SQLJS_WARMUP === '1') return;
+  if (process.env.CODEARTS_BAR_FORCE_SQLJS !== '1' && nativeSqliteStatus().available) return;
+  const maxBytes = 50 * 1024 * 1024;
+  const sources = localProvider.listDataSources(loadSettings());
+  let totalBytes = 0;
+  for (const source of sources) {
+    try { totalBytes += fs.statSync(source.dbPath).size; }
+    catch { return; }
+  }
+  if (!sources.length || totalBytes <= 0 || totalBytes >= maxBytes) return;
+  Promise.resolve(localProvider.warmupSqlJsWorker?.({ timeoutMs: 30000 }))
+    .catch((error) => appendLog('warn', 'sqljs:warmup', error.message));
+}
 function openSettingsWindow() {
   if (settingsWindow && !settingsWindow.isDestroyed()) { settingsWindow.focus(); return; }
   settingsWindow = mainWindow.createSettingsWindow({ appDir: __dirname, appendLog, onClosed: () => { settingsWindow = null; } });
@@ -369,13 +423,9 @@ function dashboardTaskScopeKey(payload = {}) {
 function cacheDashboardSnapshot(payload, value) {
   if (!value?.ok || isCanonicalDashboardPayload(payload)) return;
   const key = dashboardTaskScopeKey(payload);
-  dashboardSnapshotCache.delete(key);
   dashboardSnapshotCache.set(key, value);
-  while (dashboardSnapshotCache.size > 24) dashboardSnapshotCache.delete(dashboardSnapshotCache.keys().next().value);
   const usageKey = usageScopeKeyForPayload(payload);
-  dashboardUsageSnapshotCache.delete(usageKey);
   dashboardUsageSnapshotCache.set(usageKey, value);
-  while (dashboardUsageSnapshotCache.size > 24) dashboardUsageSnapshotCache.delete(dashboardUsageSnapshotCache.keys().next().value);
 }
 
 function getDashboardSnapshotForPayload(payload = {}) {
@@ -484,6 +534,7 @@ if (lifecycle.requestSingleInstance(app, { refreshLight, openDashboardWindow }))
     tray.on('double-click', () => restoreDashboardWindow());
     tray.on('right-click', () => showTrayMenu());
     refreshTrayMenu();
+    warmupSqlJsFallback();
     refreshLight({ summaryOnly: true, reason: 'startup' });
     scheduleRefresh();
     scheduleDbWatch();

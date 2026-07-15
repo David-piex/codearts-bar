@@ -50,6 +50,15 @@ function scan(file) {
     const child = resolveLocalRequire(resolved, match[1]);
     if (child) scan(child);
   }
+  const workerRe = /\bpath\.join\(\s*__dirname\s*,\s*['"]([^'"]+\.js)['"]\s*\)/g;
+  while ((match = workerRe.exec(source))) {
+    const workerFile = path.resolve(path.dirname(resolved), match[1]);
+    if (fs.existsSync(workerFile)) scan(workerFile);
+  }
+  if (path.basename(resolved) === 'usage-rollup.js') {
+    const workerPool = path.join(path.dirname(resolved), 'usage-rollup-worker-pool.js');
+    if (fs.existsSync(workerPool)) scan(workerPool);
+  }
 }
 
 function copyFilePreserveRoot(file) {
@@ -110,6 +119,8 @@ function prepareBundleEntry() {
   }
   const slimDiagnostics = path.join(srcDir, 'providers', 'codearts', 'jetbrains-diagnostics.js');
   fs.copyFileSync(slimDiagnostics, path.join(stageRoot, 'src', 'providers', 'codearts', 'diagnostics.js'));
+  const slimBestEffort = path.join(srcDir, 'core', 'jetbrains-best-effort.js');
+  fs.copyFileSync(slimBestEffort, path.join(stageRoot, 'src', 'core', 'best-effort.js'));
   return {
     entry: path.join(stageRoot, path.relative(root, entry)),
     cleanup() { fs.rmSync(stageRoot, { recursive: true, force: true }); },

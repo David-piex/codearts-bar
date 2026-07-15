@@ -4,7 +4,7 @@ const engine = require('./aggregation-engine');
 const usageRollup = require('./usage-rollup');
 const { aggregateCacheStats } = require('./aggregate-cache');
 const { aggregateError, slowAggregateStats, resetSlowAggregateStats, maybeLogSlowAggregate } = require('./aggregation-runtime');
-const { runSqlJsWorker, clearSqlJsWorkerCaches, closeSqlJsWorker, sqlJsWorkerStats } = require('./sqljs-worker-pool');
+const { runSqlJsWorker, warmupSqlJsWorker, clearSqlJsWorkerCaches, closeSqlJsWorker, sqlJsWorkerStats } = require('./sqljs-worker-pool');
 
 async function workerAggregate(operation, label, payload = {}) {
   const startedAt = performance.now();
@@ -73,9 +73,11 @@ module.exports = {
   getDatabaseHealthSqlJs,
   aggregateCacheStats,
   usageRollupStats: usageRollup.usageRollupStats,
+  setUsageRollupBuildListener: usageRollup.setUsageRollupBuildListener,
   slowAggregateStats,
   resetSlowAggregateStats,
   sqlJsWorkerStats,
+  warmupSqlJsWorker,
   clearSqlJsWorkerCaches,
   closeSqlJsWorker,
 };

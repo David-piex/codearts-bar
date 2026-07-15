@@ -17,6 +17,8 @@ const stats = {
   completed: 0,
   failed: 0,
   timedOut: 0,
+  warmups: 0,
+  warmupCompleted: 0,
   inFlight: 0,
   lastError: null,
 };
@@ -128,8 +130,15 @@ function clearSqlJsWorkerCaches() {
   return runSqlJsWorker('__clearAggregateCache', {}, { timeoutMs: 10000 });
 }
 
+async function warmupSqlJsWorker(options = {}) {
+  stats.warmups += 1;
+  const result = await runSqlJsWorker('__warmup', {}, { timeoutMs: Math.max(1000, Number(options.timeoutMs || 30000)) });
+  stats.warmupCompleted += 1;
+  return result;
+}
+
 function sqlJsWorkerStats() {
   return { ...stats, inFlight: pending.size, running: Boolean(worker), generation };
 }
 
-module.exports = { runSqlJsWorker, clearSqlJsWorkerCaches, closeSqlJsWorker, sqlJsWorkerStats };
+module.exports = { runSqlJsWorker, warmupSqlJsWorker, clearSqlJsWorkerCaches, closeSqlJsWorker, sqlJsWorkerStats };

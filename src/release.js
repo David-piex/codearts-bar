@@ -196,7 +196,10 @@ function buildRelease(options = {}) {
     });
 
     fs.rmSync(jetbrainsArtifact, { force: true });
-    runNode(path.join(root, 'src', 'run-jetbrains-gradle.js'), ['clean', 'test', 'verifyPlugin', 'buildPlugin'], { env: releaseEnv });
+    const jetbrainsTasks = process.env.CODEARTS_BAR_SKIP_JETBRAINS_VERIFY === '1'
+      ? ['--offline', '--no-daemon', '--no-configuration-cache', 'clean', 'test', 'buildPlugin']
+      : ['clean', 'test', 'verifyPlugin', 'buildPlugin'];
+    runNode(path.join(root, 'src', 'run-jetbrains-gradle.js'), jetbrainsTasks, { env: releaseEnv });
     runNode(path.join(root, 'tests', 'quality-jetbrains.js'), [], { env: releaseEnv });
     copyRequired(jetbrainsArtifact, path.join(paths.stagingDir, jetbrainsName));
 

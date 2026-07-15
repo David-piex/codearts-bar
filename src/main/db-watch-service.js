@@ -14,7 +14,7 @@ function resolvePollInterval(settings = {}, visible = true) {
   return visible ? visibleMs : hiddenMs;
 }
 
-function createDbWatchService({ fs, loadSettings, localProvider, dashboardWindowVisible, refreshLightAndPush, refreshTraySummaryOnly } = {}) {
+function createDbWatchService({ fs, loadSettings, localProvider, dashboardWindowVisible, refreshLightAndPush, refreshTraySummaryOnly, onDatabaseChange } = {}) {
   let dbWatchers = [];
   let dbRefreshDebounce = null;
   let watchPollTimer = null;
@@ -38,13 +38,21 @@ function createDbWatchService({ fs, loadSettings, localProvider, dashboardWindow
       else refreshTraySummaryOnly?.();
     }, reason === 'poll' ? 450 : 700);
   }
+  function handleDatabaseChange(reason) {
+    const next = targetFingerprint(fs, targets);
+    if (next === watchFingerprint) return false;
+    watchFingerprint = next;
+    try { Promise.resolve(onDatabaseChange?.(reason)).catch((error) => recordBestEffortFailure('db-watch.change', error)); }
+    catch (error) { recordBestEffortFailure('db-watch.change', error); }
+    triggerRefreshSoon(reason);
+    return true;
+  }
   function armPoll() {
     clearPollTimer();
     if (stopped) return;
     const delay = resolvePollInterval(loadSettings?.() || {}, Boolean(dashboardWindowVisible?.()));
     watchPollTimer = setTimeout(() => {
-      const next = targetFingerprint(fs, targets);
-      if (next !== watchFingerprint) { watchFingerprint = next; triggerRefreshSoon('poll'); }
+      handleDatabaseChange('poll');
       armPoll();
     }, delay);
     watchPollTimer.unref?.();
@@ -58,7 +66,7 @@ function createDbWatchService({ fs, loadSettings, localProvider, dashboardWindow
     for (const target of targets) {
       try {
         if (!fs.existsSync(target)) continue;
-        dbWatchers.push(fs.watch(target, { persistent: false }, () => triggerRefreshSoon('fswatch')));
+        dbWatchers.push(fs.watch(target, { persistent: false }, () => handleDatabaseChange('fswatch')));
       } catch (error) {
         recordBestEffortFailure('db-watch.subscribe', error, { targetType: 'database' });
       }

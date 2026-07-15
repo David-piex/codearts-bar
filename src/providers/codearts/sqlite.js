@@ -171,4 +171,4 @@ function closeDb(db) {
   if (cachedSqlJsDbSet.has(db)) return;
   db.close();
 }
-module.exports = { locateSqlJsFile, loadSqlJsFactory, loadNativeSqliteModule, nativeSqliteStatus, sqliteRuntimeStatus, sqliteFileFingerprint, openNativeDbReadonly, openNativeDbWritable, openSqlJsDbReadonly, nativeAll, nativeAllParams, sqlJsAll, sqlJsAllParams, closeDb };
+module.exports = { locateSqlJsFile, loadSqlJsFactory, loadNativeSqliteModule, nativeSqliteStatus, sqliteRuntimeStatus, sqliteFileFingerprint, getSqlJs, openNativeDbReadonly, openNativeDbWritable, openSqlJsDbReadonly, nativeAll, nativeAllParams, sqlJsAll, sqlJsAllParams, closeDb };

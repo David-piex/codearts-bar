@@ -14,6 +14,25 @@ const MANAGED_FILE_PATTERNS = [
 ];
 const MANAGED_DIRECTORIES = new Set(['codearts-bar-cli', 'codearts-bar-cli-standalone']);
 
+function waitSync(ms) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+function renameWithRetry(source, destination, options = {}) {
+  const attempts = Math.max(1, Number(options.attempts || (process.platform === 'win32' ? 20 : 1)));
+  const delayMs = Math.max(0, Number(options.delayMs || 250));
+  let lastError;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try { fs.renameSync(source, destination); return; }
+    catch (error) {
+      lastError = error;
+      if (!['EPERM', 'EBUSY', 'EACCES'].includes(error?.code) || attempt === attempts) throw error;
+      waitSync(delayMs);
+    }
+  }
+  throw lastError;
+}
+
 function isManagedReleaseEntry(name, isDirectory = false) {
   if (isDirectory) return MANAGED_DIRECTORIES.has(name);
   return MANAGED_FILE_PATTERNS.some((pattern) => pattern.test(name));
@@ -44,13 +63,13 @@ function atomicReplaceReleaseDir(stagingDir, releaseDir, options = {}) {
   let movedTarget = false;
   try {
     if (fs.existsSync(target)) {
-      fs.renameSync(target, backup);
+      renameWithRetry(target, backup, options);
       movedTarget = true;
     }
-    fs.renameSync(staging, target);
+    renameWithRetry(staging, target, options);
   } catch (error) {
     if (movedTarget && !fs.existsSync(target) && fs.existsSync(backup)) {
-      try { fs.renameSync(backup, target); } catch (restoreError) { error.restoreError = restoreError; }
+      try { renameWithRetry(backup, target, options); } catch (restoreError) { error.restoreError = restoreError; }
     }
     throw error;
   }
@@ -58,4 +77,4 @@ function atomicReplaceReleaseDir(stagingDir, releaseDir, options = {}) {
   return target;
 }
 
-module.exports = { atomicReplaceReleaseDir, cleanManagedReleaseDir, isManagedReleaseEntry };
+module.exports = { atomicReplaceReleaseDir, cleanManagedReleaseDir, isManagedReleaseEntry, renameWithRetry };

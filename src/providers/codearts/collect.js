@@ -46,15 +46,27 @@ function mergeCollections(collections, adapter = 'mixed', errors = []) {
     throw new Error('没有可读取的 CodeArts 数据源');
   }
   const primary = existing[0];
+  const mergeRows = (key) => {
+    const total = existing.reduce((sum, collection) => sum + (collection[key]?.length || 0), 0);
+    const rows = new Array(total);
+    let index = 0;
+    for (const collection of existing) {
+      for (const row of collection[key] || []) rows[index++] = row;
+    }
+    return rows;
+  };
+  const messages = mergeRows('messages');
+  const sessions = mergeRows('sessions').sort((a, b) => b.time_updated - a.time_updated);
+  const parts = mergeRows('parts').sort((a, b) => a.time_created - b.time_created);
   return {
     adapter,
     dbPath: primary.dbPath,
     stat: primary.stat,
     tables: primary.tables,
     sources: existing.map((x) => ({ id: x.source.id, label: x.source.label, dbPath: x.dbPath, size: x.stat.size, mtimeMs: x.stat.mtimeMs, adapter: x.adapter })),
-    messages: existing.flatMap((x) => x.messages),
-    sessions: existing.flatMap((x) => x.sessions).sort((a, b) => b.time_updated - a.time_updated),
-    parts: existing.flatMap((x) => x.parts).sort((a, b) => a.time_created - b.time_created),
+    messages,
+    sessions,
+    parts,
   };
 }
 function requestRowsFromMessages(messages, sessions, parts) {

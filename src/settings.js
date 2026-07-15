@@ -38,6 +38,7 @@ const defaults = {
   showPerformance: true,
   showTools: true,
   notifyDanger: true,
+  rollupMaintenance: { lastRollupBuildMs: 0, bySource: {} },
 };
 
 function clamp(value, min, max, fallback) {
@@ -67,6 +68,11 @@ function normalizeSettings(file = {}, env = process.env) {
   merged.latencyWarnMs = Math.max(5000, Number.isFinite(Number(merged.latencyWarnMs)) ? Number(merged.latencyWarnMs) : defaults.latencyWarnMs);
   merged.balanceDangerAgeMs = Math.max(60000, Number.isFinite(Number(merged.balanceDangerAgeMs)) ? Number(merged.balanceDangerAgeMs) : defaults.balanceDangerAgeMs);
   merged.balanceWarningAgeMs = Math.max(merged.balanceDangerAgeMs, Number.isFinite(Number(merged.balanceWarningAgeMs)) ? Number(merged.balanceWarningAgeMs) : defaults.balanceWarningAgeMs);
+  const maintenance = merged.rollupMaintenance && typeof merged.rollupMaintenance === 'object' ? merged.rollupMaintenance : {};
+  merged.rollupMaintenance = {
+    lastRollupBuildMs: Math.max(0, Number(maintenance.lastRollupBuildMs) || 0),
+    bySource: maintenance.bySource && typeof maintenance.bySource === 'object' ? { ...maintenance.bySource } : {},
+  };
   return merged;
 }
 function readSettingsFile(file = settingsPath()) {

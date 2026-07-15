@@ -1,7 +1,9 @@
 'use strict';
 
 const crypto = require('node:crypto');
+const fs = require('node:fs');
 const path = require('node:path');
+const { isMainThread } = require('node:worker_threads');
 const nativeSql = require('./aggregation-sql');
 const { readRollupCache, writeRollupCache } = require('./rollup-cache');
 const { recordBestEffortFailure } = require('../../core/best-effort');
@@ -36,6 +38,7 @@ const COMPACT_USAGE_ROLLUP_KIND = 'usage-compact-hourly-v2';
 const SESSION_SUMMARY_ROLLUP_KIND = 'session-summary-v2';
 const HOUR_MS = 60 * 60 * 1000;
 const pendingBuilds = new Map();
+let buildListener = null;
 const normalizedPayloads = new WeakMap();
 const rollupStats = {
   compactHits: 0,
@@ -428,11 +431,24 @@ function scheduleUsageRollupBuild(source, options = {}) {
   }
   const entry = pendingBuildEntry(source, { ...options, adapter });
   const timer = setTimeout(() => {
-    buildAndWriteUsageRollupForSource(source, options)
-      .then(() => {
+    const started = nowMs();
+    const workerFile = path.join(__dirname, 'usage-rollup-worker-pool.js');
+    const workerPool = isMainThread && fs.existsSync(workerFile) ? module.require(workerFile) : null;
+    const useWorker = Boolean(isMainThread && workerPool?.usageRollupWorkerAvailable());
+    const build = useWorker
+      ? workerPool.runUsageRollupWorker(source, { ...options, adapter })
+      : buildAndWriteUsageRollupForSource(source, options);
+    Promise.resolve(build)
+      .then((result) => {
+        if (useWorker) recordRollupBuild(source, { ...options, adapter }, result, nowMs() - started, null);
         rollupStats.buildCompleted += 1;
+        if (isMainThread && buildListener) {
+          try { buildListener({ source, adapter, result, completedAt: Date.now() }); }
+          catch (error) { recordBestEffortFailure('rollup.build-listener', error, { sourceId: source.id }); }
+        }
       })
       .catch((error) => {
+        if (useWorker) recordRollupBuild(source, { ...options, adapter }, null, nowMs() - started, error);
         rollupStats.buildFailed += 1;
         if (process.env.CODEARTS_BAR_DEBUG_ROLLUP === '1') {
           console.warn(`[codearts-bar] usage rollup build failed for ${source.id}: ${safeDbError(error)}`);
@@ -443,6 +459,10 @@ function scheduleUsageRollupBuild(source, options = {}) {
   pendingBuilds.set(key, { ...entry, timer });
   rollupStats.scheduled += 1;
   return { scheduled: true };
+}
+
+function setUsageRollupBuildListener(listener) {
+  buildListener = typeof listener === 'function' ? listener : null;
 }
 
 function usageRollupStats() {
@@ -494,6 +514,7 @@ module.exports = {
   scheduleUsageRollupBuild,
   usageRollupStats,
   resetUsageRollupStats,
+  setUsageRollupBuildListener,
   sessionSummaryPartFromRollup,
   dashboardPartFromCompactRollup,
   dashboardPartFromUsageRollup,

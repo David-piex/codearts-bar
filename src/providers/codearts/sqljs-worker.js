@@ -4,6 +4,7 @@ const { parentPort } = require('node:worker_threads');
 const engine = require('./aggregation-engine');
 const aggregateCache = require('./aggregate-cache');
 const usageRollup = require('./usage-rollup');
+const { getSqlJs } = require('./sqlite');
 
 const operations = {
   summary: engine.getSummarySqlJs,
@@ -16,6 +17,15 @@ const operations = {
 };
 
 parentPort.on('message', async ({ id, operation, payload }) => {
+  if (operation === '__warmup') {
+    try {
+      await getSqlJs();
+      parentPort.postMessage({ id, ok: true, result: { ready: true } });
+    } catch (error) {
+      parentPort.postMessage({ id, ok: false, error: { name: error?.name || 'Error', message: error?.message || String(error), stack: error?.stack || '' } });
+    }
+    return;
+  }
   if (operation === '__clearAggregateCache') {
     aggregateCache.clearAggregateCache();
     usageRollup.resetUsageRollupStats();

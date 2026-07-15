@@ -7,7 +7,7 @@ const root = path.resolve(__dirname, '..');
 const runtime = path.join(root, '.cache', 'app-runtime');
 build();
 function exists(rel) { return fs.existsSync(path.join(runtime, ...rel.split('/'))); }
-for (const rel of ['src/main.js','src/dashboard-renderer.js','src/dashboard-bundle.css','src/vendor/sql.js/sql-wasm.js','src/vendor/sql.js/sql-wasm.wasm','APP_RUNTIME_MANIFEST.json']) assert.equal(exists(rel), true, `app runtime should include ${rel}`);
+for (const rel of ['src/main.js','src/dashboard-renderer.js','src/dashboard-bundle.css','src/providers/codearts/sqljs-worker.js','src/providers/codearts/usage-rollup-worker.js','src/vendor/sql.js/sql-wasm.js','src/vendor/sql.js/sql-wasm.wasm','APP_RUNTIME_MANIFEST.json']) assert.equal(exists(rel), true, `app runtime should include ${rel}`);
 for (const rel of ['src/build-dashboard-renderer.js','src/build-extension.js','src/prepare-extension.js','src/release.js','src/dashboard/renderer-entry.js','src/dashboard.css','node_modules/sql.js/dist/sql-asm-debug.js']) assert.equal(exists(rel), false, `app runtime should exclude ${rel}`);
 const runtimeFiles = [];
 (function walk(dir) { for (const entry of fs.readdirSync(dir, { withFileTypes: true })) { const file=path.join(dir,entry.name); if(entry.isDirectory()) walk(file); else runtimeFiles.push(path.relative(runtime,file).replace(/\\/g,'/')); } })(runtime);

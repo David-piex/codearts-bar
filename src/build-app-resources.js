@@ -37,6 +37,15 @@ function scan(file) {
     const child = resolveLocalRequire(resolved, match[1]);
     if (child) scan(child);
   }
+  const workerRe = /\bpath\.join\(\s*__dirname\s*,\s*['"]([^'"]+\.js)['"]\s*\)/g;
+  while ((match = workerRe.exec(source))) {
+    const workerFile = path.resolve(path.dirname(resolved), match[1]);
+    if (fs.existsSync(workerFile)) scan(workerFile);
+  }
+  if (path.basename(resolved) === 'usage-rollup.js') {
+    const workerPool = path.join(path.dirname(resolved), 'usage-rollup-worker-pool.js');
+    if (fs.existsSync(workerPool)) scan(workerPool);
+  }
 }
 function copy(file, relative = path.relative(root, file)) {
   const dest = path.join(outDir, relative);

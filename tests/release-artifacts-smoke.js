@@ -57,7 +57,7 @@ try {
       return originalRename(source, target);
     };
     try {
-      assert.throws(() => atomicReplaceReleaseDir(rollbackStaging, release, { backupDir: occupiedBackup }), /simulated publish failure/);
+      assert.throws(() => atomicReplaceReleaseDir(rollbackStaging, release, { backupDir: occupiedBackup, attempts: 1 }), /simulated publish failure/);
     } finally { fs.renameSync = originalRename; }
     assert.equal(fs.readFileSync(path.join(release, 'new.txt'), 'utf8'), 'new', 'failed publish must restore the previous release');
     assert.equal(fs.existsSync(rollbackStaging), true, 'failed staging must remain available to the caller until cleanup');
