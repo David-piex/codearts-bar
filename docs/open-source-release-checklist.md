@@ -1,6 +1,6 @@
 # CodeArts Bar 开源发布检查清单
 
-最后更新：2026-07-10  
+最后更新：2026-07-16
 定位：本地开源开发者工具，类似 CodexBar。优先保障本地体验、性能、诊断、可维护和可发布；商业化能力后置。
 
 ---
@@ -12,7 +12,8 @@
 - 最大化 / resize 不明显卡顿。
 - 桌面端 / CLI source 切换只局部刷新。
 - 日期筛选输入不闪、不丢焦点，错误范围不触发 DB 查询。
-- Request / Session 分页支持 `20 / 50 / 100`、跳页、越界修正、空页回退。
+- Request / Session 分页支持 `10 / 20 / 50 / 100`、指定页码跳转、范围摘要、越界修正和空页回退。
+- VS Code / JetBrains 会话复选框、选择本页、清空和跨页选择行为一致，跨数据源 ID 不冲突。
 - 图表 hover / tooltip 不触发整页更新。
 - 会话点击只刷新右侧详情。
 
@@ -68,6 +69,9 @@ npm run stress:aggregation:full
 release/CodeArts-Bar-Setup-<version>-x64.exe
 release/CodeArts-Bar-Portable-<version>-x64.exe
 release/codearts-bar-cli.zip
+release/codearts-bar-cli-standalone.zip
+release/codearts-bar-<version>.tgz
+release/codearts-bar-jetbrains-<version>.zip
 release/codearts-bar-status.vsix
 release/latest.json
 release/SHA256SUMS.txt
@@ -78,9 +82,18 @@ release/RELEASE_NOTES.md
 
 ```powershell
 npm run build:app
+npm run e2e:vscode
+npm run verify:jetbrains
+npm run test:libreoffice
 npm run smoke:release
 npm run smoke:package-resources
 ```
+
+发布编排还需验证：
+
+- Windows 发布目录被索引器或杀毒软件短暂占用时，原子重命名会重试并最终成功或安全回滚。
+- Desktop、VS Code 和 JetBrains 的批量 Excel/Markdown/JSON 导出使用同一隐私选项和结构。
+- 内置子任务不会进入单会话或批量导出文件。
 
 ### 1.5 README 和用户引导
 
@@ -121,8 +134,11 @@ README 需要写清楚：
 ```powershell
 npm test
 npm run e2e:electron
+npm run e2e:vscode
+npm run verify:jetbrains
 npm run stress:pagination
 npm run stress:aggregation
+npm run test:libreoffice
 npm run smoke:release
 npm run smoke:package-resources
 git diff --check
