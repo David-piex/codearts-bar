@@ -74,8 +74,8 @@ const snapshot = {
   },
   queue: { window: {}, trends: { hourly24h: [] } },
   requestLog: [
-    { id: "r1", sessionId: "s1", sessionTitle: "Build landing", source: "desktop", sourceLabel: "\u684c\u9762\u7aef", provider: "p", model: "m1", time: now - 3600000, input: 500, output: 300, cacheRead: 1000, cacheWrite: 200, total: 2000, ok: true, status: "200", latencyMs: 1200, ttftMs: 300, firstContentMs: 350, outputTokensPerSec: 12 },
-    { id: "r2", sessionId: "s2", sessionTitle: "Audit cache", source: "cli", sourceLabel: "CLI", provider: "p", model: "m2", time: now - 7200000, input: 700, output: 600, cacheRead: 100, cacheWrite: 300, total: 2200, ok: true, status: "200", latencyMs: 1800, ttftMs: 450, firstContentMs: 500, outputTokensPerSec: 9 },
+    { id: "r1", sessionId: "s1", sessionTitle: "Build landing", directory: "C:/work/alpha", source: "desktop", sourceLabel: "\u684c\u9762\u7aef", provider: "p", model: "m1", time: now - 3600000, input: 500, output: 300, cacheRead: 1000, cacheWrite: 200, total: 2000, ok: true, status: "200", latencyMs: 1200, ttftMs: 300, firstContentMs: 350, outputTokensPerSec: 12 },
+    { id: "r2", sessionId: "s2", sessionTitle: "Audit cache", directory: "C:/work/beta", source: "cli", sourceLabel: "CLI", provider: "p", model: "m2", time: now - 7200000, input: 700, output: 600, cacheRead: 100, cacheWrite: 300, total: 2200, ok: true, status: "200", latencyMs: 1800, ttftMs: 450, firstContentMs: 500, outputTokensPerSec: 9 },
   ],
   sessions: [
     { id: "s1", title: "Build landing", directory: "C:/work/alpha", version: "1", createdAt: now - 9000000, updatedAt: now - 1000000, archivedAt: null, archived: false, source: "desktop", sourceLabel: "\u684c\u9762\u7aef", dbPath: "db", usage: { total: 2000, input: 500, output: 300, cacheRead: 1000, cacheWrite: 200, userTurns: 3, modelCalls: 2, models: [{ provider: "p", model: "m1", calls: 2, total: 2000, input: 500, output: 300, cacheRead: 1000, cacheWrite: 200 }], topModel: { provider: "p", model: "m1" } } },
@@ -152,6 +152,16 @@ async function main() {
   if(!html) console.error("empty renderer html", calls);
   assert.match(html, /workspace-tabs/);
   assert.match(html, /analytics-page-head/);
+  assert.match(html, /data-select="project"/);
+  assert.match(html, /C:\/work\/alpha/);
+  assert.match(fs.readFileSync(path.join(__dirname, "..", "src", "dashboard", "slots", "data-page-core.js"), "utf8"), /overflowAnchor = 'none'[\s\S]*setTimeout\(\(\) =>/);
+  vm.runInContext(`
+    analyticsProjectFilter = 'C:/work/alpha';
+    snapshot.requestPage = { items: snapshot.requestLog, payload: { source: 'all', model: 'all', project: 'C:/work/beta', query: '', limit: REQUEST_PAGE_SIZE, offset: 0, range: currentPageRangePayload() } };
+    globalThis.__projectPageMatches = requestPageMatchesTable(snapshot);
+  `, context);
+  assert.equal(context.__projectPageMatches, false, 'request page cache must include the analytics project scope');
+  vm.runInContext(`analyticsProjectFilter = 'all';`, context);
   assert.equal(storage.getItem("workspaceMode"), "analytics", "dashboard should start in analytics even when the previous workspace was sessions");
   await listeners.click({
     target: {

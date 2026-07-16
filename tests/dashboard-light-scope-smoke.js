@@ -29,16 +29,25 @@ async function main(){
     usageScopeKeyForPayload({ rangeKey: 'customTime', start: oldStart + 1, endExclusive: oldEnd }),
     'custom range bounds must be part of the scope identity'
   );
+  assert.notEqual(
+    usageScopeKeyForPayload({ source: 'all', model: 'all', project: 'C:/one' }),
+    usageScopeKeyForPayload({ source: 'all', model: 'all', project: 'C:/two' }),
+    'project filters must be part of the scope identity'
+  );
   const splitSearchPayload = { query: 'request-only', sessionQuery: '' };
   assert.equal(defaultRequestPagePayload(splitSearchPayload).query, 'request-only');
+  assert.equal(defaultRequestPagePayload({ project: 'C:/one' }).project, 'C:/one');
+  assert.equal(matchesPageFilters({ model: 'gpt-5', directory: 'C:/one' }, { model: 'gpt-5', project: 'C:/one' }), true);
+  assert.equal(matchesPageFilters({ model: 'gpt-5', directory: 'C:/two' }, { model: 'gpt-5', project: 'C:/one' }), false);
+  assert.equal(matchesPageFilters({ model: 'gpt-5' }, { model: 'gpt-5', project: '__none' }), true);
   assert.equal(defaultSessionPagePayload(splitSearchPayload).query, '', 'analytics query must not filter session pagination');
   assert.equal(defaultSessionPagePayload({ ...splitSearchPayload, sessionQuery: 'session-only' }).query, 'session-only');
 
   const canonical = {
     ok: true,
     timestamp: oldEnd + 86400000,
-    usageScope: { source: 'all', model: 'all', rangeKey: '', start: 0, endExclusive: 0 },
-    queryScope: { source: 'all', model: 'all', rangeKey: '', start: 0, endExclusive: 0 },
+    usageScope: { source: 'all', model: 'all', project: 'all', rangeKey: '', start: 0, endExclusive: 0 },
+    queryScope: { source: 'all', model: 'all', project: 'all', rangeKey: '', start: 0, endExclusive: 0 },
     usage: { today: { total: 8800 }, window: { total: 9900 }, week: { total: 12000 }, all: { total: 30000 } },
     config: { dailyLimit: 10000, windowHours: 24 },
   };
@@ -84,10 +93,10 @@ async function main(){
       assert.equal(snap.usage.all.total, 15272301);
       assert.equal(snap.summaryOnly, false);
       assert.equal(snap.summaryFilter, null);
-      assert.deepEqual(snap.queryScope, { source: 'all', model: 'all', rangeKey: '', start: 0, end: 0, endExclusive: 0 });
-      assert.deepEqual(snap.usageScope, { source: 'all', model: 'all', rangeKey: '', start: 0, end: 0, endExclusive: 0 });
-      assert.deepEqual(snap.sourceStatsScope, { source: 'all', model: 'all', rangeKey: '', start: 0, end: 0, endExclusive: 0, complete: true });
-      assert.deepEqual(snap.modelsScope, { source: 'all', model: 'all', rangeKey: '', start: 0, end: 0, endExclusive: 0, complete: true });
+      assert.deepEqual(snap.queryScope, { source: 'all', model: 'all', project: 'all', rangeKey: '', start: 0, end: 0, endExclusive: 0 });
+      assert.deepEqual(snap.usageScope, { source: 'all', model: 'all', project: 'all', rangeKey: '', start: 0, end: 0, endExclusive: 0 });
+      assert.deepEqual(snap.sourceStatsScope, { source: 'all', model: 'all', project: 'all', rangeKey: '', start: 0, end: 0, endExclusive: 0, complete: true });
+      assert.deepEqual(snap.modelsScope, { source: 'all', model: 'all', project: 'all', rangeKey: '', start: 0, end: 0, endExclusive: 0, complete: true });
     }
   } finally {
     Object.assign(localProvider, originals);

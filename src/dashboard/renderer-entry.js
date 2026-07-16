@@ -56,6 +56,7 @@ let dashboardScopeTimestamp = rendererNow();
 let lastRealtimeSnapshotTimestamp = 0;
 let sourceFilter = localStorage.getItem('statsSource') || 'all';
 let modelFilter = localStorage.getItem('statsModel') || 'all';
+let analyticsProjectFilter = localStorage.getItem('statsProject') || 'all';
 let rangeFilter = localStorage.getItem('statsRange') || 'today';
 let customRangeDays = Math.max(2, Math.min(365, Number(localStorage.getItem('customRangeDays') || '60') || 60));
 let customDateStart = Number(localStorage.getItem('customDateStart') || 0) || (rendererNow() - 86400000);
@@ -338,6 +339,10 @@ function renderImmediate(s, opts = {}){
   if(sourceFilter !== 'all' && !sourceOpts.some((x) => x[0] === sourceFilter)) sourceFilter = 'all';
   const needsRequestScope = layoutMode === 'compact' || workspaceMode === 'analytics';
   if(needsRequestScope && modelFilter !== 'all' && !modelOptions(s).includes(modelFilter)) modelFilter = 'all';
+  if(needsRequestScope && analyticsProjectFilter !== 'all' && !analyticsProjectOptions(s).some((item) => item.key === analyticsProjectFilter)){
+    analyticsProjectFilter = 'all';
+    localStorage.setItem('statsProject', analyticsProjectFilter);
+  }
   const rowsForRender = () => {
     const filterStartedAt = perfNow();
     const list = getFilteredRowsForView(s);

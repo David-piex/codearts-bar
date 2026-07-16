@@ -335,15 +335,6 @@
     if (event.target.closest("#requestPrevious") && requestPage > 1) { requestPage -= 1; requestRequestsPage(); }
     if (event.target.closest("#requestNext") && requestPage < Number(requestPageData.pageCount || 1)) { requestPage += 1; requestRequestsPage(); }
     if (event.target.closest("#requestJump")) jumpPage("request");
-    const exportButton = event.target.closest("[data-session-export]");
-    if (exportButton) {
-      const row = exportButton.closest("[data-session-id]");
-      const session = sourceItem(sessionPageData.items, row?.dataset.sessionId, row?.dataset.sessionSource);
-      if (session) {
-        element("#sessionExportState").textContent = "正在导出会话...";
-        vscode.postMessage({ type: "exportSession", session, format: exportButton.dataset.sessionExport });
-      }
-    }
     const requestRow = event.target.closest("[data-request-id]");
     if (requestRow) {
       selectedRequestId = requestRow.dataset.requestId || "";

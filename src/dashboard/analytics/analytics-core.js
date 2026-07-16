@@ -13,7 +13,7 @@ function sourceDisplayLabel(k, fallback){ if(k === 'desktop') return TXT.desktop
 function memoForSnapshot(s){
   if(!s || typeof s !== 'object') return { filters: new Map(), sums: new WeakMap(), groups: new Map(), hourly: new Map() };
   let memo = analyticsMemo.get(s);
-  if(!memo){ memo = { filters: new Map(), sums: new WeakMap(), groups: new Map(), hourly: new Map(), chartBuckets: new Map(), sourceOptions: null, modelOptions: null }; analyticsMemo.set(s, memo); }
+  if(!memo){ memo = { filters: new Map(), sums: new WeakMap(), groups: new Map(), hourly: new Map(), chartBuckets: new Map(), sourceOptions: null, modelOptions: null, projectOptions: null }; analyticsMemo.set(s, memo); }
   return memo;
 }
 
@@ -40,6 +40,7 @@ function analyticsAggregateReady(s){
   return Boolean(s.sourceStatsScope?.complete)
     && sourceFilter === 'all'
     && modelFilter === 'all'
+    && analyticsProjectFilter === 'all'
     && rangeFilter === 'all';
 }
 function normalizeUsageMetric(st = {}){
@@ -59,13 +60,13 @@ function normalizeUsageMetric(st = {}){
     speeds: Array.isArray(st.speeds) ? st.speeds : [],
   };
 }
-function filterCacheKey(s, range, source, model, since, until){ return `${rowsDataSignature(s)}|${range || 'all'}|${source || 'all'}|${model || 'all'}|${since || 0}|${until || 0}|${customDateStart || 0}|${customDateEnd || 0}`; }
+function filterCacheKey(s, range, source, model, project, since, until){ return `${rowsDataSignature(s)}|${range || 'all'}|${source || 'all'}|${model || 'all'}|${project || 'all'}|${since || 0}|${until || 0}|${customDateStart || 0}|${customDateEnd || 0}`; }
 function filteredRowsViewKey(s){
   const range = normalizeRangeFilter(rangeFilter);
   const since = sinceForRange(s, range);
   const until = untilForRange(s, range);
   const view = typeof viewModeKey === 'function' ? viewModeKey() : `${layoutMode || 'dashboard'}:${workspaceMode || 'analytics'}`;
-  return `${view}|${filterCacheKey(s, range, sourceFilter, modelFilter, since, until)}|query:${analyticsQuery || ''}`;
+  return `${view}|${filterCacheKey(s, range, sourceFilter, modelFilter, analyticsProjectFilter, since, until)}|query:${analyticsQuery || ''}`;
 }
 function getFilteredRowsForView(s){
   const key = filteredRowsViewKey(s);
@@ -115,14 +116,45 @@ function modelOptions(s){
   return memo.modelOptions;
 }
 
+function analyticsProjectOptions(s){
+  const memo = memoForSnapshot(s);
+  if(memo.projectOptions) return memo.projectOptions;
+  const map = new Map();
+  const add = (item = {}) => {
+    const directory = String(item.directory || item.key || item.id || '').trim();
+    const key = directory || '__none';
+    const normalized = directory.replace(/\\/g, '/').replace(/\/+$/g, '');
+    const parts = normalized.split('/').filter(Boolean);
+    const label = item.label || (key === '__none' ? TXT.noProject : parts.at(-1) || directory);
+    const previous = map.get(key) || { key, label, count: 0 };
+    previous.count = Math.max(previous.count, Number(item.count || item.active || 0));
+    map.set(key, previous);
+  };
+  for(const item of s?.filterProjects || []) add(item);
+  for(const item of s?.sessionSummary?.projects || []) add(item);
+  if(!map.size) for(const item of s?.sessions || []) add({ directory: item?.directory || '', count: 1 });
+  memo.projectOptions = [...map.values()]
+    .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label, 'zh-CN'))
+    .slice(0, 100);
+  return memo.projectOptions;
+}
+
+function requestProjectKey(row){
+  const directory = String(row?.directory || '').trim();
+  if(directory) return directory;
+  const session = (snapshot?.sessions || []).find((item) => sourceKey(item) === sourceKey(row) && String(item.id || '') === String(row?.sessionId || ''));
+  return session?.directory ? String(session.directory) : '__none';
+}
+
 function filterRows(s, opts = {}){
   const range = opts.range ?? rangeFilter;
   const source = opts.source ?? sourceFilter;
   const model = opts.model ?? modelFilter;
+  const project = opts.project ?? analyticsProjectFilter;
   const since = sinceForRange(s, range);
   const until = untilForRange(s, range);
   const memo = memoForSnapshot(s);
-  const key = filterCacheKey(s, range, source, model, since, until);
+  const key = filterCacheKey(s, range, source, model, project, since, until);
   if(memo.filters.has(key)) return memo.filters.get(key);
   const rows = (s.requestLog || []).filter((r) => {
     const time = Number(r.time || 0);
@@ -130,6 +162,7 @@ function filterRows(s, opts = {}){
     if(until && time >= until) return false;
     if(source !== 'all' && sourceKey(r) !== source) return false;
     if(model !== 'all' && r.model !== model) return false;
+    if(project !== 'all' && requestProjectKey(r) !== project) return false;
     return true;
   });
   memo.filters.set(key, rows);
@@ -189,6 +222,7 @@ function summaryOnlyUsageForView(s){
   const end = untilForRange(s) || rangeMinute(Number(s?.timestamp || Date.now()));
   if(String(filter.source || 'all') !== String(sourceFilter || 'all')) return null;
   if(String(filter.model || 'all') !== String(modelFilter || 'all')) return null;
+  if(String(filter.project || 'all') !== String(analyticsProjectFilter || 'all')) return null;
   if(String(filter.rangeKey || '') !== currentRangeKey) return null;
   const filterEnd = Number(filter.endExclusive ?? filter.end ?? 0);
   if(Number(filter.start || 0) !== Number(start || 0) || filterEnd !== Number(end || 0)) return null;
@@ -218,7 +252,7 @@ function summaryUsageForView(rows, s){
   if(aggregate) return aggregate;
   const progressive = summaryOnlyUsageForView(s);
   if(progressive) return progressive;
-  if(sourceFilter === 'all' && modelFilter === 'all'){
+  if(sourceFilter === 'all' && modelFilter === 'all' && analyticsProjectFilter === 'all'){
     if(rangeFilter === 'today') return normalizeUsageMetric(exactUsageFromSnapshot(s, 'today'));
     if(rangeFilter === '1d') return normalizeUsageMetric(exactUsageFromSnapshot(s, 'window'));
     if(rangeFilter === '7d') return normalizeUsageMetric(exactUsageFromSnapshot(s, 'week'));
@@ -235,7 +269,7 @@ function groupBy(rows, fn){ const map = new Map(); for(const r of rows){ const k
 function exactUsageFromSnapshot(s, key){ const u = s.usage || {}; if(key === 'today') return u.today || {}; if(key === 'window') return u.window || {}; if(key === 'week') return u.week || {}; return u.all || {}; }
 
 function periodTotal(s, key){
-  if(sourceFilter === 'all' && modelFilter === 'all') return exactUsageFromSnapshot(s, key);
+  if(sourceFilter === 'all' && modelFilter === 'all' && analyticsProjectFilter === 'all') return exactUsageFromSnapshot(s, key);
   if(!requestRowsAreComplete(s)) return { unavailable: true };
   const range = key === 'today' ? 'today' : key === 'window' ? '1d' : key === 'week' ? '7d' : 'all';
   return sumReq(filterRows(s, { range }));

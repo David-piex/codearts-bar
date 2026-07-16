@@ -88,6 +88,7 @@ function requestRowsFromMessages(messages, sessions, parts) {
         id: row.id,
         sessionId: row.session_id,
         sessionTitle: session.title || '(无标题)',
+        directory: session.directory || '',
         source: row.source || 'unknown',
         sourceLabel: row.sourceLabel || row.source || 'unknown',
         provider: data.providerID || data.model?.providerID || perf.provider || 'unknown',

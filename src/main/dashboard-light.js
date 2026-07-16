@@ -19,6 +19,7 @@ function isCanonicalSnapshotScope(snapshot = {}) {
   if (!scope) return false;
   return String(scope.source || 'all') === 'all'
     && String(scope.model || 'all') === 'all'
+    && String(scope.project || 'all') === 'all'
     && String(scope.rangeKey || '') === ''
     && Number(scope.start || 0) === 0
     && Number(scope.endExclusive ?? scope.end ?? 0) === 0;
@@ -99,7 +100,7 @@ function trendScopeKeyForPayload(payload = {}, bucketMs = 3600000) {
   const startRaw = Number(payload.start ?? range.start ?? 0) || 0;
   const endRaw = Number(payload.endExclusive ?? payload.end ?? range.endExclusive ?? range.end ?? payload.timestamp ?? Date.now()) || 0;
   const safeBucketMs = Math.max(1, Number(bucketMs || payload.bucketMs || 3600000));
-  return `${payload.source || 'all'}|${payload.model || 'all'}|${safeBucketMs}|${startRaw}|${endRaw}`;
+  return `${payload.source || 'all'}|${payload.model || 'all'}|${payload.project || 'all'}|${safeBucketMs}|${startRaw}|${endRaw}`;
 }
 
 function usageScopeForPayload(payload = {}) {
@@ -108,6 +109,7 @@ function usageScopeForPayload(payload = {}) {
   return {
     source: payload.source || 'all',
     model: payload.model || 'all',
+    project: payload.project || 'all',
     rangeKey: payload.rangeKey || '',
     start: Number(payload.start ?? range.start ?? 0) || 0,
     end: endExclusive,
@@ -120,6 +122,7 @@ function usageScopeKeyForPayload(payload = {}) {
   return JSON.stringify({
     source: scope.source,
     model: scope.model,
+    project: scope.project,
     rangeKey: scope.rangeKey,
     start: scope.start,
     endExclusive: scope.endExclusive,
@@ -130,6 +133,7 @@ function isCanonicalDashboardPayload(payload = {}) {
   const scope = usageScopeForPayload(payload);
   return scope.source === 'all'
     && scope.model === 'all'
+    && scope.project === 'all'
     && !scope.rangeKey
     && scope.start === 0
     && scope.endExclusive === 0;
@@ -140,6 +144,7 @@ function usageScopeMatchesPayload(scope, payload = {}) {
   const expected = usageScopeForPayload(payload);
   return String(scope.source || 'all') === String(expected.source || 'all')
     && String(scope.model || 'all') === String(expected.model || 'all')
+    && String(scope.project || 'all') === String(expected.project || 'all')
     && String(scope.rangeKey || '') === String(expected.rangeKey || '')
     && Number(scope.start || 0) === Number(expected.start || 0)
     && Number(scope.endExclusive ?? scope.end ?? 0) === Number(expected.endExclusive || 0);
@@ -171,6 +176,12 @@ function normalizePageRange(range = {}) {
 function matchesPageFilters(item, payload = {}) {
   if (!item) return false;
   if (payload.source && payload.source !== 'all' && String(item.source || '') !== String(payload.source)) return false;
+  if (payload.model && payload.model !== 'all' && String(item.model || '') !== String(payload.model)) return false;
+  if (payload.project && payload.project !== 'all') {
+    const directory = String(item.directory || '').trim();
+    const project = directory || '__none';
+    if (project !== String(payload.project)) return false;
+  }
   const { start, endExclusive } = normalizePageRange(payload.range);
   const time = Number(item.time || item.updatedAt || item.createdAt || 0);
   if (start && time && time < start) return false;
@@ -199,6 +210,7 @@ function defaultRequestPagePayload(payload = {}) {
     offset: 0,
     source: payload.source || 'all',
     model: payload.model || 'all',
+    project: payload.project || 'all',
     range: payload.range || {},
     query: payload.query || '',
   };
@@ -276,6 +288,11 @@ function makeLightSnapshotFromAggregates(aggregates = {}, payload = {}, options 
     usageScope: aggregateUsageScope,
     status: usageStatusFromSummary(usage, settings),
     models: Array.isArray(aggregates.modelStats) ? aggregates.modelStats : [],
+    filterProjects: Array.isArray(options.canonicalSnapshot?.filterProjects)
+      ? options.canonicalSnapshot.filterProjects
+      : Array.isArray(options.canonicalSnapshot?.sessionSummary?.projects)
+        ? options.canonicalSnapshot.sessionSummary.projects
+        : Array.isArray(aggregates.sessionSummary?.projects) ? aggregates.sessionSummary.projects : [],
     modelsScope: { ...aggregateUsageScope, complete: true },
     sourceStats: Array.isArray(aggregates.sourceStats) ? aggregates.sourceStats : [],
     sourceStatsScope: { ...aggregateUsageScope, complete: true },
@@ -369,6 +386,13 @@ async function buildDashboardLightPair(fullBase, payload = {}, canonicalSnapshot
     updatedAt: lightUpdatedAt(timestamp),
     freshness: { stale: false, source: 'light', ageMs: 0 },
   };
+  fullSnap.filterProjects = Array.isArray(fullBase.filterProjects)
+    ? fullBase.filterProjects
+    : Array.isArray(canonicalSnapshot?.filterProjects)
+      ? canonicalSnapshot.filterProjects
+      : Array.isArray(canonicalSnapshot?.sessionSummary?.projects)
+        ? canonicalSnapshot.sessionSummary.projects
+        : Array.isArray(fullBase.sessionSummary?.projects) ? fullBase.sessionSummary.projects : [];
   if (aggregates?.ok && aggregates.usage && !preserveCompleteAggregate) {
     fullSnap.usage = aggregates.usage;
     fullSnap.usageScope = usageScopeForPayload(basePayload);

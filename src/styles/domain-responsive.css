@@ -1245,6 +1245,7 @@ body:not(.view-switching) .content:not(.view-switching) .table-tabs button { tra
       .page-head:not(.session-filter-head) .source-switch-btn span:last-child { white-space:nowrap; }
       .page-head:not(.session-filter-head) .select-source select { min-width:94px; max-width:104px; }
       .page-head:not(.session-filter-head) .select-model select { min-width:112px; max-width:132px; }
+      .page-head:not(.session-filter-head) .select-project select { min-width:112px; max-width:132px; }
       .page-head:not(.session-filter-head) .select-refresh select { min-width:54px; max-width:60px; }
       .page-head:not(.session-filter-head) .date-range-control {
         min-width:258px;

@@ -316,21 +316,19 @@
 .session-toolbar .menu-control { width:180px; flex:0 0 auto; }
 .session-toolbar input { flex:1; min-width:0; height:32px; padding:0 10px; border:1px solid var(--line); border-radius:6px; color:var(--text); background:var(--surface-solid); outline:none; }
 .session-toolbar input:focus { border-color:var(--accent); box-shadow:0 0 0 2px var(--accent-soft); }
-.session-toolbar button,.database-pager button,.session-export-actions button,.session-bulk-toolbar button { min-height:28px; border:1px solid var(--line); border-radius:6px; color:var(--text); background:var(--surface-solid); }
+.session-toolbar button,.database-pager button,.session-bulk-toolbar button { min-height:28px; border:1px solid var(--line); border-radius:6px; color:var(--text); background:var(--surface-solid); }
 .session-bulk-toolbar { display:grid; grid-template-columns:auto auto auto 1fr auto auto auto; align-items:center; gap:6px; min-height:36px; margin-bottom:8px; padding:4px 6px; border:1px solid var(--line); border-radius:6px; background:var(--surface-muted); }
 .session-bulk-toolbar label { display:flex; align-items:center; gap:6px; color:var(--muted); }
 .session-bulk-toolbar strong { color:var(--text); font-size:11px; white-space:nowrap; }
 .session-bulk-toolbar button { padding:0 8px; color:var(--accent); font-size:10px; font-weight:700; }
 .session-bulk-toolbar button:disabled { color:var(--muted); opacity:.5; cursor:default; }
-.session-row { grid-template-columns:24px minmax(0,1fr) auto auto auto; }
+.session-row { grid-template-columns:24px minmax(0,1fr) auto auto; }
 .session-check { width:24px; height:32px; display:grid; place-items:center; cursor:pointer; }
 .session-check input { position:absolute; opacity:0; pointer-events:none; }
 .session-check span { width:14px; height:14px; border:1px solid var(--line-strong); border-radius:3px; background:var(--surface-solid); position:relative; }
 .session-check input:checked + span { border-color:var(--accent); background:var(--accent); }
 .session-check input:checked + span::after { content:""; position:absolute; left:3px; top:2px; width:6px; height:3px; border:solid white; border-width:0 0 1.5px 1.5px; transform:rotate(-45deg); }
 .session-check input:focus-visible + span { box-shadow:0 0 0 2px var(--accent-soft); }
-.session-export-actions { display:flex; gap:4px; }
-.session-export-actions button { min-width:38px; padding:0 6px; color:var(--accent); font-size:9px; font-weight:700; }
 .database-pager { display:flex; align-items:center; justify-content:flex-end; flex-wrap:wrap; gap:7px; margin-top:10px; color:var(--muted); font-size:11px; }
 .database-pager > span { margin-right:auto; font-variant-numeric:tabular-nums; }
 .database-pager label { display:flex; align-items:center; gap:5px; white-space:nowrap; }

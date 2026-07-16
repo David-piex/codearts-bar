@@ -7,6 +7,7 @@ try {
   localStorage.setItem("statsSource", "all");
   localStorage.setItem("statsRange", "all");
   localStorage.setItem("statsModel", "all");
+  localStorage.setItem("statsProject", "all");
   localStorage.setItem("layoutMode", "dashboard");
   localStorage.setItem("uiZoom", "1");
   localStorage.setItem("chartSeries", "total,input,output,cacheRead");

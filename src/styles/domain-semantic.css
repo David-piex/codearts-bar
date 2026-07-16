@@ -274,6 +274,7 @@ body.view-switching :where(button, .icon-chip, .range button, .series-chip, .tab
   font-weight:780;
 }
 .analytics-page-head .select-model { width:156px; }
+.analytics-page-head .select-project { width:156px; }
 .analytics-page-head .select-refresh,
 .session-filter-head .select-refresh {
   width:92px;
@@ -326,6 +327,7 @@ body.view-switching :where(button, .icon-chip, .range button, .series-chip, .tab
 
 @media (max-width:760px) {
   .analytics-page-head .select-model { width:140px; }
+  .analytics-page-head .select-project { width:140px; }
   .analytics-page-head .date-range-control { width:278px; min-width:278px; }
 }
 

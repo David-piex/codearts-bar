@@ -1,6 +1,6 @@
 function compactHourlyBuckets(s){
   const memo = memoForSnapshot(s);
-  const cacheKey = `${sourceFilter}|${modelFilter}|${Number(s?.timestamp || 0)}|${rangeFilter}|${customDateStart}|${customDateEnd}`;
+  const cacheKey = `${sourceFilter}|${modelFilter}|${analyticsProjectFilter}|${Number(s?.timestamp || 0)}|${rangeFilter}|${customDateStart}|${customDateEnd}`;
   if(memo.hourly.has(cacheKey)) return memo.hourly.get(cacheKey);
   const now = Number(s?.timestamp || Date.now());
   const bucketMs = 3600000;

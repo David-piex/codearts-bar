@@ -46,6 +46,7 @@ function dashboardPayloadScopeKey(payload = {}){
   return JSON.stringify({
     source: String(payload.source || 'all'),
     model: String(payload.model || 'all'),
+    project: String(payload.project || 'all'),
     rangeKey: String(payload.rangeKey || ''),
     start: Number(payload.start ?? range.start ?? 0) || 0,
     endExclusive,
@@ -107,6 +108,7 @@ function usageScopeMatchesPayload(scope, payload){
   const range = payload.range || {};
   if(String(scope.source || 'all') !== String(payload.source || 'all')) return false;
   if(String(scope.model || 'all') !== String(payload.model || 'all')) return false;
+  if(String(scope.project || 'all') !== String(payload.project || 'all')) return false;
   if(String(scope.rangeKey || '') !== String(payload.rangeKey || '')) return false;
   const expectedStart = Number(payload.start ?? range.start ?? 0) || 0;
   const expectedEnd = Number(payload.endExclusive ?? payload.end ?? range.endExclusive ?? range.end ?? 0) || 0;
@@ -251,6 +253,7 @@ function aggregatePayloadForView(s, extra = {}){
   return {
     source: sourceFilter,
     model: modelFilter,
+    project: analyticsProjectFilter,
     rangeKey: normalizeRangeFilter(rangeFilter),
     range: { start, end: endExclusive, endExclusive },
     start,
@@ -268,7 +271,7 @@ function dashboardPayloadForCurrentView(s = snapshot || { timestamp: rendererNow
     query: analyticsQuery,
     sessionQuery,
     status: sessionStatusFilter,
-    project: sessionProjectFilter,
+    project: workspaceMode === 'analytics' ? analyticsProjectFilter : sessionProjectFilter,
   });
 }
 function aggregateScopeForView(s = snapshot || {}){
@@ -336,6 +339,7 @@ async function refreshDashboardAggregates(s, token){
     const nextUsageScope = {
       source: basePayload.source || 'all',
       model: basePayload.model || 'all',
+      project: basePayload.project || 'all',
       rangeKey: basePayload.rangeKey || '',
       start: Number(basePayload.start ?? basePayload.range?.start ?? 0) || 0,
       end: Number(basePayload.endExclusive ?? basePayload.end ?? basePayload.range?.endExclusive ?? basePayload.range?.end ?? 0) || 0,

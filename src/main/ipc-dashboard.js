@@ -180,7 +180,7 @@ function registerDashboardIpc({
     try {
       const range = { start: since || 0, end: Date.now() };
       const [requests, sessions] = await Promise.all([
-        localProvider.getRequestsPage({ limit: 100, offset: 0, source: payload.source || 'all', range, query: payload.query || '' }),
+        localProvider.getRequestsPage({ limit: 100, offset: 0, source: payload.source || 'all', model: payload.model || 'all', project: payload.project || 'all', range, query: payload.query || '' }),
         localProvider.getSessionsPage({ limit: SESSION_PAGE_SIZE, offset: 0, source: payload.source || 'all', status: payload.status || 'active', project: payload.project || 'all', range, query: payload.sessionQuery || '' }),
       ]);
       return { ok: true, timestamp: Date.now(), changed: Boolean((requests.items || []).length || (sessions.items || []).length), requests: requests.items || [], sessions: sessions.items || [], requestTotal: requests.total || 0, sessionTotal: sessions.total || 0, source: 'db-page' };

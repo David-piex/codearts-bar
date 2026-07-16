@@ -81,6 +81,23 @@ function snapshot(zero=false) {
     const privacy=await page.evaluate(()=>document.body.innerText);
     if(/HPUAGK|JKcewe/.test(privacy)||!privacy.includes('[redacted]')) throw new Error('sensitive session text was not redacted');
     await withTimeout('capture VS Code tooltip',()=>page.screenshot({path:path.join(outDir,'vscode-tooltip.png'),fullPage:true}));
+    await page.evaluate((data)=>window.dispatchEvent(new MessageEvent('message',{data:{type:'sessionsPage',payload:{ok:true,data:{items:data.sessions,total:data.sessions.length,page:1,pageSize:20,pageCount:1}}}})),snapshot(false));
+    const panelSessionGeometry=await page.evaluate(()=>{
+      const header=document.querySelector('.app-header').getBoundingClientRect();
+      const heading=document.querySelector('.app-header h1');
+      const kicker=document.querySelector('.app-kicker');
+      return {
+        headerHeight:Math.round(header.height),
+        heading:heading?.textContent,
+        headingSize:parseFloat(getComputedStyle(heading).fontSize),
+        kicker:kicker?.textContent,
+        rowActions:document.querySelectorAll('.session-export-actions').length,
+        bulkFormats:document.querySelectorAll('[data-session-bulk-export]').length,
+      };
+    });
+    if(panelSessionGeometry.headerHeight>66||panelSessionGeometry.heading!=='使用分析'||panelSessionGeometry.headingSize>18||panelSessionGeometry.kicker!=='码道 Bar'||panelSessionGeometry.rowActions!==0||panelSessionGeometry.bulkFormats!==3) throw new Error('full analysis header or session actions are not compact: '+JSON.stringify(panelSessionGeometry));
+    await page.click('#sessionSelectPage');
+    await withTimeout('capture compact full analysis sessions',()=>page.screenshot({path:path.join(visualDir,'panel-session-batch.png'),fullPage:true}));
     await page.click('#modelFilter');
     const multiMenuGeometry=await page.evaluate(()=>{
       const menu=document.querySelector('#modelMenu');
@@ -146,6 +163,21 @@ function snapshot(zero=false) {
     await page.keyboard.press('Escape');
     await page.evaluate(()=>document.activeElement?.blur());
     await page.screenshot({path:path.join(visualDir,'sidebar-overview.png'),fullPage:true});
+    await page.setViewport({width:600,height:900,deviceScaleFactor:1});
+    await page.evaluate((data)=>window.dispatchEvent(new MessageEvent('message',{data:{type:'sessionsPage',payload:{ok:true,data:{items:data.sessions,total:data.sessions.length,page:1,pageSize:20,pageCount:1}}}})),snapshot(false));
+    await page.click('#sessionSelectPage');
+    const sidebarSessionGeometry=await page.evaluate(()=>{
+      const toolbar=document.querySelector('.session-bulk-toolbar').getBoundingClientRect();
+      const row=document.querySelector('.session-row').getBoundingClientRect();
+      return {
+        selected:document.querySelector('#sessionSelectedCount')?.textContent,
+        toolbarHeight:Math.round(toolbar.height),
+        rowHeight:Math.round(row.height),
+        rowActions:document.querySelectorAll('.session-export-actions').length,
+      };
+    });
+    if(!sidebarSessionGeometry.selected?.endsWith('2')||sidebarSessionGeometry.toolbarHeight>44||sidebarSessionGeometry.rowHeight>64||sidebarSessionGeometry.rowActions!==0) throw new Error('sidebar session batch layout is not compact: '+JSON.stringify(sidebarSessionGeometry));
+    await page.screenshot({path:path.join(visualDir,'sidebar-session-batch-600.png'),fullPage:true});
     await page.goto('file:///'+file.replace(/\\/g,'/'),{waitUntil:'domcontentloaded'});
     await page.setViewport({width:1120,height:900,deviceScaleFactor:1});
     await page.evaluate((data)=>window.dispatchEvent(new MessageEvent('message',{data:{type:'details',payload:data,generation:1}})),{...snapshot(true),trends:{hourly24h:[],daily14d:[]}});

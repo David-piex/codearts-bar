@@ -3,13 +3,14 @@ function trendScopeKey(parts = {}){
   const range = parts.range || {};
   const startRaw = Number(parts.start ?? range.start ?? 0) || 0;
   const endRaw = Number(parts.endExclusive ?? parts.end ?? range.endExclusive ?? range.end ?? 0) || 0;
-  return `${parts.source || 'all'}|${parts.model || 'all'}|${bucketMs}|${startRaw}|${endRaw}`;
+  return `${parts.source || 'all'}|${parts.model || 'all'}|${parts.project || 'all'}|${bucketMs}|${startRaw}|${endRaw}`;
 }
 function currentTrendScopeKey(s, dayMode = isDayRange()){
   const bucketMs = dayMode ? 86400000 : 3600000;
   return trendScopeKey({
     source: sourceFilter,
     model: modelFilter,
+    project: analyticsProjectFilter,
     start: sinceForRange(s),
     endExclusive: untilForRange(s),
     bucketMs,
@@ -27,7 +28,7 @@ function trendListCanDriveChart(s, dayMode){
   const scoped = s?.trendsScope || '';
   if(scoped) return scoped === currentTrendScopeKey(s, dayMode);
   if(!partialRows) return false;
-  return sourceFilter === 'all' && modelFilter === 'all';
+  return sourceFilter === 'all' && modelFilter === 'all' && analyticsProjectFilter === 'all';
 }
 function chartTrendSignature(s, dayMode){
   const trendList = dayMode ? (s?.trends?.daily14d || []) : (s?.trends?.hourly24h || []);
@@ -88,7 +89,7 @@ function bucketRows(rows, s){
   }
   const cacheMemo = memoForSnapshot(s);
   const rangeBucketKey = `${Math.floor(since / bucketMs)}:${Math.ceil(now / bucketMs)}`;
-  const cacheKey = `${rangeFilter}|${sourceFilter}|${modelFilter}|${customDateStart}|${customDateEnd}|${rangeBucketKey}|${dayMode ? 'day' : 'hour'}|${chartTrendSignature(s, dayMode)}|${rowsSignature(rows)}`;
+  const cacheKey = `${rangeFilter}|${sourceFilter}|${modelFilter}|${analyticsProjectFilter}|${customDateStart}|${customDateEnd}|${rangeBucketKey}|${dayMode ? 'day' : 'hour'}|${chartTrendSignature(s, dayMode)}|${rowsSignature(rows)}`;
   if(cacheMemo?.chartBuckets?.has(cacheKey)) return cacheMemo.chartBuckets.get(cacheKey);
   const start = dayMode ? dayStart(since) : Math.floor(since / bucketMs) * bucketMs;
   const endExclusive = Math.max(start, now);

@@ -22,6 +22,7 @@ function requestPageMatchesTable(s){
   if(!hasPayload) return Number(requestTablePage || 0) === 0;
   return String(payload.source || 'all') === String(sourceFilter || 'all')
     && String(payload.model || 'all') === String(modelFilter || 'all')
+    && String(payload.project || 'all') === String(analyticsProjectFilter || 'all')
     && String(payload.query || '') === String(analyticsQuery || '')
     && Number(payload.offset || 0) === Number(expectedOffset || 0)
     && Number(payload.limit || expectedLimit) === Number(expectedLimit)

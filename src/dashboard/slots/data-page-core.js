@@ -83,10 +83,21 @@ function setPagedTableFeedback(kind, text = '', timeout = 1400){
 }
 function scrollPagedTableToTop(kind){
   try {
-    const scroller = kind === 'sessions'
-      ? document.querySelector('.session-scroll')
-      : document.querySelector('.request-main .table-scroll');
-    if(scroller) scroller.scrollTop = 0;
+    const selector = kind === 'sessions' ? '.session-scroll' : '.request-main .table-scroll';
+    const reset = () => {
+      const scroller = document.querySelector(selector);
+      if(!scroller) return null;
+      scroller.style.overflowAnchor = 'none';
+      scroller.scrollTop = 0;
+      scroller.scrollLeft = 0;
+      return scroller;
+    };
+    reset();
+    if(typeof requestAnimationFrame === 'function') requestAnimationFrame(() => reset());
+    setTimeout(() => {
+      const scroller = reset();
+      if(scroller?.style) scroller.style.removeProperty('overflow-anchor');
+    }, 80);
   } catch {}
 }
 function syncPagedTableInput(kind, total, page, pageSize){

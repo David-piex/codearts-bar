@@ -22,6 +22,7 @@ function req(id, sessionId, source, model, ago, input, output, cacheRead, cacheW
     id,
     sessionId,
     sessionTitle: `${source === "cli" ? "CLI" : "桌面端"} 会话 ${sessionId}`,
+    directory: `C:/e2e/${source}`,
     source,
     sourceLabel: source === "cli" ? "CLI" : "桌面端",
     provider: "codearts",
@@ -86,7 +87,7 @@ function sessionsForRows(rows) {
     const prev = map.get(key) || {
       id: row.sessionId,
       title: row.sessionTitle,
-      directory: `C:/e2e/${row.source}/${row.sessionId}`,
+      directory: row.directory,
       version: "1",
       createdAt: row.time - H,
       updatedAt: row.time,
@@ -116,10 +117,12 @@ function filterRows(payload = {}) {
   const start = Number(range.start || 0);
   const end = Number(range.endExclusive ?? range.end ?? 0);
   const model = payload.model || "all";
+  const project = payload.project || "all";
   const query = String(payload.query || "").toLowerCase();
   return requestLog.filter((row) => {
     if (source !== "all" && row.source !== source) return false;
     if (model !== "all" && row.model !== model) return false;
+    if (project !== "all" && row.directory !== project) return false;
     if (start && row.time < start) return false;
     if (end && row.time >= end) return false;
     if (query && !`${row.sessionId} ${row.sessionTitle} ${row.model}`.toLowerCase().includes(query)) return false;
@@ -407,6 +410,31 @@ async function main() {
   assert.ok(["token", "ms", "percent"].includes(initial.yAxisUnit), "trend chart should expose its Y-axis unit");
   assert.ok(initial.xAxisLabels.length >= 2, "trend chart should keep responsive X-axis labels visible");
   await captureScenario(win, "desktop-standard");
+  const projectOptions = await evalIn(win, () => [...document.querySelectorAll('[data-select="project"] option')].map((option) => ({ value: option.value, label: option.textContent })));
+  assert.ok(projectOptions.some((option) => option.value === "C:/e2e/desktop"), `desktop project should be available: ${JSON.stringify(projectOptions)}`);
+  assert.ok(projectOptions.some((option) => option.value === "C:/e2e/cli"), `cli project should be available: ${JSON.stringify(projectOptions)}`);
+  await changeValue(win, '[data-select="project"]', "C:/e2e/desktop");
+  await waitFor(win, () => localStorage.getItem("statsProject") === "C:/e2e/desktop");
+  await delay(650);
+  const projectFilterState = await evalIn(win, () => ({
+    stored: localStorage.getItem("statsProject"),
+    selected: document.querySelector('[data-select="project"]')?.value || "",
+    total: document.querySelector('[data-table-limit="requests"]')?.dataset?.total || "",
+    rows: document.querySelectorAll('.request-row').length,
+    labels: [...document.querySelectorAll('.request-row .source-pill')].map((node) => node.textContent),
+  }));
+  const recentProjectCalls = ipcCalls.filter((call) => ["dashboard:getRequestsPage", "dashboard:getAggregates"].includes(call.channel)).slice(-6);
+  assert.equal(projectFilterState.total, "33", `project filter should update the request total: state=${JSON.stringify(projectFilterState)} calls=${JSON.stringify(recentProjectCalls)}`);
+  await waitFor(win, () => document.querySelector('[data-select="project"]')?.value === "C:/e2e/desktop");
+  const projectRows = await evalIn(win, () => [...document.querySelectorAll('.request-row .source-pill')].map((node) => node.textContent));
+  assert.ok(projectRows.length > 0 && projectRows.every((label) => label === "桌面端"), `project-filtered rows should belong to the selected project: ${JSON.stringify(projectRows)}`);
+  await delay(320);
+  assert.ok(ipcCalls.some((call) => call.channel === "dashboard:getRequestsPage" && call.payload?.project === "C:/e2e/desktop"), "project filter should reach request pagination");
+  assert.ok(ipcCalls.some((call) => call.channel === "dashboard:getAggregates" && call.payload?.project === "C:/e2e/desktop"), "project filter should reach aggregate queries");
+  const filteredProjectOptions = await evalIn(win, () => [...document.querySelectorAll('[data-select="project"] option')].map((option) => option.value));
+  assert.ok(filteredProjectOptions.includes("C:/e2e/cli"), "project options must remain authoritative after filtering");
+  await changeValue(win, '[data-select="project"]', "all");
+  await waitFor(win, () => localStorage.getItem("statsProject") === "all" && document.querySelector('[data-table-limit="requests"]')?.dataset?.total === "69");
   const refreshCallsBefore = ipcCalls.filter((x) => x.channel === "dashboard:refreshLight").length;
   await evalIn(win, async () => {
     await window.codeartsApi.invoke("dashboard:e2eSetRefreshDelay", 320);
@@ -612,7 +640,7 @@ async function main() {
       summaryWidth: summary?.width || 0,
       diagnosticsWidth: diagnostics?.width || 0,
       diagnosticsAfterAdvanced: Boolean(diagnostics && advanced && diagnostics.top >= advanced.bottom),
-      filterHeights: ['.source-switch', '.select-model', '.select-refresh', '.date-range-control'].map((selector) => Math.round(document.querySelector(`.analytics-page-head ${selector}`)?.getBoundingClientRect().height || 0)),
+      filterHeights: ['.source-switch', '.select-model', '.select-project', '.select-refresh', '.date-range-control'].map((selector) => Math.round(document.querySelector(`.analytics-page-head ${selector}`)?.getBoundingClientRect().height || 0)),
       refreshPartsSeparated: (() => {
         const glyph = document.querySelector('.analytics-page-head .refresh-glyph')?.getBoundingClientRect();
         const select = document.querySelector('.analytics-page-head .select-refresh select')?.getBoundingClientRect();
@@ -630,7 +658,7 @@ async function main() {
   assert.equal(maximizedLayout.headerDoesNotOverlap, true, `application identity and navigation must not overlap: ${JSON.stringify(maximizedLayout)}`);
   assert.equal(maximizedLayout.filtersInsidePage, true, `analytics filters should stay inside the page heading: ${JSON.stringify(maximizedLayout)}`);
   assert.equal(maximizedLayout.seriesReadable, true, `chart series controls should retain readable text and fit their panel: ${JSON.stringify(maximizedLayout)}`);
-  assert.deepEqual(maximizedLayout.filterHeights, [42, 42, 42, 42], `analytics filter controls should share one height: ${JSON.stringify(maximizedLayout)}`);
+  assert.deepEqual(maximizedLayout.filterHeights, [42, 42, 42, 42, 42], `analytics filter controls should share one height: ${JSON.stringify(maximizedLayout)}`);
   assert.equal(maximizedLayout.refreshPartsSeparated, true, `refresh glyph and value should not collide: ${JSON.stringify(maximizedLayout)}`);
   assert.ok(resizeState.appHtml > 1000, "dashboard should remain rendered after maximize");
   assert.equal(resizeState.bodyResizing, false, "resize class should settle after maximize");

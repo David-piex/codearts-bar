@@ -72,6 +72,7 @@ function requestPagePayload(offset = currentRequestPageOffset(), limit = REQUEST
     offset,
     source: sourceFilter,
     model: modelFilter,
+    project: analyticsProjectFilter,
     range,
     rangeKey: normalizeRangeFilter(rangeFilter),
     start: Number(range.start || 0),
@@ -99,6 +100,7 @@ function sameRequestPagePayload(a = {}, b = {}){
     && Number(a.offset || 0) === Number(b.offset || 0)
     && String(a.source || 'all') === String(b.source || 'all')
     && String(a.model || 'all') === String(b.model || 'all')
+    && String(a.project || 'all') === String(b.project || 'all')
     && String(a.query || '') === String(b.query || '')
     && sameRangePayload(a, b);
 }
