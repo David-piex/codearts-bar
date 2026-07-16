@@ -56,6 +56,27 @@ class RefreshCoordinatorTest {
         assertTrue(coordinator.request(false).run());
     }
 
+    @Test void staleConfigurationForcesAFollowUpInsideDebounceWindow() {
+        AtomicLong now = new AtomicLong(1000);
+        RefreshCoordinator coordinator = new RefreshCoordinator(now::get);
+        assertTrue(coordinator.request(false).run());
+        assertFalse(coordinator.request(true).run());
+        now.addAndGet(100);
+
+        RefreshCoordinator.Start followUp = coordinator.complete(true);
+        assertTrue(followUp.run());
+        assertTrue(followUp.notifyOnError());
+        assertTrue(coordinator.isRunning());
+    }
+
+    @Test void staleConfigurationForcesAFollowUpWithoutAPendingRequest() {
+        RefreshCoordinator coordinator = new RefreshCoordinator();
+        assertTrue(coordinator.request(true).run());
+        RefreshCoordinator.Start followUp = coordinator.complete(true, true);
+        assertTrue(followUp.run());
+        assertTrue(followUp.notifyOnError());
+    }
+
     @Test void disposalDropsPendingAndFutureRuns() {
         RefreshCoordinator coordinator = new RefreshCoordinator();
         coordinator.request(false);

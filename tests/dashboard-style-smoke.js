@@ -207,7 +207,7 @@ assert.match(html, /usage-total-cache/);
 assert.match(html, /usage-total-request-spark/);
 assert.match(html, /--cache-hit:/);
 assert.match(html, /grid-template-columns:repeat\(4,minmax\(140px,1fr\)\) minmax\(220px,1\.25fr\)/);
-assert.match(html, /native workbench finish: opaque surfaces, hairlines and one accent/);
+assert.match(html, /AppKit workbench finish/);
 assert.match(html, /\.cc-usage-summary\.usage-summary/);
 assert.match(html, /background:transparent/);
 assert.match(html, /usage-detail-stack/);
@@ -377,8 +377,7 @@ assert.doesNotMatch(rendererIncludeSources, /\breadRendererPart\b/);
 assert.doesNotMatch(rendererIncludeSources, /\brendererPartPath\b/);
 
 
-assert.match(renderer, /TABLE_PAGE_SIZE_OPTIONS\s*=\s*\[20,\s*50,\s*100\]/);
-assert.doesNotMatch(renderer, /TABLE_PAGE_SIZE_OPTIONS\s*=\s*\[10,\s*20,\s*50,\s*100\]/);
+assert.match(renderer, /TABLE_PAGE_SIZE_OPTIONS\s*=\s*\[10,\s*20,\s*50,\s*100\]/);
 assert.match(renderer, /REQUEST_PAGE_SIZE\s*=\s*normalizeTablePageSize/);
 assert.match(renderer, /requestTableRenderLimit\s*=\s*REQUEST_PAGE_SIZE/);
 assert.match(renderer, /requestTablePage/);

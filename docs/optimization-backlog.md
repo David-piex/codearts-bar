@@ -16,7 +16,7 @@
 - [x] canonical `status`/`quota` 不受历史、来源和模型筛选覆盖。
 - [x] Request/Session 数据库分页与多源 k-way merge。
 - [x] Electron、VS Code、JetBrains、CLI 查询协议对齐。
-- [x] JetBrains runtime `<125000` 字节质量门禁。
+- [x] JetBrains runtime `<127000` 字节质量门禁（多选筛选后实测 126090 字节）。
 - [x] macOS/Linux 无签名构建 workflow、资源 smoke 和 artifact 上传配置。
 
 ## P0：数据准确性

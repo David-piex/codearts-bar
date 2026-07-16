@@ -1,30 +1,16 @@
-/* native workbench finish: opaque surfaces, hairlines and one accent */
+/* AppKit workbench finish */
 :root {
-  --radius-sm: 6px;
-  --radius-md: 8px;
-  --radius-lg: 8px;
-  --radius-xl: 8px;
-  --control-radius: 6px;
-  --surface-panel: #ffffff;
-  --surface-card: #ffffff;
-  --surface-muted: #f7f8fa;
-  --border-soft: #dfe3e8;
-  --border-hairline: #e8eaee;
-  --shadow-card: none;
-  --shadow-card-hover: none;
-  --shadow-control: none;
-  --cb-surface-panel: #ffffff;
-  --cb-surface-card: #ffffff;
-  --cb-surface-muted: #f7f8fa;
-  --cb-border-soft: #dfe3e8;
-  --cb-border-hairline: #e8eaee;
-  --cb-shadow-card: none;
-  --cb-shadow-control: none;
+  --radius-sm:6px;--radius-md:8px;--radius-lg:8px;--radius-xl:8px;
+  --control-radius:6px;
+  --surface-panel:#fff;--surface-card:#fff;--surface-muted:#f2f2f7;
+  --border-soft:#d1d1d6;--border-hairline:#e5e5ea;
+  --shadow-card:none;--shadow-card-hover:none;--shadow-control:none;
+  --cb-surface-panel:#fff;--cb-surface-card:#fff;--cb-surface-muted:#f2f2f7;
+  --cb-border-soft:#d1d1d6;--cb-border-hairline:#e5e5ea;
+  --cb-shadow-card:none;--cb-shadow-control:none;
 }
 
-body {
-  background: #f5f6f8;
-}
+body { background: #f5f5f7; }
 
 body::before,
 body::after {
@@ -65,11 +51,17 @@ body::after {
 .app-header .view-mode-switch,
 .analytics-page-head .filters,
 .session-filter-head .filters {
+  --filter-control-height:34px;
+  --filter-control-radius:6px;
+  gap:6px;
+  padding:3px;
   border-color: var(--cb-border-soft);
   border-radius: 8px;
-  background: #ffffff;
-  box-shadow: none;
+  background:#ededf0;
+  box-shadow:inset 0 1px 2px rgba(0,0,0,.05),inset 0 1px rgba(255,255,255,.72);
 }
+
+:is(.workspace-tabs,.source-switch,.range,.table-tabs)::before { content:none; }
 
 :is(
   .icon-chip.active,
@@ -80,14 +72,14 @@ body::after {
   .source-switch button.active,
   .topbar-actions button.active
 ) {
-  color: #0969c3;
-  border-color: #b9d9fb;
-  background: #edf6ff;
-  box-shadow: none;
+  color: #1d1d1f;
+  border-color: #d1d1d6;
+  background:#fff;
+  box-shadow:0 1px 2px rgba(0,0,0,.09),inset 0 1px rgba(255,255,255,.86);
 }
 
 .footer button.primary {
-  color: #ffffff;
+  color: #fff;
   border-color: #0a84ff;
   background: #0a84ff;
 }
@@ -96,7 +88,7 @@ body::after {
 .series-panel-lean .series-chip.active:hover {
   color: #101828;
   border-color: #cfd6df;
-  background: #ffffff;
+  background: #fff;
   box-shadow: none;
 }
 
@@ -117,7 +109,7 @@ body::after {
 ) {
   border-color: var(--cb-border-soft);
   border-radius: 8px;
-  background: #ffffff;
+  background: #fff;
   box-shadow: none;
 }
 
@@ -156,7 +148,7 @@ body::after {
   padding: 18px;
   border-color: var(--cb-border-soft);
   border-radius: 8px;
-  background: #ffffff;
+  background: #fff;
   box-shadow: none;
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
@@ -311,13 +303,13 @@ body::after {
 
 .series-panel-lean {
   border-radius: 7px;
-  background: #f7f8fa;
+  background: #f2f2f7;
   box-shadow: none;
 }
 
 .analytics-advanced-head,
 .footer {
-  background: #ffffff;
+  background: #fff;
   box-shadow: none;
 }
 
@@ -329,8 +321,8 @@ body::after {
   border-color: #d9dee6;
   border-radius: 8px;
   color: #111827;
-  background: #ffffff;
-  box-shadow: 0 18px 48px rgba(23, 35, 58, .16);
+  background: #fff;
+  box-shadow: 0 12px 30px rgba(23, 35, 58, .16);
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
 }
@@ -339,7 +331,7 @@ body::after {
 .date-range-calendar {
   border-color: #e1e5ea;
   border-radius: 8px;
-  background: #ffffff;
+  background: #fff;
   box-shadow: none;
 }
 
@@ -352,7 +344,7 @@ body::after {
 
 .date-range-quick button {
   border-radius: 6px;
-  background: #ffffff;
+  background: #fff;
   box-shadow: none;
 }
 
@@ -391,7 +383,7 @@ body::after {
   overflow: hidden;
   border: 1px solid var(--cb-border-soft);
   border-radius: 8px;
-  background: #ffffff;
+  background: #fff;
 }
 
 .session-overview-card,
@@ -423,7 +415,7 @@ body::after {
 .saved-view-row.compact,
 .saved-view-empty.compact {
   border-radius: 7px;
-  background: #f7f8fa;
+  background: #f2f2f7;
   box-shadow: none;
 }
 
@@ -451,7 +443,7 @@ body::after {
   --session-hit: 0%;
   position: relative;
   padding: 16px;
-  background: #ffffff;
+  background: #fff;
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
 }
@@ -530,7 +522,7 @@ body::after {
 
 .session-table.simple .session-row.selected td,
 .session-table.simple .request-row.selected td {
-  background: #edf6ff;
+  background: #e7f2ff;
   box-shadow: none;
 }
 

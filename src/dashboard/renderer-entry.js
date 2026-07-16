@@ -116,7 +116,7 @@ let resizePerfSession = null;
 let resizePerfLogTimer = null;
 let queryRenderTimer = null;
 let analyticsDeferredToken = 0;
-const TABLE_PAGE_SIZE_OPTIONS = [20, 50, 100];
+const TABLE_PAGE_SIZE_OPTIONS = [10, 20, 50, 100];
 function normalizeTablePageSize(value, fallback = 50){
   const n = Number(value);
   return TABLE_PAGE_SIZE_OPTIONS.includes(n) ? n : fallback;

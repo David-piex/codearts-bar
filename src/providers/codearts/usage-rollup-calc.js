@@ -314,7 +314,7 @@ function sessionSummaryPartFromRollup(rollup, payload = {}) {
     const updated = toNumber(row.timeUpdated);
     if (range.start && updated < range.start) return false;
     if (range.end && updated >= range.end) return false;
-    if (project && row.directory !== project) return false;
+    if (project === '__none' ? row.directory.trim() : project && row.directory !== project) return false;
     return true;
   });
   const projects = new Map();

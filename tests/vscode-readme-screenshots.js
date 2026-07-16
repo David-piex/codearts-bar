@@ -61,7 +61,7 @@ function snapshot(zero=false) {
     await withTimeout('load VS Code preview',()=>page.goto('file:///'+file.replace(/\\/g,'/'),{waitUntil:'domcontentloaded'}));
     await page.evaluate(()=>document.body.classList.add('vscode-dark'));
     const palette=await page.evaluate(()=>({page:getComputedStyle(document.documentElement).getPropertyValue('--page').trim(),accent:getComputedStyle(document.documentElement).getPropertyValue('--accent').trim()}));
-    if(palette.page!=='#f5f6f8'||palette.accent!=='#0a84ff') throw new Error('VS Code theme leaked into fixed Desktop palette: '+JSON.stringify(palette));
+    if(palette.page!=='#f5f5f7'||palette.accent!=='#007aff') throw new Error('VS Code theme leaked into fixed Desktop palette: '+JSON.stringify(palette));
     await page.evaluate((data)=>window.dispatchEvent(new MessageEvent('message',{data:{type:'details',payload:data,generation:1}})),snapshot(false));
     await new Promise(r=>setTimeout(r,400));
     const canvas=await page.$('#trendChart');
@@ -81,6 +81,15 @@ function snapshot(zero=false) {
     const privacy=await page.evaluate(()=>document.body.innerText);
     if(/HPUAGK|JKcewe/.test(privacy)||!privacy.includes('[redacted]')) throw new Error('sensitive session text was not redacted');
     await withTimeout('capture VS Code tooltip',()=>page.screenshot({path:path.join(outDir,'vscode-tooltip.png'),fullPage:true}));
+    await page.click('#modelFilter');
+    const multiMenuGeometry=await page.evaluate(()=>{
+      const menu=document.querySelector('#modelMenu');
+      const rect=menu.getBoundingClientRect();
+      return {hidden:menu.hidden,items:menu.querySelectorAll('button').length,left:rect.left,right:rect.right,top:rect.top,bottom:rect.bottom,viewportWidth:innerWidth,viewportHeight:innerHeight};
+    });
+    if(multiMenuGeometry.hidden||multiMenuGeometry.items<3||multiMenuGeometry.left<0||multiMenuGeometry.right>multiMenuGeometry.viewportWidth||multiMenuGeometry.top<0||multiMenuGeometry.bottom>multiMenuGeometry.viewportHeight) throw new Error('multi-select model menu geometry is invalid: '+JSON.stringify(multiMenuGeometry));
+    await withTimeout('capture multi-select menu',()=>page.screenshot({path:path.join(visualDir,'multi-select-model.png')}));
+    await page.keyboard.press('Escape');
     await page.click('[data-range="custom"]');
     await withTimeout('show custom range',()=>page.waitForFunction(()=>{
       const panel=document.querySelector('#customRange');

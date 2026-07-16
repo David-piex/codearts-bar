@@ -89,6 +89,14 @@ function requiredFieldFailures(session, messages = [], parts = [], parsedMessage
   return { session: sessionFailures, messages: messageFailures, parts: partFailures };
 }
 
+function exportableMessageRole(data = {}) {
+  return data.role === 'user' || data.role === 'assistant';
+}
+
+function exportablePart(data = {}) {
+  return data.synthetic !== true;
+}
+
 function finite(value, fallback = null) {
   const number = Number(value);
   return Number.isFinite(number) ? number : fallback;
@@ -173,15 +181,18 @@ function normalizeExportModel(rows, options = {}) {
   const taggedParts = tagRows(parts, source);
   const parsedMessages = parseRowData(taggedMessages);
   const parsedParts = parseRowData(taggedParts);
-  const requiredFailures = requiredFieldFailures(session, taggedMessages, taggedParts, parsedMessages, parsedParts);
-  const partMap = agg.buildPartMap(taggedParts);
+  const visibleMessages = taggedMessages.filter((row) => exportableMessageRole(parsedMessages.values.get(row) || {}));
+  const visibleMessageIds = new Set(visibleMessages.map((row) => row.id));
+  const visibleParts = taggedParts.filter((row) => visibleMessageIds.has(row.message_id) && exportablePart(parsedParts.values.get(row) || {}));
+  const requiredFailures = requiredFieldFailures(session, visibleMessages, visibleParts, parsedMessages, parsedParts);
+  const partMap = agg.buildPartMap(visibleParts);
   const partsByMessage = new Map();
-  for (const row of taggedParts) {
+  for (const row of visibleParts) {
     const list = partsByMessage.get(row.message_id) || [];
     list.push(row);
     partsByMessage.set(row.message_id, list);
   }
-  const normalizedMessages = taggedMessages.map((row) => {
+  const normalizedMessages = visibleMessages.map((row) => {
     const data = parsedMessages.values.get(row) || {};
     const messageParts = partsByMessage.get(row.id) || [];
     const token = agg.tokenForMessage(row, partMap);
@@ -197,12 +208,12 @@ function normalizeExportModel(rows, options = {}) {
       usage: token,
     };
   });
-  const tools = taggedParts
+  const tools = visibleParts
     .filter((row) => parsedParts.values.get(row)?.type === 'tool')
     .map((row) => toolRecord(row, options, parsedParts.values.get(row)));
-  const sessionInfo = sessionsFromRows([taggedSession], taggedMessages, taggedParts, finite(options.timestamp, Date.now()))[0];
-  const messageDataById = new Map(taggedMessages.map((row) => [row.id, parsedMessages.values.get(row) || {}]));
-  const requests = requestRowsFromMessages(taggedMessages, [taggedSession], taggedParts).map((item) => ({
+  const sessionInfo = sessionsFromRows([taggedSession], visibleMessages, visibleParts, finite(options.timestamp, Date.now()))[0];
+  const messageDataById = new Map(visibleMessages.map((row) => [row.id, parsedMessages.values.get(row) || {}]));
+  const requests = requestRowsFromMessages(visibleMessages, [taggedSession], visibleParts).map((item) => ({
     id: item.id,
     messageId: item.id,
     createdAt: iso(item.createdAt),
@@ -280,6 +291,9 @@ function readOne(queryAll, db, source, sessionId) {
   validateTables(tables);
   const session = queryAll(db, 'select * from session where id = ? limit 1', [sessionId])[0];
   if (!session) return null;
+  if (session.parent_id != null && String(session.parent_id).trim() !== '') {
+    throw exportError('SESSION_EXPORT_INTERNAL_SESSION', '内置子任务会话不会导出，请选择对应的主会话');
+  }
   const messages = queryAll(db, 'select id, session_id, time_created, time_updated, data from message where session_id = ? order by time_created asc, id asc', [sessionId]);
   const partTable = tables.includes('part');
   const parts = partTable
@@ -323,10 +337,10 @@ async function buildSessionExport(options = {}) {
   if (process.env.CODEARTS_BAR_FORCE_SQLJS !== '1') {
     try { rows = readSessionNative(options); }
     catch (error) {
-      if (error?.code === 'SESSION_EXPORT_ID_REQUIRED' || error?.code === 'SESSION_EXPORT_NOT_FOUND') throw error;
+      if (error?.code === 'SESSION_EXPORT_ID_REQUIRED' || error?.code === 'SESSION_EXPORT_NOT_FOUND' || error?.code === 'SESSION_EXPORT_INTERNAL_SESSION') throw error;
       try { rows = await readSessionSqlJs(options); }
       catch (fallbackError) {
-        if (fallbackError?.code === 'SESSION_EXPORT_ID_REQUIRED' || fallbackError?.code === 'SESSION_EXPORT_NOT_FOUND') throw fallbackError;
+        if (fallbackError?.code === 'SESSION_EXPORT_ID_REQUIRED' || fallbackError?.code === 'SESSION_EXPORT_NOT_FOUND' || fallbackError?.code === 'SESSION_EXPORT_INTERNAL_SESSION') throw fallbackError;
         throw exportError('SESSION_EXPORT_READ_FAILED', safeDbError(error), error);
       }
     }
@@ -339,13 +353,18 @@ async function buildSessionBatchExport(options = {}) {
   if (!sessions.length) throw new Error('请选择至少一个要导出的会话');
   const models = [];
   for (const session of sessions) {
-    models.push(await buildSessionExport({
-      ...options,
-      sessionId: session?.id || session?.sessionId,
-      source: session?.source,
-      dbPath: session?.dbPath,
-    }));
+    try {
+      models.push(await buildSessionExport({
+        ...options,
+        sessionId: session?.id || session?.sessionId,
+        source: session?.source,
+        dbPath: session?.dbPath,
+      }));
+    } catch (error) {
+      if (error?.code !== 'SESSION_EXPORT_INTERNAL_SESSION') throw error;
+    }
   }
+  if (!models.length) throw exportError('SESSION_EXPORT_INTERNAL_SESSION', '所选会话均为内置子任务，没有可导出的主会话');
   const exportedAt = new Date(finite(options.timestamp, Date.now())).toISOString();
   const completenessReasons = [...new Set(models.flatMap((model) => model.completeness.reasons || []))];
   return {

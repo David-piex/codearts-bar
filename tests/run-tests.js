@@ -131,7 +131,22 @@ function testAggregator() {
   assert.match(sessionFilter.where, /session_message\.time_created >= \?/);
   assert.match(sessionFilter.where, /session_message\.time_created < \?/);
   assert.deepEqual(sessionFilter.params, [10, 20, 'm', 10, 20]);
+  const multiSessionFilter = sourceQueries.sessionWhere({ model:['m1', 'm2'], project:['C:/one', '__none'] });
+  assert.match(multiSessionFilter.where, /directory in \(\?\)/);
+  assert.match(multiSessionFilter.where, /modelID[\s\S]*in \(\?,\?\)/);
+  assert.deepEqual(multiSessionFilter.params, ['C:/one', 'm1', 'm2']);
+  const multiAssistantFilter = sourceQueries.assistantWhere(
+    { model:['m1', 'm2'], project:['C:/one', '__none'] },
+    { outerAlias:'message' },
+  );
+  assert.match(multiAssistantFilter.where, /project_session\.id = message\.session_id/);
+  assert.match(multiAssistantFilter.where, /project_session\.directory in \(\?\)/);
+  assert.deepEqual(multiAssistantFilter.params, ['assistant', 'm1', 'm2', 'C:/one']);
+  assert.equal(sourceQueries.sourceMatchesPayload({ id:'cli' }, { source:['desktop', 'cli'] }), true);
+  assert.equal(sourceQueries.sourceMatchesPayload({ id:'custom' }, { source:['desktop', 'cli'] }), false);
   assert.equal(dashboardUsageRollup.canUseSessionSummaryRollup({ model:'m' }), false, 'model-filtered session summaries must bypass unscoped rollups');
+  assert.equal(dashboardUsageRollup.canUseUsageRollup({ project:'C:/one' }), false, 'project-filtered token analytics must bypass unscoped rollups');
+  assert.equal(dashboardUsageRollup.canUseSessionSummaryRollup({ project:['C:/one', 'C:/two'] }), false, 'multi-project session summaries must bypass single-project rollups');
   assert.equal(agg.percentile([10, 20, 30, 40], 95), 40);
   const largeSummary = agg.summarize(Array.from({ length: 150000 }, (_, index) => index));
   assert.equal(largeSummary.min, 0);
@@ -365,6 +380,15 @@ function testRollupExclusiveEndBoundaries() {
     sessions: rows.map((row) => ({ id: row.id, timeUpdated: row.timeUpdated })),
   }, { range: { start: endExclusive - hour, endExclusive }, timestamp: endExclusive });
   assert.equal(sessions.total, 1);
+  const unassigned = usageRollupCalc.sessionSummaryPartFromRollup({
+    source: { id: 'unit', label: 'Unit' },
+    sessions: [
+      { id: 'empty', directory: '', timeUpdated: endExclusive - 2 },
+      { id: 'spaces', directory: '   ', timeUpdated: endExclusive - 1 },
+      { id: 'project', directory: 'C:/project', timeUpdated: endExclusive - 1 },
+    ],
+  }, { project: '__none', timestamp: endExclusive });
+  assert.equal(unassigned.total, 2, 'session rollups must map blank directories to the __none project filter');
   const compactRows = [
     { start: endExclusive - hour, end: endExclusive, total: 7, messages: 1 },
     { start: endExclusive, end: endExclusive + hour, total: 101, messages: 1 },
@@ -682,6 +706,52 @@ async function testProviderDbAggregates() {
   }
 }
 
+async function testInternalSessionsStayOutOfSessionViews() {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'codearts-bar-internal-session-'));
+  const dbPath = path.join(tmpDir, 'internal-session.db');
+  const db = new DatabaseSync(dbPath);
+  try {
+    db.exec(`
+      create table session (id text primary key, parent_id text, title text, directory text, version text, time_created integer, time_updated integer, time_archived integer);
+      create table message (id text primary key, session_id text, time_created integer, time_updated integer, data text);
+    `);
+    const insertSession = db.prepare('insert into session values (?, ?, ?, ?, ?, ?, ?, ?)');
+    insertSession.run('main', '', 'Main session', 'C:/project', '1', 1, 10, null);
+    insertSession.run('internal', 'main', 'Explore internals (@explore subagent)', 'C:/project', '1', 2, 20, null);
+    const insertMessage = db.prepare('insert into message values (?, ?, ?, ?, ?)');
+    insertMessage.run('main-message', 'main', 3, 4, JSON.stringify({ role: 'assistant', providerID: 'p', modelID: 'm', time: { created: 3, completed: 4 }, tokens: { total: 2, input: 1, output: 1 } }));
+    insertMessage.run('internal-message', 'internal', 5, 6, JSON.stringify({ role: 'assistant', agent: 'explore', mode: 'explore', providerID: 'p', modelID: 'm', time: { created: 5, completed: 6 }, tokens: { total: 3, input: 2, output: 1 } }));
+  } finally { db.close(); }
+  const previous = process.env.CODEARTS_BAR_FORCE_SQLJS;
+  const previousConfigDir = process.env.CODEARTS_BAR_CONFIG_DIR;
+  process.env.CODEARTS_BAR_CONFIG_DIR = tmpDir;
+  try {
+    for (const forceSqlJs of [false, true]) {
+      if (forceSqlJs) process.env.CODEARTS_BAR_FORCE_SQLJS = '1';
+      else delete process.env.CODEARTS_BAR_FORCE_SQLJS;
+      const page = await localProvider.getSessionsPage({ dbPath, status: 'all', limit: 20 });
+      assert.equal(page.total, 1);
+      assert.deepEqual(page.items.map((item) => item.id), ['main']);
+      const summary = await localProvider.getSessionSummary({ dbPath, timestamp: 30, disableUsageRollup: true });
+      assert.equal(summary.total, 1);
+      const snapshot = await getSnapshotAsync({ dbPath, timestamp: 30, fixtureMode: true });
+      assert.equal(snapshot.sessionSummary.total, 1);
+      assert.deepEqual(snapshot.sessions.map((item) => item.id), ['main']);
+      assert.equal(snapshot.usage.all.total, 5, 'internal task usage must remain part of overall analytics');
+      const source = { id: 'custom', label: 'Custom', dbPath };
+      await dashboardUsageRollup.buildAndWriteUsageRollupForSource(source, { adapter: forceSqlJs ? 'sql.js' : 'node:sqlite' });
+      const rollup = dashboardUsageRollup.readSessionSummaryRollupForSource(source);
+      assert.equal(rollup.ok, true);
+      assert.deepEqual(rollup.sessions.map((item) => item.id), ['main']);
+    }
+  } finally {
+    dashboardUsageRollup.resetUsageRollupStats();
+    if (previous == null) delete process.env.CODEARTS_BAR_FORCE_SQLJS; else process.env.CODEARTS_BAR_FORCE_SQLJS = previous;
+    if (previousConfigDir == null) delete process.env.CODEARTS_BAR_CONFIG_DIR; else process.env.CODEARTS_BAR_CONFIG_DIR = previousConfigDir;
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+}
+
 async function testSessionWritesNeverFallBackToSqlJs() {
   const sourceDb = path.join(__dirname, 'fixtures', 'opencode-fixture.db');
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'codearts-bar-write-lock-'));
@@ -981,6 +1051,7 @@ async function main() {
   await testSnapshotClockAndFixtureIsolation();
   await testProviderDbPagination();
   await testProviderDbAggregates();
+  await testInternalSessionsStayOutOfSessionViews();
   await testDashboardUsageRollupCache();
   await testRenameSessionFixture();
   console.log('ok - unit tests');

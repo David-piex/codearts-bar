@@ -7,7 +7,7 @@ const { isMainThread } = require('node:worker_threads');
 const nativeSql = require('./aggregation-sql');
 const { readRollupCache, writeRollupCache } = require('./rollup-cache');
 const { recordBestEffortFailure } = require('../../core/best-effort');
-const { assistantWhere, validateTables } = require('./sources');
+const { assistantWhere, validateTables, tableColumnNames } = require('./sources');
 const { safeDbError } = require('./diagnostics');
 const {
   openNativeDbReadonly,
@@ -35,7 +35,7 @@ const {
 // with the current analytics contract.
 const MESSAGE_TOKEN_CACHE_KIND = 'message-token-cache-v2';
 const COMPACT_USAGE_ROLLUP_KIND = 'usage-compact-hourly-v2';
-const SESSION_SUMMARY_ROLLUP_KIND = 'session-summary-v2';
+const SESSION_SUMMARY_ROLLUP_KIND = 'session-summary-v4';
 const HOUR_MS = 60 * 60 * 1000;
 const pendingBuilds = new Map();
 let buildListener = null;
@@ -130,6 +130,7 @@ function canUseUsageRollup(payload = {}) {
   if (payload.disableUsageRollup || payload.noUsageRollup) return false;
   if (payload.query || payload.sessionId) return false;
   if (payload.model && payload.model !== 'all') return false;
+  if (payload.project && payload.project !== 'all') return false;
   if (payload.error !== undefined || payload.hasError !== undefined || payload.errorsOnly !== undefined) return false;
   return true;
 }
@@ -139,6 +140,7 @@ function canUseSessionSummaryRollup(payload = {}) {
   if (payload.disableUsageRollup || payload.noUsageRollup) return false;
   if (payload.query || payload.sessionId) return false;
   if (payload.model && payload.model !== 'all') return false;
+  if (Array.isArray(payload.project)) return false;
   return true;
 }
 
@@ -398,16 +400,18 @@ async function buildAndWriteUsageRollupForSource(source, options = {}) {
       db = await openSqlJsDbReadonly(source.dbPath);
       const tables = sqlJsAll(db, "select name from sqlite_master where type='table'").map((r) => r.name);
       validateTables(tables);
-      result = readOrBuildUsageRollup({ source, db, tables, queryAll: sqlJsAllParams }, { kind });
-      try { result.usageRollup.session = readOrBuildSessionSummaryRollup({ source, db, tables, queryAll: sqlJsAllParams }).usageRollup; } catch (error) { recordBestEffortFailure('rollup.session-sqljs', error, { sourceId: source.id }); }
+      const sessionColumns = tableColumnNames(sqlJsAllParams, db, 'session');
+      result = readOrBuildUsageRollup({ source, db, tables, sessionColumns, queryAll: sqlJsAllParams }, { kind });
+      try { result.usageRollup.session = readOrBuildSessionSummaryRollup({ source, db, tables, sessionColumns, queryAll: sqlJsAllParams }).usageRollup; } catch (error) { recordBestEffortFailure('rollup.session-sqljs', error, { sourceId: source.id }); }
       recordRollupBuild(source, { ...options, adapter, kind }, result, nowMs() - started, null);
       return result;
     }
     db = openNativeDbReadonly(source.dbPath);
     const tables = nativeAll(db, "select name from sqlite_master where type='table'").map((r) => r.name);
     validateTables(tables);
-    result = readOrBuildUsageRollup({ source, db, tables, queryAll: nativeAllParams }, { kind });
-    try { result.usageRollup.session = readOrBuildSessionSummaryRollup({ source, db, tables, queryAll: nativeAllParams }).usageRollup; } catch (error) { recordBestEffortFailure('rollup.session-native', error, { sourceId: source.id }); }
+    const sessionColumns = tableColumnNames(nativeAllParams, db, 'session');
+    result = readOrBuildUsageRollup({ source, db, tables, sessionColumns, queryAll: nativeAllParams }, { kind });
+    try { result.usageRollup.session = readOrBuildSessionSummaryRollup({ source, db, tables, sessionColumns, queryAll: nativeAllParams }).usageRollup; } catch (error) { recordBestEffortFailure('rollup.session-native', error, { sourceId: source.id }); }
     recordRollupBuild(source, { ...options, adapter, kind }, result, nowMs() - started, null);
     return result;
   } catch (error) {

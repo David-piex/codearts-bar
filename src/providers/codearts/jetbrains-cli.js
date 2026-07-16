@@ -13,6 +13,13 @@ function readOption(args, name, fallback = null) {
   const index = args.indexOf(name);
   return index >= 0 && index + 1 < args.length ? args[index + 1] : fallback;
 }
+function readOptions(args, name) {
+  const values = [];
+  for (let index = 0; index < args.length - 1; index += 1) {
+    if (args[index] === name) values.push(args[index + 1]);
+  }
+  return values.length > 1 ? values : values[0] || null;
+}
 
 function positiveNumber(value, fallback) {
   const number = Number(value);
@@ -80,9 +87,9 @@ async function query(resource, args = []) {
   const page = Math.max(1, Math.trunc(Number(readOption(args, '--page', 1)) || 1));
   const pageSize = Math.max(1, Math.min(500, Math.trunc(Number(readOption(args, '--page-size', 50)) || 50)));
   const sessionId = readOption(args, '--session-id');
-  const source = readOption(args, '--source');
-  const model = readOption(args, '--model');
-  const project = readOption(args, '--project');
+  const source = readOptions(args, '--source');
+  const model = readOptions(args, '--model');
+  const project = readOptions(args, '--project');
   const search = readOption(args, '--search', '');
   const start = Math.max(0, Number(readOption(args, '--start', 0)) || 0);
   const end = Math.max(0, Number(readOption(args, '--end', 0)) || 0);
@@ -92,7 +99,7 @@ async function query(resource, args = []) {
     const bucketMs = Math.max(60000, Number(readOption(args, '--bucket-ms', 3600000)) || 3600000);
     const offsetValue = readOption(args, '--bucket-offset-ms');
     const bucketOffsetMs = offsetValue == null ? undefined : Number(offsetValue);
-    const result = await aggregation.getDashboardAggregates({ source, model, range, timestamp: end || Date.now(), bucketMs, bucketOffsetMs, disableUsageRollup: true });
+    const result = await aggregation.getDashboardAggregates({ source, model, project, range, timestamp: end || Date.now(), bucketMs, bucketOffsetMs, disableUsageRollup: true });
     if (!result?.ok) throw new Error(result?.error || 'Unable to aggregate local usage data.');
     return analyticsPayload(result, { ...pageOptions, bucketMs, bucketOffsetMs });
   }

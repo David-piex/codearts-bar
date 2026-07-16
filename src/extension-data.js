@@ -87,7 +87,7 @@ function extensionCompleteness(result = {}, performance = {}) {
 }
 
 function currentUsageOptions(config, timestamp) {
-  const current = { ...config, source: 'all', model: 'all', timestamp };
+  const current = { ...config, source: 'all', model: 'all', project: 'all', timestamp };
   for (const key of ['range', 'rangePreset', 'start', 'end', 'endExclusive']) delete current[key];
   return current;
 }
@@ -152,15 +152,23 @@ async function getExtensionDetails(options = {}) {
   const config = extensionConfig(options);
   const timestamp = Date.now();
   const selectedRange = extensionRange(options, timestamp);
-  const scope = { source: options.source || 'all', model: options.model || 'all' };
+  const scope = { source: options.source ?? 'all', model: options.model ?? 'all', project: options.project ?? 'all' };
   const rangePayload = { start: selectedRange.start, endExclusive: selectedRange.endExclusive };
-  const [currentSummary, aggregates, sessionsPage, requestsPage, databaseHealth] = await Promise.all([
+  const filterScope = { ...config, source: 'all', model: 'all', project: 'all', timestamp };
+  const [currentSummary, aggregates, sessionsPage, requestsPage, databaseHealth, filterOptions] = await Promise.all([
     localProvider.getSummary(currentUsageOptions(config, timestamp)),
     localProvider.getDashboardAggregates({ ...config, ...scope, timestamp, range: rangePayload, bucketMs: selectedRange.bucketMs, disableUsageRollup: true }),
     localProvider.getSessionsPage({ ...config, limit: 12, offset: 0, ...scope, status: 'active', range: rangePayload }),
     localProvider.getRequestsPage({ ...config, ...scope, limit: 40, offset: 0, range: rangePayload }),
     localProvider.getDatabaseHealth({ ...config, source: scope.source, timestamp }),
+    Promise.all([
+      localProvider.getModelStats(filterScope),
+      localProvider.getSessionSummary(filterScope),
+    ]),
   ]);
+  const [filterModels, filterProjects] = filterOptions;
+  const filterOptionsComplete = [currentSummary, filterModels, filterProjects]
+    .every((result) => result?.ok && !(result.sourceErrors || []).length);
   if (!currentSummary?.ok || !currentSummary.usage) throw new Error(currentSummary?.error || '无法读取当前 CodeArts 使用摘要');
   if (!aggregates?.ok) throw new Error(aggregates?.error || '无法读取 CodeArts 聚合数据');
   const currentUsage = currentSummary.usage;
@@ -185,10 +193,13 @@ async function getExtensionDetails(options = {}) {
     adapter: aggregates.perf?.aggregate?.adapter || '',
     dbPath: localProvider.resolveDbPath(config),
     sources: aggregates.sources || [],
+    filterSources: currentSummary.sources || aggregates.sources || [],
     sourceStats: aggregates.sourceStats || [],
     usage: { ...currentUsage, range: rangeUsage },
     trends: { hourly24h: selectedRange.bucketMs === HOUR_MS ? aggregates.buckets || [] : [], daily14d: selectedRange.bucketMs === DAY_MS ? aggregates.buckets || [] : [], range: aggregates.buckets || [] },
     models: aggregates.modelStats || [],
+    filterModels: filterModels?.items || aggregates.modelStats || [],
+    filterOptionsComplete,
     providerStats: providers,
     sessions,
     sessionTotal: Number(sessionsPage?.total || sessions.length),
@@ -210,6 +221,11 @@ async function getExtensionDetails(options = {}) {
     selectedRange,
     selectedScope: scope,
     projects: (aggregates.sessionSummary?.projects || []).map((item) => ({
+      id: item.key || item.directory || '__none',
+      label: item.directory ? path.basename(item.directory) || item.directory : '未关联项目',
+      directory: item.directory || '', count: Number(item.count || 0),
+    })),
+    filterProjects: (filterProjects?.projects || aggregates.sessionSummary?.projects || []).map((item) => ({
       id: item.key || item.directory || '__none',
       label: item.directory ? path.basename(item.directory) || item.directory : '未关联项目',
       directory: item.directory || '', count: Number(item.count || 0),

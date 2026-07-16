@@ -1,6 +1,6 @@
 ﻿'use strict';
 
-const { listDataSources, validateTables, sourceMatchesPayload, pageBounds, assistantWhere, sessionWhere, tagRows } = require('./sources');
+const { listDataSources, validateTables, sourceMatchesPayload, pageBounds, assistantWhere, sessionWhere, tagRows, tableColumnNames } = require('./sources');
 const { safeDbError } = require('./diagnostics');
 const { openNativeDbReadonly, openSqlJsDbReadonly, nativeAll, nativeAllParams, sqlJsAll, sqlJsAllParams, closeDb } = require('./sqlite');
 const { requestRowsFromMessages, sessionsFromRows, queryPartsForMessages, querySessionsByIds, queryMessagesForSessions } = require('./collect');
@@ -12,15 +12,15 @@ function pageResult(items, total, payload, defaultLimit, extra = {}) {
 function paginationBatchSize(limit) {
   return Math.max(80, Math.min(500, Number(limit || 100) * 2));
 }
-function sourceContexts(payload, openDb, tableQuery) {
+function sourceContexts(payload, openDb, schemaQuery, queryAll) {
   const contexts = [];
   for (const source of listDataSources(payload).filter((s) => sourceMatchesPayload(s, payload))) {
     let db;
     try {
       db = openDb(source.dbPath);
-      const tables = tableQuery(db).map((r) => r.name);
+      const tables = schemaQuery(db).map((r) => r.name);
       validateTables(tables);
-      contexts.push({ source, db, tables });
+      contexts.push({ source, db, tables, sessionColumns: tableColumnNames(queryAll, db, 'session') });
     } catch (error) {
       closeDb(db);
       throw new Error(safeDbError(error));
@@ -28,15 +28,15 @@ function sourceContexts(payload, openDb, tableQuery) {
   }
   return contexts;
 }
-async function sourceContextsAsync(payload, openDb, tableQuery) {
+async function sourceContextsAsync(payload, openDb, schemaQuery, queryAll) {
   const contexts = [];
   for (const source of listDataSources(payload).filter((s) => sourceMatchesPayload(s, payload))) {
     let db;
     try {
       db = await openDb(source.dbPath);
-      const tables = tableQuery(db).map((r) => r.name);
+      const tables = schemaQuery(db).map((r) => r.name);
       validateTables(tables);
-      contexts.push({ source, db, tables });
+      contexts.push({ source, db, tables, sessionColumns: tableColumnNames(queryAll, db, 'session') });
     } catch (error) {
       closeDb(db);
       throw new Error(safeDbError(error));
@@ -69,8 +69,8 @@ function makeRequestState(ctx, payload, queryAll, batchSize) {
   };
 }
 function makeSessionState(ctx, payload, queryAll, batchSize) {
-  const { source, db, tables } = ctx;
-  const { where, params } = sessionWhere(payload);
+  const { source, db, tables, sessionColumns } = ctx;
+  const { where, params } = sessionWhere(payload, { sessionColumns });
   const total = Number(queryAll(db, `select count(*) as count from session where ${where}`, params)[0]?.count || 0);
   return {
     payload,
@@ -192,8 +192,8 @@ function directRequestsPage(ctx, payload, queryAll, limit, offset) {
   return { total, items: requestRowsFromMessages(messages, sessions, parts) };
 }
 function directSessionsPage(ctx, payload, queryAll, limit, offset) {
-  const { source, db, tables } = ctx;
-  const { where, params } = sessionWhere(payload);
+  const { source, db, tables, sessionColumns } = ctx;
+  const { where, params } = sessionWhere(payload, { sessionColumns });
   const total = Number(queryAll(db, `select count(*) as count from session where ${where}`, params)[0]?.count || 0);
   const rawSessions = queryAll(db, `select id, title, directory, version, time_created, time_updated, time_archived from session where ${where} order by time_updated desc, id desc limit ? offset ?`, [...params, limit, offset]);
   const sessions = tagRows(rawSessions, source);
@@ -221,12 +221,12 @@ function pageFromContexts(contexts, payload, queryAll, defaultLimit, directPage,
   return pageResult(hydrated.items, total, payload, defaultLimit, { strategy: 'k-way-merge', batchSize, scanned, fetched, hydrated: hydrated.hydrated, hydrateGroups: hydrated.hydrateGroups, hydrationMs: hydrated.hydrationMs });
 }
 function getRequestsPageNative(payload = {}) {
-  const contexts = sourceContexts(payload, openNativeDbReadonly, (db) => nativeAll(db, "select name from sqlite_master where type='table'"));
+  const contexts = sourceContexts(payload, openNativeDbReadonly, (db) => nativeAll(db, "select name from sqlite_master where type='table'"), nativeAllParams);
   try { return pageFromContexts(contexts, payload, nativeAllParams, 100, directRequestsPage, makeRequestState, 'time_created', hydrateRequestPageItems); }
   finally { closeContexts(contexts); }
 }
 async function getRequestsPageSqlJs(payload = {}) {
-  const contexts = await sourceContextsAsync(payload, openSqlJsDbReadonly, (db) => sqlJsAll(db, "select name from sqlite_master where type='table'"));
+  const contexts = await sourceContextsAsync(payload, openSqlJsDbReadonly, (db) => sqlJsAll(db, "select name from sqlite_master where type='table'"), sqlJsAllParams);
   try { return pageFromContexts(contexts, payload, sqlJsAllParams, 100, directRequestsPage, makeRequestState, 'time_created', hydrateRequestPageItems); }
   finally { closeContexts(contexts); }
 }
@@ -252,12 +252,12 @@ function getSessionRequestsPageNative(payload = {}) { return getRequestsPageNati
 async function getSessionRequestsPageSqlJs(payload = {}) { return getRequestsPageSqlJs(sessionRequestsPayload(payload)); }
 async function getSessionRequestsPage(payload = {}) { return getRequestsPage(sessionRequestsPayload(payload)); }
 function getSessionsPageNative(payload = {}) {
-  const contexts = sourceContexts(payload, openNativeDbReadonly, (db) => nativeAll(db, "select name from sqlite_master where type='table'"));
+  const contexts = sourceContexts(payload, openNativeDbReadonly, (db) => nativeAll(db, "select name from sqlite_master where type='table'"), nativeAllParams);
   try { return pageFromContexts(contexts, payload, nativeAllParams, 80, directSessionsPage, makeSessionState, 'time_updated', hydrateSessionPageItems); }
   finally { closeContexts(contexts); }
 }
 async function getSessionsPageSqlJs(payload = {}) {
-  const contexts = await sourceContextsAsync(payload, openSqlJsDbReadonly, (db) => sqlJsAll(db, "select name from sqlite_master where type='table'"));
+  const contexts = await sourceContextsAsync(payload, openSqlJsDbReadonly, (db) => sqlJsAll(db, "select name from sqlite_master where type='table'"), sqlJsAllParams);
   try { return pageFromContexts(contexts, payload, sqlJsAllParams, 80, directSessionsPage, makeSessionState, 'time_updated', hydrateSessionPageItems); }
   finally { closeContexts(contexts); }
 }

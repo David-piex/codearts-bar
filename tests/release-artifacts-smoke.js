@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { atomicReplaceReleaseDir, cleanManagedReleaseDir, isManagedReleaseEntry } = require('../src/release-artifacts');
+const { atomicReplaceReleaseDir, cleanManagedReleaseDir, isManagedReleaseEntry, renameWithRetry } = require('../src/release-artifacts');
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'codearts-bar-release-clean-'));
 try {
@@ -31,6 +31,22 @@ try {
   assert.equal(fs.existsSync(path.join(dir, 'keep-me.txt')), true);
   assert.equal(isManagedReleaseEntry('notes.txt'), false);
   assert.equal(isManagedReleaseEntry('codearts-bar-cli', true), true);
+
+  const retrySource = path.join(dir, 'retry-source');
+  const retryTarget = path.join(dir, 'retry-target');
+  fs.mkdirSync(retrySource);
+  const originalRetryRename = fs.renameSync;
+  let retryCalls = 0;
+  fs.renameSync = (source, target) => {
+    retryCalls += 1;
+    if (retryCalls < 3) throw Object.assign(new Error('temporary Windows lock'), { code: 'EPERM' });
+    return originalRetryRename(source, target);
+  };
+  try {
+    renameWithRetry(retrySource, retryTarget, { attempts: 3, delayMs: 1 });
+  } finally { fs.renameSync = originalRetryRename; }
+  assert.equal(retryCalls, 3, 'transient Windows locks must be retried');
+  assert.equal(fs.existsSync(retryTarget), true);
 
   const parent = fs.mkdtempSync(path.join(os.tmpdir(), 'codearts-bar-release-atomic-'));
   try {

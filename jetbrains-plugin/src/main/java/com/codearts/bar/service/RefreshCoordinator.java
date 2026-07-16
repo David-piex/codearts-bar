@@ -26,7 +26,11 @@ final class RefreshCoordinator {
         return Start.NONE;
     }
 
-    synchronized Start complete() {
+    synchronized Start complete() { return complete(false, false); }
+
+    synchronized Start complete(boolean requireFollowUp) { return complete(requireFollowUp, false); }
+
+    synchronized Start complete(boolean requireFollowUp, boolean followUpNotification) {
         if (disposed) {
             running = false;
             pending = false;
@@ -34,17 +38,21 @@ final class RefreshCoordinator {
             return Start.NONE;
         }
         if (pending) {
-            if (clock.getAsLong() - startedAtMs < DEBOUNCE_MS) {
+            if (!requireFollowUp && clock.getAsLong() - startedAtMs < DEBOUNCE_MS) {
                 running = false;
                 pending = false;
                 pendingNotification = false;
                 return Start.NONE;
             }
-            boolean notifyOnError = pendingNotification;
+            boolean notifyOnError = pendingNotification || followUpNotification;
             pending = false;
             pendingNotification = false;
             startedAtMs = clock.getAsLong();
             return new Start(true, notifyOnError);
+        }
+        if (requireFollowUp) {
+            startedAtMs = clock.getAsLong();
+            return new Start(true, followUpNotification);
         }
         running = false;
         return Start.NONE;

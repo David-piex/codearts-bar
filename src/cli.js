@@ -13,7 +13,7 @@ const { envelope, failure } = require('./protocol/envelope');
 const { getSessionsPage, getRequestsPage, getSessionRequestsPage } = require('./providers/codearts/pagination');
 const localProvider = require('./providers/codeartsLocal');
 const { sanitizeText } = require('./diagnostics-report');
-const { exportSessionToFile } = require('./providers/codearts/session-export');
+const { exportSessionToFile, exportSessionsToFile } = require('./providers/codearts/session-export');
 
 const cmd = process.argv[2] || 'snapshot';
 const rest = process.argv.slice(3);
@@ -36,6 +36,12 @@ function parseSetArgs(args) {
 function readArg(args, name, fallback = null) {
   const index = args.indexOf(name);
   return index >= 0 && index + 1 < args.length ? args[index + 1] : fallback;
+}
+
+function readArgs(args, name) {
+  const values = [];
+  for (let index = 0; index < args.length - 1; index++) if (args[index] === name) values.push(args[index + 1]);
+  return values;
 }
 
 function selfTestOptions(args = []) {
@@ -180,6 +186,24 @@ async function run() {
       console.log(JSON.stringify({ ok: true, path: result.path, format: result.format, bytes: result.bytes }, null, 2));
       return;
     }
+    if (cmd === 'export-sessions') {
+      const ids = readArgs(rest, '--session-id');
+      const sources = readArgs(rest, '--session-source');
+      const sessions = ids.map((id, index) => ({ id, source: sources[index] || '' }));
+      const result = await exportSessionsToFile({
+        sessions,
+        format: String(readArg(rest, '--format', 'json')).toLowerCase(),
+        outputPath: readArg(rest, '--output'),
+        dbPath: readArg(rest, '--db'),
+        includeContent: !rest.includes('--no-content'),
+        includeReasoning: rest.includes('--include-reasoning'),
+        includeToolIO: rest.includes('--include-tool-io'),
+        redactPaths: !rest.includes('--no-redact-paths'),
+        includeErrors: !rest.includes('--no-errors'),
+      });
+      console.log(JSON.stringify({ ok: true, path: result.path, format: result.format, bytes: result.bytes, sessions: result.model.sessions.length }, null, 2));
+      return;
+    }
     if (cmd === 'config') {
       const sub = rest[0] || 'show';
       if (sub === 'show') console.log(JSON.stringify({ path: settingsPath(), settings: loadSettings() }, null, 2));
@@ -221,6 +245,8 @@ Usage:
   codearts-bar diagnose [--json]    诊断数据源/日志/缓存
   codearts-bar export-session --session-id <id> --format <json|md|xlsx> [--output <path>]
                                     导出完整会话；默认脱敏路径并排除推理与工具输入输出
+  codearts-bar export-sessions --session-id <id> --session-source <source> [...] --format <json|md|xlsx>
+                                    将多个会话导出到一个文件
   codearts-bar config show          查看配置
   codearts-bar config set --db <p> --daily-limit <n> --refresh-ms <n> --official-stats-ttl-ms <n>
   codearts-bar self-test --fixture-db <path> --config-dir <temp> --now-ms <ms>

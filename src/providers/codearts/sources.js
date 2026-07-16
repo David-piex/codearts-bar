@@ -33,6 +33,23 @@ function ensureReadableDb(dbPath) {
 }
 function validateTables(tables) { for (const required of ['message', 'session']) if (!tables.includes(required)) throw new Error(`数据库缺少 ${required} 表`); }
 function tagRows(rows, source) { return rows.map((r) => ({ ...r, source: source.id, sourceLabel: source.label, dbPath: source.dbPath })); }
+function tableColumnNames(queryAll, db, tableName) {
+  const safeName = String(tableName || '').replace(/[^A-Za-z0-9_]/g, '');
+  if (!safeName) return new Set();
+  return new Set(queryAll(db, `pragma table_info(${safeName})`, []).map((row) => String(row.name || '')).filter(Boolean));
+}
+function hasTableColumn(columns, name) {
+  if (columns instanceof Set) return columns.has(name);
+  return Array.isArray(columns) && columns.includes(name);
+}
+function topLevelSessionWhere(options = {}) {
+  if (options.includeInternalSessions === true || !hasTableColumn(options.sessionColumns, 'parent_id')) return '1=1';
+  const alias = String(options.sessionAlias || 'session').replace(/[^A-Za-z0-9_]/g, '') || 'session';
+  return `(${alias}.parent_id is null or trim(${alias}.parent_id) = '')`;
+}
+function isInternalSession(row = {}) {
+  return row.parent_id != null && String(row.parent_id).trim() !== '';
+}
 function pageBounds(payload = {}, defaultLimit = 100) {
   const limit = Math.max(1, Math.min(500, Number(payload.limit || defaultLimit)));
   const offset = Math.max(0, Number(payload.offset || 0));
@@ -62,8 +79,13 @@ function resolveTimestamp(options = {}) {
   const env = Number(process.env.CODEARTS_BAR_NOW_MS);
   return Number.isFinite(env) && env > 0 ? env : Date.now();
 }
+function filterValues(value) {
+  const values = Array.isArray(value) ? value : value == null ? [] : [value];
+  return [...new Set(values.map((item) => String(item || '').trim()).filter((item) => item && item !== 'all'))];
+}
 function sourceMatchesPayload(source, payload = {}) {
-  return !payload.source || payload.source === 'all' || payload.source === source.id;
+  const selected = filterValues(payload.source);
+  return !selected.length || selected.includes(source.id);
 }
 function likeParam(value) { return `%${String(value || '').trim()}%`; }
 function jsonExtractExpr(column, path) {
@@ -139,9 +161,27 @@ function assistantWhere(payload = {}, options = {}) {
     where.push('(session_id like ? or data like ?)');
     params.push(likeParam(q), likeParam(q));
   }
-  if (payload.model && payload.model !== 'all') {
-    where.push(`${messageModelExpr('data')} = ?`);
-    params.push(String(payload.model));
+  const models = filterValues(payload.model);
+  if (models.length) {
+    where.push(`${messageModelExpr('data')} in (${placeholders(models)})`);
+    params.push(...models);
+  }
+  const projects = filterValues(payload.project);
+  if (projects.length) {
+    const messageAlias = options.outerAlias || 'm';
+    const includesNone = projects.includes('__none');
+    const directories = projects.filter((item) => item !== '__none');
+    const projectWhere = [];
+    if (includesNone) projectWhere.push("project_session.directory is null or trim(project_session.directory) = ''");
+    if (directories.length) {
+      projectWhere.push(`project_session.directory in (${placeholders(directories)})`);
+      params.push(...directories);
+    }
+    where.push(`exists (
+      select 1 from session project_session
+      where project_session.id = ${messageAlias}.session_id
+        and (${projectWhere.map((item) => `(${item})`).join(' or ')})
+    )`);
   }
   const errorFilter = payload.error ?? payload.hasError ?? payload.errorsOnly;
   if (errorFilter === true || errorFilter === 'only' || errorFilter === 'error') where.push(`${messageErrorExpr('data')} = 1`);
@@ -156,24 +196,33 @@ function assistantWhere(payload = {}, options = {}) {
   }
   return { where: where.join(' and '), params };
 }
-function sessionWhere(payload = {}) {
-  const where = [];
+function sessionWhere(payload = {}, options = {}) {
+  const where = [topLevelSessionWhere({ ...options, includeInternalSessions: payload.includeInternalSessions === true })];
   const params = [];
   const { start, end } = normalizeRange(payload.range);
   if (start) { where.push('time_updated >= ?'); params.push(start); }
   if (end) { where.push('time_updated < ?'); params.push(end); }
   if (payload.status === 'active') where.push('time_archived is null');
   else if (payload.status === 'archived') where.push('time_archived is not null');
-  if (payload.project && payload.project !== 'all') {
-    if (payload.project === '__none') where.push("(directory is null or trim(directory) = '')");
-    else { where.push('directory = ?'); params.push(payload.project); }
+  const projects = filterValues(payload.project);
+  if (projects.length) {
+    const includesNone = projects.includes('__none');
+    const directories = projects.filter((item) => item !== '__none');
+    const projectWhere = [];
+    if (includesNone) projectWhere.push("directory is null or trim(directory) = ''");
+    if (directories.length) {
+      projectWhere.push(`directory in (${placeholders(directories)})`);
+      params.push(...directories);
+    }
+    where.push(`(${projectWhere.map((item) => `(${item})`).join(' or ')})`);
   }
-  if (payload.model && payload.model !== 'all') {
+  const models = filterValues(payload.model);
+  if (models.length) {
     const modelWhere = [
       `${jsonExtractExpr('session_message.data', '$.role')} = 'assistant'`,
-      `${messageModelExpr('session_message.data')} = ?`,
+      `${messageModelExpr('session_message.data')} in (${placeholders(models)})`,
     ];
-    const modelParams = [String(payload.model)];
+    const modelParams = [...models];
     if (start) { modelWhere.push('session_message.time_created >= ?'); modelParams.push(start); }
     if (end) { modelWhere.push('session_message.time_created < ?'); modelParams.push(end); }
     where.push(`exists (
@@ -212,9 +261,13 @@ module.exports = {
   ensureReadableDb,
   validateTables,
   tagRows,
+  tableColumnNames,
+  topLevelSessionWhere,
+  isInternalSession,
   pageBounds,
   normalizeRange,
   resolveTimestamp,
+  filterValues,
   sourceMatchesPayload,
   likeParam,
   jsonExtractExpr,

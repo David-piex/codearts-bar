@@ -45,12 +45,14 @@ function createFixture() {
     create table part (id text primary key, message_id text, session_id text, time_created integer, time_updated integer, data text);
   `);
   const insertSession = db.prepare('insert into session values (?, ?, ?, ?, ?, ?, ?, ?, ?)');
-  insertSession.run('ses_export', 'project-1', 'ses_parent', '=SUM(1,1) 中文会话', path.join(os.homedir(), 'secret-project'), '26.6.2', now - 10000, now - 1000, null);
+  insertSession.run('ses_export', 'project-1', '', '=SUM(1,1) 中文会话', path.join(os.homedir(), 'secret-project'), '26.6.2', now - 10000, now - 1000, null);
+  insertSession.run('ses_internal', 'project-1', 'ses_export', 'Explore internals (@explore subagent)', path.join(os.homedir(), 'secret-project'), '26.6.2', now - 5000, now - 500, null);
   const insertMessage = db.prepare('insert into message values (?, ?, ?, ?, ?)');
   insertMessage.run('msg_user', 'ses_export', now - 9000, now - 9000, JSON.stringify({ role: 'user' }));
   insertMessage.run('msg_assistant', 'ses_export', now - 8000, now - 2000, JSON.stringify({ role: 'assistant', providerID: 'provider', modelID: 'model', time: { created: now - 8000, completed: now - 2000 }, tokens: { input: 100, output: 50, cache: { read: 10, write: 5 } } }));
   const insertPart = db.prepare('insert into part values (?, ?, ?, ?, ?, ?)');
   insertPart.run('part_user', 'msg_user', 'ses_export', now - 9000, now - 9000, JSON.stringify({ type: 'text', text: `请读取 ${path.join(os.homedir(), 'secret.txt')} 和 D:/corp/private/file.txt token=top-secret refresh_token=refresh-secret accessToken=access-secret AK=ak-secret SK=sk-secret\nprefix {"token":123456} suffix\npayload={"token":"abc\\\"TAIL_SECRET"}\n${JSON.stringify({ access_token: 'text-json-secret', session_token: 654321, token: 'whole-json-secret' })}\n\n\`\`\`js\nconsole.log('😀');\n\`\`\`\n${'长文本'.repeat(500)}` }));
+  insertPart.run('part_synthetic', 'msg_user', 'ses_export', now - 8999, now - 8999, JSON.stringify({ type: 'text', text: '<system-reminder>INTERNAL_SYNTHETIC_PROMPT</system-reminder>', synthetic: true }));
   insertPart.run('part_reasoning', 'msg_assistant', 'ses_export', now - 7900, now - 7800, JSON.stringify({ type: 'reasoning', text: 'private reasoning' }));
   insertPart.run('part_tool', 'msg_assistant', 'ses_export', now - 7000, now - 6000, JSON.stringify({ type: 'tool', tool: 'read', state: { status: 'completed', title: 'Read file', input: { file: 'D:/corp/private/tool.txt', token: 'tool-token-secret', refreshToken: 'tool-refresh-secret', nested: { apiKey: 'tool-api-secret', accountPassword: 'tool-password-secret' } }, output: JSON.stringify({ Authorization: 'Bearer tool-bearer-secret', AK: 'tool-ak-secret', SK: 'tool-sk-secret', private_key: 'tool-private-secret' }), error: `failure token=tool-error-secret at C:/Users/private-user/project/file.js ${'x'.repeat(700)}\nprivate-stack-frame`, time: { start: now - 7000, end: now - 6000 } } }));
   insertPart.run('part_finish', 'msg_assistant', 'ses_export', now - 2100, now - 2000, JSON.stringify({ type: 'step-finish', tokens: { input: 100, output: 50, cache: { read: 10, write: 5 } } }));
@@ -147,6 +149,7 @@ async function main() {
   assert.equal(native.usage.total, 165);
   assert.ok(native.messages[0].content.includes('token=[redacted]'));
   assert.ok(native.messages[0].content.includes('~'));
+  assert.doesNotMatch(JSON.stringify(native), /INTERNAL_SYNTHETIC_PROMPT/);
   for (const secret of ['refresh-secret', 'access-secret', 'ak-secret', 'sk-secret']) assert.doesNotMatch(JSON.stringify(native), new RegExp(secret));
   assert.match(native.messages[0].content, /```js/);
   assert.match(native.messages[0].content, /😀/);
@@ -219,6 +222,16 @@ async function main() {
   delete process.env.CODEARTS_BAR_FORCE_SQLJS;
   assert.deepEqual(sqlJs, native, 'Native SQLite and SQL.js must produce the same normalized export model');
 
+  for (const forceSqlJs of [false, true]) {
+    if (forceSqlJs) process.env.CODEARTS_BAR_FORCE_SQLJS = '1';
+    else delete process.env.CODEARTS_BAR_FORCE_SQLJS;
+    await assert.rejects(
+      () => buildSessionExport({ ...options, sessionId: 'ses_internal' }),
+      (error) => error?.code === 'SESSION_EXPORT_INTERNAL_SESSION' && /内置子任务/.test(error.message),
+    );
+  }
+  delete process.env.CODEARTS_BAR_FORCE_SQLJS;
+
   const json = await serializeSessionExport(native, 'json');
   const markdown = await serializeSessionExport(native, 'md');
   const xlsx = await serializeSessionExport(native, 'xlsx');
@@ -250,7 +263,7 @@ async function main() {
     assert.equal(contentCells.join('').endsWith('😀'), true, `Emoji was split for ${length}`);
   }
 
-  const batchModel = await buildSessionBatchExport({ ...options, includeToolIO: true, sessions: [{ id: 'ses_export', dbPath }] });
+  const batchModel = await buildSessionBatchExport({ ...options, includeToolIO: true, sessions: [{ id: 'ses_export', dbPath }, { id: 'ses_internal', dbPath }] });
   assertSchema(batchModel);
   assert.equal(batchModel.completeness.sessions, 1);
   for (const format of ['json', 'md', 'xlsx']) {

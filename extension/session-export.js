@@ -60,13 +60,24 @@ function selectedPrivacyOptions(items) {
 }
 
 async function exportSessionWithPrivacy(options = {}) {
-  const { vscode, localProvider, session } = options;
+  const { session } = options;
+  return exportWithPrivacy({ ...options, sessions: [session], batch: false });
+}
+
+async function exportSessionsWithPrivacy(options = {}) {
+  const sessions = Array.isArray(options.sessions) ? options.sessions.filter((item) => item?.id) : [];
+  if (!sessions.length) return { ok: false, canceled: true, stage: "selection" };
+  return exportWithPrivacy({ ...options, sessions, batch: true });
+}
+
+async function exportWithPrivacy(options = {}) {
+  const { vscode, localProvider, sessions, batch } = options;
   const format = normalizeFormat(options.format);
   const privacyItems = PRIVACY_OPTIONS.map((item) => ({ ...item }));
   const selection = await vscode.window.showQuickPick(privacyItems, {
     canPickMany: true,
     ignoreFocusOut: true,
-    title: `\u5bfc\u51fa\u4f1a\u8bdd\u4e3a ${FORMAT_LABELS[format]}`,
+    title: `${batch ? `\u6279\u91cf\u5bfc\u51fa ${sessions.length} \u4e2a\u4f1a\u8bdd` : "\u5bfc\u51fa\u4f1a\u8bdd"}\u4e3a ${FORMAT_LABELS[format]}`,
     placeHolder:
       "\u9009\u62e9\u5bfc\u51fa\u5185\u5bb9\uff1b\u8bbf\u95ee\u4ee4\u724c\u3001\u5bc6\u94a5\u7b49\u51ed\u636e\u59cb\u7ec8\u8131\u654f",
   });
@@ -74,31 +85,30 @@ async function exportSessionWithPrivacy(options = {}) {
 
   const extension = format === "xlsx" ? "xlsx" : format;
   const uri = await vscode.window.showSaveDialog({
-    title: `\u5bfc\u51fa\u4f1a\u8bdd\u4e3a ${FORMAT_LABELS[format]}`,
+    title: `${batch ? `\u6279\u91cf\u5bfc\u51fa ${sessions.length} \u4e2a\u4f1a\u8bdd` : "\u5bfc\u51fa\u4f1a\u8bdd"}\u4e3a ${FORMAT_LABELS[format]}`,
     defaultUri: vscode.Uri.file(
-      `${localProvider.safeFileStem(session?.title || session?.id || "codearts-session")}.${extension}`,
+      `${batch ? "codearts-sessions" : localProvider.safeFileStem(sessions[0]?.title || sessions[0]?.id || "codearts-session")}.${extension}`,
     ),
     filters: { [FORMAT_LABELS[format]]: [extension] },
     saveLabel: "\u5bfc\u51fa",
   });
   if (!uri) return { ok: false, canceled: true, stage: "save" };
 
-  const result = await localProvider.exportSessionToFile({
-    ...(options.providerOptions || {}),
-    sessionId: session?.id,
-    source: session?.source,
-    format,
-    outputPath: uri.fsPath,
-    ...selectedPrivacyOptions(selection),
-  });
+  const exportOptions = {
+    ...(options.providerOptions || {}), format, outputPath: uri.fsPath, ...selectedPrivacyOptions(selection),
+  };
+  const result = batch
+    ? await localProvider.exportSessionsToFile({ ...exportOptions, sessions })
+    : await localProvider.exportSessionToFile({ ...exportOptions, sessionId: sessions[0]?.id, source: sessions[0]?.source });
   vscode.window.showInformationMessage(
-    `\u4f1a\u8bdd\u5df2\u5bfc\u51fa\uff1a${path.basename(result.path)}`,
+    `${batch ? `${result.model?.sessions?.length || sessions.length} \u4e2a\u4f1a\u8bdd\u5df2\u5bfc\u51fa` : "\u4f1a\u8bdd\u5df2\u5bfc\u51fa"}\uff1a${path.basename(result.path)}`,
   );
   return {
     ok: true,
     path: result.path,
     format: result.format,
     bytes: result.bytes,
+    sessions: batch ? Number(result.model?.sessions?.length || sessions.length) : 1,
   };
 }
 
@@ -108,4 +118,5 @@ module.exports = {
   normalizeFormat,
   selectedPrivacyOptions,
   exportSessionWithPrivacy,
+  exportSessionsWithPrivacy,
 };

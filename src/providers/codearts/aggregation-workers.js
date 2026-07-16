@@ -7,6 +7,7 @@ const {
   sessionWhere,
   tagRows,
   resolveTimestamp,
+  tableColumnNames,
 } = require('./sources');
 const { safeDbError } = require('./diagnostics');
 const {
@@ -44,7 +45,8 @@ function runNativeAggregate(payload, worker, sources = null) {
       db = openNativeDbReadonly(source.dbPath);
       const tables = nativeAll(db, "select name from sqlite_master where type='table'").map((r) => r.name);
       validateTables(tables);
-      items.push(worker({ source, db, tables, queryAll: nativeAllParams }));
+      const sessionColumns = tableColumnNames(nativeAllParams, db, 'session');
+      items.push(worker({ source, db, tables, sessionColumns, queryAll: nativeAllParams }));
     } catch (error) {
       errors.push({ source: source.id, message: safeDbError(error) });
     } finally { closeDb(db); }
@@ -61,7 +63,8 @@ async function runSqlJsAggregate(payload, worker, sources = null) {
       db = await openSqlJsDbReadonly(source.dbPath);
       const tables = sqlJsAll(db, "select name from sqlite_master where type='table'").map((r) => r.name);
       validateTables(tables);
-      items.push(worker({ source, db, tables, queryAll: sqlJsAllParams }));
+      const sessionColumns = tableColumnNames(sqlJsAllParams, db, 'session');
+      items.push(worker({ source, db, tables, sessionColumns, queryAll: sqlJsAllParams }));
     } catch (error) {
       errors.push({ source: source.id, message: safeDbError(error) });
     } finally { closeDb(db); }
@@ -93,9 +96,9 @@ function modelStatsWorker(payload = {}) {
     return agg.modelStats(rows, 0, partMap).map((x) => ({ ...x, source: source.id, sourceLabel: source.label }));
   };
 }
-function sessionSummaryForSource(queryAll, db, source, payload = {}) {
+function sessionSummaryForSource(queryAll, db, source, payload = {}, sessionColumns = new Set()) {
   const basePayload = { ...payload, status: 'all' };
-  const { where, params } = sessionWhere(basePayload);
+  const { where, params } = sessionWhere(basePayload, { sessionColumns });
   const rows = queryAll(db, `select id, title, directory, time_created, time_updated, time_archived from session where ${where}`, params);
   const projects = new Map();
   let active = 0;

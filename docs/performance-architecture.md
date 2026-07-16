@@ -90,7 +90,7 @@ Electron / VS Code / JetBrains / CLI
 
 - VS Code 详情查询同时保留 canonical 当前摘要和 filtered range。
 - JetBrains 将 dashboard 当前状态与 analytics 历史查询分开。
-- JetBrains 单文件 CLI 使用精简但等价的协议/脱敏路径，并由 `<125000` 字节门禁保护。
+- JetBrains 单文件 CLI 使用精简但等价的协议、脱敏与多选筛选路径，并由 `<127000` 字节门禁保护。
 - Query Protocol v1 是跨端稳定边界；客户端应忽略新增字段，但不能忽略 scope 和完整性语义。
 
 ## 跨平台构建

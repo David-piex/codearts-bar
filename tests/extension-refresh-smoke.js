@@ -42,6 +42,8 @@ const data = require(path.join(root, "src", "extension-data.js"));
   assert.ok(Array.isArray(details.trends.hourly24h));
   assert.ok(Array.isArray(details.trends.daily14d));
   assert.ok(Array.isArray(details.models));
+  assert.ok(details.filterModels.length > 0, 'unfiltered details must expose model filter options on first load');
+  assert.ok(details.filterProjects.length > 0, 'unfiltered details must expose project filter options on first load');
   assert.ok(Array.isArray(details.sourceStats));
   assert.ok(Array.isArray(details.providerStats));
   assert.ok(Array.isArray(details.projects));
@@ -69,6 +71,9 @@ const data = require(path.join(root, "src", "extension-data.js"));
     getDashboardAggregates: localProvider.getDashboardAggregates,
     getSessionsPage: localProvider.getSessionsPage,
     getRequestsPage: localProvider.getRequestsPage,
+    getDatabaseHealth: localProvider.getDatabaseHealth,
+    getModelStats: localProvider.getModelStats,
+    getSessionSummary: localProvider.getSessionSummary,
   };
   let currentSummaryOptions;
   try {
@@ -127,8 +132,11 @@ const data = require(path.join(root, "src", "extension-data.js"));
     localProvider.getSessionsPage = async () => ({ items: [], total: 0 });
     localProvider.getRequestsPage = async () => ({ items: [{ id: 'private', sessionTitle: privateFailure, error: privateFailure }], total: 1 });
     localProvider.getDatabaseHealth = async () => ({ items: [], sourceErrors: [{ source: 'failed-source', message: privateFailure }] });
+    localProvider.getModelStats = async () => ({ ok: true, items: [], sourceErrors: [{ source: 'failed-source', message: privateFailure }] });
+    localProvider.getSessionSummary = async () => ({ ok: true, projects: [], sourceErrors: [] });
     const privateDetails = await data.getExtensionDetails({ ...options, rangePreset: 'custom', range: { start: customStart, end: customEnd } });
     const privateView = viewModel(privateDetails);
+    assert.equal(privateView.filterOptionsComplete, false, 'partial filter-option reads must not prune user selections');
     assert.equal(privateView.completeness.complete, false);
     assert.deepEqual(privateView.completeness.reasons, ['source-read-failed']);
     assert.deepEqual(privateView.completeness.sources, { expected: 2, read: 1, failed: 1, missing: 0 });

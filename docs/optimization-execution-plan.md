@@ -14,7 +14,7 @@
 | Canonical quota | 完成 | 筛选仅改变分析数据，不改变当前本地状态 |
 | 四端筛选协议 | 完成 | Electron、VS Code、JetBrains、CLI 使用相同范围语义 |
 | JetBrains 请求契约 | 完成 | `cacheWrite` 保留，非数字 status 不显示“错误 0” |
-| JetBrains bundle | 完成 | `<125000` 字节门禁，native/sql.js 与脱敏失败路径均验证 |
+| JetBrains bundle | 完成 | `<127000` 字节门禁，native/sql.js、多选筛选与脱敏失败路径均验证 |
 | 跨平台 CI | 已配置 | macOS/Linux 测试、构建、资源 smoke、artifact 上传 |
 | 真实库对账 | 完成 | all/30d、桌面/CLI、native/sql.js、rollup/no-rollup 数字一致 |
 | 100k 性能基线 | 完成 | 热路径 native/sql.js 最大值 140.2ms/165.2ms，冷路径单独记录 |

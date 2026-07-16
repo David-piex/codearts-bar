@@ -81,9 +81,9 @@
     const parts = directory.split(/[\\/]+/).filter(Boolean);
     return parts.length > 2 ? `\u2026\\${parts.slice(-2).join("\\")}` : directory;
   }
-  function sessions(snapshot) {
+  function sessions(snapshot, selectedKeys = new Set()) {
     const rows = snapshot.sessions || [];
-    sessionRows(rows);
+    sessionRows(rows, null, selectedKeys);
   }
   function providers(snapshot) {
     const rows = snapshot.providers || [], max = Math.max(1, ...rows.map((item) => f.number(item.total)));
@@ -91,18 +91,22 @@
       ? rows.map((item) => `<div class="rank-row"><span class="rank-name" title="${f.html((item.models || []).join(", "))}">${f.html(item.name)}</span><progress class="rank-track" max="100" value="${Math.max(2, (f.number(item.total) / max) * 100)}"></progress><span class="rank-value">${f.token(item.total)}</span></div>`).join("")
       : '<p class="empty-copy">暂无 Provider 调用记录</p>';
   }
-  function sessionRows(rows, page = null) {
+  function sessionRows(rows, page = null, selectedKeys = new Set()) {
     element("#sessions").innerHTML = rows.length
       ? rows
           .map(
             (item) =>
-              `<div class="session-row" data-session-id="${f.html(item.id)}"><div class="session-main"><b>${f.html(item.title)}</b><span title="${f.html(item.directory || "")}">${f.html(compactDirectory(item.directory) || item.sourceLabel || "\u672c\u5730\u4f1a\u8bdd")}</span></div><span class="session-meta">${f.html(item.model || item.sourceLabel)}</span><span class="session-total">${f.token(item.total)}${item.age == null ? "" : ` \u00b7 ${f.age(item.age)}`}</span><div class="session-export-actions"><button data-session-export="xlsx" title="\u5bfc\u51fa Excel">XLSX</button><button data-session-export="md" title="\u5bfc\u51fa Markdown">MD</button><button data-session-export="json" title="\u5bfc\u51fa JSON">JSON</button></div></div>`,
+              `<div class="session-row" data-session-id="${f.html(item.id)}" data-session-source="${f.html(item.source || "")}"><label class="session-check" title="\u9009\u62e9\u4f1a\u8bdd"><input type="checkbox" data-session-select ${selectedKeys.has(`${item.source || ""}:${item.id}`) ? "checked" : ""}><span></span></label><div class="session-main"><b>${f.html(item.title)}</b><span title="${f.html(item.directory || "")}">${f.html(compactDirectory(item.directory) || item.sourceLabel || "\u672c\u5730\u4f1a\u8bdd")}</span></div><span class="session-meta">${f.html(item.model || item.sourceLabel)}</span><span class="session-total">${f.token(item.total)}${item.age == null ? "" : ` \u00b7 ${f.age(item.age)}`}</span><div class="session-export-actions"><button data-session-export="xlsx" title="\u5bfc\u51fa Excel">XLSX</button><button data-session-export="md" title="\u5bfc\u51fa Markdown">MD</button><button data-session-export="json" title="\u5bfc\u51fa JSON">JSON</button></div></div>`,
           )
           .join("")
       : '<p class="empty-copy">\u6682\u65e0\u6700\u8fd1\u4f1a\u8bdd</p>';
     if (page) {
       element("#sessionCount").textContent = `${f.exact.format(page.total || 0)} \u6761`;
-      element("#sessionPageLabel").textContent = `${page.page || 1} / ${page.pageCount || 1}`;
+      const start = page.total ? (Number(page.page || 1) - 1) * Number(page.pageSize || rows.length) + 1 : 0;
+      const end = Math.min(Number(page.total || 0), start + rows.length - 1);
+      element("#sessionPageLabel").textContent = `${start}-${Math.max(start, end)} / ${page.total || 0} \u00b7 \u7b2c ${page.page || 1} / ${page.pageCount || 1} \u9875`;
+      element("#sessionPageJump").value = page.page || 1;
+      element("#sessionPageJump").max = page.pageCount || 1;
       element("#sessionPrevious").disabled = Number(page.page || 1) <= 1;
       element("#sessionNext").disabled = Number(page.page || 1) >= Number(page.pageCount || 1);
     }
@@ -117,10 +121,14 @@
     element("#requests").innerHTML = rows.length ? rows.map((item) => {
       const when = item.time ? new Date(item.time).toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false }) : "—";
       const latency = Number.isFinite(Number(item.latencyMs)) ? f.milliseconds(item.latencyMs) : "—";
-      return `<tr data-request-id="${f.html(item.id)}" tabindex="0"><td>${f.html(when)}</td><td>${f.html(item.sourceLabel || item.source || "—")}</td><td><b>${f.html(item.model || "—")}</b><small>${f.html(item.provider || "")}</small></td><td>${f.token(item.input)}</td><td>${f.token(item.output)}</td><td>${f.token(item.cacheWrite)}</td><td>${f.token(item.cacheRead)}</td><td><b>${f.token(item.total)}</b></td><td>${latency}</td><td><span class="request-status ${item.ok ? "ok" : "bad"}">${f.html(String(item.status || (item.ok ? 200 : "错误")))}</span></td><td class="request-session" title="${f.html(item.sessionTitle)}">${f.html(item.sessionTitle)}</td></tr>`;
+      return `<tr data-request-id="${f.html(item.id)}" data-request-source="${f.html(item.source || "")}" tabindex="0"><td>${f.html(when)}</td><td>${f.html(item.sourceLabel || item.source || "—")}</td><td><b>${f.html(item.model || "—")}</b><small>${f.html(item.provider || "")}</small></td><td>${f.token(item.input)}</td><td>${f.token(item.output)}</td><td>${f.token(item.cacheWrite)}</td><td>${f.token(item.cacheRead)}</td><td><b>${f.token(item.total)}</b></td><td>${latency}</td><td><span class="request-status ${item.ok ? "ok" : "bad"}">${f.html(String(item.status || (item.ok ? 200 : "错误")))}</span></td><td class="request-session" title="${f.html(item.sessionTitle)}">${f.html(item.sessionTitle)}</td></tr>`;
     }).join("") : '<tr><td colspan="11" class="empty-copy">当前筛选范围暂无请求</td></tr>';
     if (page) {
-      element("#requestPageLabel").textContent = `${page.page || 1} / ${page.pageCount || 1}`;
+      const start = page.total ? (Number(page.page || 1) - 1) * Number(page.pageSize || rows.length) + 1 : 0;
+      const end = Math.min(Number(page.total || 0), start + rows.length - 1);
+      element("#requestPageLabel").textContent = `${start}-${Math.max(start, end)} / ${page.total || 0} \u00b7 \u7b2c ${page.page || 1} / ${page.pageCount || 1} \u9875`;
+      element("#requestPageJump").value = page.page || 1;
+      element("#requestPageJump").max = page.pageCount || 1;
       element("#requestPrevious").disabled = Number(page.page || 1) <= 1;
       element("#requestNext").disabled = Number(page.page || 1) >= Number(page.pageCount || 1);
     }

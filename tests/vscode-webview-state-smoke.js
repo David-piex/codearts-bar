@@ -19,6 +19,7 @@ const saved = {
   sessionPage: 3,
   requestPage: 2,
   selectedRequestId: 'request-page-2',
+  selectedRequestSource: 'cli',
   sessionSearch: 'retained search',
   scrollTop: 417,
 };
@@ -84,9 +85,18 @@ assert.equal(posted.find((item) => item.type === 'sessionsPage').search, 'retain
 assert.equal(posted.find((item) => item.type === 'requestsPage').page, 2);
 
 const receive = listeners['window:message'];
+receive({ data: { type: 'detailsError', generation: 1, payload: { error: 'initial details unavailable' } } });
+assert.equal(element('#loading').hidden, true, 'initial detail failure must close the loading surface');
+assert.equal(element('#dashboard').hidden, true, 'initial detail failure must not reveal an empty dashboard');
+assert.equal(element('#error').hidden, false, 'initial detail failure must reveal the error surface');
+assert.equal(element('#errorText').textContent, 'initial details unavailable');
 receive({ data: { type: 'sessionsPage', payload: { ok: true, data: { items: [{ id: 'session-page-3' }], page: 3, pageCount: 4, total: 61 } } } });
-receive({ data: { type: 'requestsPage', payload: { ok: true, data: { items: [{ id: 'request-page-2', model: 'page-model' }], page: 2, pageCount: 3, total: 81 } } } });
-assert.equal(viewCalls.requestDetail.at(-1)?.id, 'request-page-2', 'selected request must be restored from the database page');
+  receive({ data: { type: 'requestsPage', payload: { ok: true, data: { items: [
+    { id: 'request-page-2', source: 'desktop', model: 'wrong-model' },
+    { id: 'request-page-2', source: 'cli', model: 'page-model' },
+  ], page: 2, pageCount: 3, total: 81 } } } });
+  assert.equal(viewCalls.requestDetail.at(-1)?.id, 'request-page-2', 'selected request must be restored from the database page');
+  assert.equal(viewCalls.requestDetail.at(-1)?.model, 'page-model', 'duplicate request IDs must restore the row from the selected source');
 
 const callsBeforeDetails = { sessions: viewCalls.sessionRows.length, requests: viewCalls.requestRows.length, detail: viewCalls.requestDetail.length };
 receive({ data: { type: 'details', generation: 1, payload: {
@@ -111,8 +121,35 @@ assert.equal(refreshedSessionRequest.search, 'retained search');
 assert.equal(refreshedRequestRequest.page, 2);
 assert.equal(document.scrollingElement.scrollTop, 417);
 assert.deepEqual(
-  Object.fromEntries(['sessionPage', 'requestPage', 'selectedRequestId', 'sessionSearch', 'scrollTop'].map((key) => [key, savedStates.at(-1)[key]])),
-  { sessionPage: 3, requestPage: 2, selectedRequestId: 'request-page-2', sessionSearch: 'retained search', scrollTop: 417 },
+    Object.fromEntries(['sessionPage', 'requestPage', 'selectedRequestId', 'selectedRequestSource', 'sessionSearch', 'scrollTop'].map((key) => [key, savedStates.at(-1)[key]])),
+    { sessionPage: 3, requestPage: 2, selectedRequestId: 'request-page-2', selectedRequestSource: 'cli', sessionSearch: 'retained search', scrollTop: 417 },
 );
+
+receive({ data: { type: 'details', generation: 2, payload: {
+  ok: true,
+  timestamp: 1783512000001,
+  updatedAt: 'now',
+  selectedScope: { source: 'missing-source', model: 'missing-model', project: 'C:/missing' },
+  filterOptionsComplete: true,
+  filterSources: [{ id: 'cli', label: 'CLI' }],
+  filterModels: [{ name: 'current-model' }],
+  filterProjects: [{ id: 'C:/current', directory: 'C:/current', label: 'current', count: 1 }],
+  usage: { today: {}, window: {}, week: {}, all: {} },
+  trends: { range: [], hourly24h: [], daily14d: [] },
+  models: [], providers: [], sources: [], projects: [], sessions: [], requests: [], performance: {}, diagnostics: {},
+} } });
+const recoveredFilter = posted.filter((item) => item.type === 'filter').at(-1);
+assert.deepEqual(
+  { source: recoveredFilter.source, model: recoveredFilter.model, project: recoveredFilter.project },
+  { source: 'all', model: 'all', project: 'all' },
+  'authoritative filter options must prune stale selections and automatically recover the current view',
+);
+
+receive({ data: { type: 'reset', generation: 3 } });
+assert.equal(element('#loading').hidden, false, 'database switches must restore the loading surface');
+assert.equal(element('#dashboard').hidden, true, 'database switches must hide rows from the previous database');
+assert.equal(viewCalls.requestDetail.at(-1), null, 'database switches must clear request details from the previous database');
+assert.equal(savedStates.at(-1).sessionPage, 1);
+assert.equal(savedStates.at(-1).requestPage, 1);
 
 console.log('ok - vscode webview preserves database pages search selection and scroll on details refresh');

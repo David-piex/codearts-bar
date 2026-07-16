@@ -72,7 +72,10 @@ try {
   ]);
   assert.equal(fs.existsSync(path.join(runtimeDir, '.bundle-src')), false);
   const entry = path.join(runtimeDir, ...manifest.entry.split('/'));
-  assert.equal(fs.statSync(entry).size < 126000, true, 'bundled CLI must reuse the packaged sql.js runtime instead of embedding a duplicate');
+  const entrySource = fs.readFileSync(entry, 'utf8');
+  assert.match(entrySource, /require\(["']sql\.js["']\)/, 'bundled CLI must load the packaged sql.js runtime as an external dependency');
+  assert.equal(entrySource.includes('sql.js is a port of SQLite'), false, 'bundled CLI must not embed the sql.js implementation');
+  assert.equal(fs.statSync(entry).size < 150000, true, 'bundled CLI must stay within the slim runtime budget');
   const exportEntry = path.join(runtimeDir, 'src', 'providers', 'codearts', 'session-export-cli.js');
   assert.equal(fs.existsSync(exportEntry), true, 'bundled runtime must include the separate session exporter');
 
@@ -127,10 +130,20 @@ try {
     assert.equal(typeof requests.data.items[0].input, 'number');
     assert.equal(typeof requests.data.items[0].output, 'number');
     assert.equal(typeof requests.data.items[0].cacheWrite, 'number');
+
+    const multiModel = run(entry, ['query', 'analytics', '--start', '1', '--end', '9999999999999', '--model', 'fixture-model', '--model', 'multi-model'], forceSqlJs);
+    assert.equal(multiModel.ok, true);
+    assert.equal(multiModel.data.models.length, 2, 'repeated model arguments must use OR semantics');
+
+    const projectAnalytics = run(entry, ['query', 'analytics', '--start', '1', '--end', '9999999999999', '--project', 'C:/fixture'], forceSqlJs);
+    assert.equal(projectAnalytics.data.usage.total, 220, 'analytics must apply a matching project scope');
+    const missingProjectAnalytics = run(entry, ['query', 'analytics', '--start', '1', '--end', '9999999999999', '--project', 'C:/missing'], forceSqlJs);
+    assert.equal(missingProjectAnalytics.data.usage.total, 0, 'analytics must not ignore an unmatched project scope');
   }
 
   const sessions = run(entry, ['query', 'sessions', '--page', '1', '--page-size', '1'], false);
   const sessionId = sessions.data.items[0].id;
+  const allSessions = run(entry, ['query', 'sessions', '--page', '1', '--page-size', '10'], false).data.items;
   for (const forceSqlJs of [false, true]) {
     for (const format of ['json', 'md', 'xlsx']) {
       const outputPath = path.join(temp, `session-${forceSqlJs ? 'sqljs' : 'native'}.${format}`);
@@ -146,6 +159,29 @@ try {
         const workbook = new ExcelJS.Workbook();
         await workbook.xlsx.readFile(outputPath);
         assert.deepEqual(workbook.worksheets.map((sheet) => sheet.name), ['Summary', 'Messages', 'Requests', 'Tools']);
+      }
+    }
+  }
+
+  for (const forceSqlJs of [false, true]) {
+    for (const format of ['json', 'md', 'xlsx']) {
+      const outputPath = path.join(temp, `sessions-${forceSqlJs ? 'sqljs' : 'native'}.${format}`);
+      const args = ['export-sessions'];
+      for (const session of allSessions) args.push('--session-id', session.id, '--session-source', session.source);
+      args.push('--format', format, '--output', outputPath);
+      const result = run(exportEntry, args, forceSqlJs);
+      assert.equal(result.ok, true);
+      assert.equal(result.sessions, allSessions.length);
+      if (format === 'json') {
+        const batch = JSON.parse(fs.readFileSync(outputPath, 'utf8'));
+        assert.equal(batch.kind, 'session-batch');
+        assert.equal(batch.sessions.length, allSessions.length);
+      }
+      if (format === 'md') assert.match(fs.readFileSync(outputPath, 'utf8'), /^# CodeArts 会话批量导出/);
+      if (format === 'xlsx') {
+        const workbook = new ExcelJS.Workbook();
+        await workbook.xlsx.readFile(outputPath);
+        assert.deepEqual(workbook.worksheets.map((sheet) => sheet.name), ['Sessions', 'Messages', 'Requests', 'Tools']);
       }
     }
   }

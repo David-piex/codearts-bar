@@ -5,19 +5,29 @@
   let range = saved.range || "today";
   let customStart = Number(saved.customStart || 0);
   let customEnd = Number(saved.customEnd || 0);
-  let sourceFilter = saved.sourceFilter || "all";
-  let modelFilter = saved.modelFilter || "all";
-  let projectFilter = saved.projectFilter || "all";
+  function normalizeSelection(value) {
+    const values = Array.isArray(value) ? value : value && value !== "all" ? [value] : [];
+    return [...new Set(values.map((item) => String(item || "").trim()).filter((item) => item && item !== "all"))];
+  }
+  const filterPayload = (values) => values.length ? values : "all";
+  let sourceFilter = normalizeSelection(saved.sourceFilter);
+  let modelFilter = normalizeSelection(saved.modelFilter);
+  let projectFilter = normalizeSelection(saved.projectFilter);
   const knownSources = new Map();
   const knownModels = new Set();
+  const knownProjects = new Map();
   let openMenu = "";
   let latestGeneration = 0;
   let customDraftDirty = false;
   let sessionPage = Math.max(1, Number(saved.sessionPage || 1));
+  let sessionPageSize = [10, 20, 50, 100].includes(Number(saved.sessionPageSize)) ? Number(saved.sessionPageSize) : 20;
   let sessionPageData = { items: [], total: 0, page: 1, pageCount: 1 };
   let requestPage = Math.max(1, Number(saved.requestPage || 1));
+  let requestPageSize = [10, 20, 50, 100].includes(Number(saved.requestPageSize)) ? Number(saved.requestPageSize) : 20;
   let requestPageData = { items: [], total: 0, page: 1, pageCount: 1 };
+  const selectedSessions = new Map((Array.isArray(saved.selectedSessions) ? saved.selectedSessions : []).filter((item) => item?.id).map((item) => [`${item.source || ""}:${item.id}`, item]));
   let selectedRequestId = saved.selectedRequestId || "";
+  let selectedRequestSource = saved.selectedRequestSource || "";
   let databasePagesLoaded = false;
   const element = (selector) => document.querySelector(selector),
     all = (selector) => [...document.querySelectorAll(selector)];
@@ -58,7 +68,9 @@
   function rangeState() {
     return {
       range, customStart, customEnd, sourceFilter, modelFilter, projectFilter,
-      sessionPage, requestPage, selectedRequestId,
+      sessionPage, requestPage, selectedRequestId, selectedRequestSource,
+      sessionPageSize, requestPageSize,
+      selectedSessions: [...selectedSessions.values()],
       sessionSearch: element("#sessionSearch")?.value || saved.sessionSearch || "",
       scrollTop: Number(document.scrollingElement?.scrollTop || 0),
     };
@@ -98,10 +110,11 @@
     element("#customRange").hidden = range !== "custom";
   }
   function setMenuOpen(name, next) {
-    for (const menuName of ["range", "source", "model", "project"]) {
+    for (const menuName of ["range", "source", "model", "project", "sessionSize", "requestSize"]) {
       const expanded = menuName === name && next;
       element(`#${menuName}Menu`).hidden = !expanded;
-      element(menuName === "range" ? "#rangeMenuButton" : `#${menuName}Filter`).setAttribute("aria-expanded", String(expanded));
+      const trigger = menuName === "range" ? "#rangeMenuButton" : menuName === "sessionSize" ? "#sessionPageSizeButton" : menuName === "requestSize" ? "#requestPageSizeButton" : `#${menuName}Filter`;
+      element(trigger).setAttribute("aria-expanded", String(expanded));
     }
     openMenu = next ? name : "";
   }
@@ -112,27 +125,50 @@
     requestRequestsPage(true);
   }
   function menuOptionHtml(kind, value, label, selected) { return `<button data-menu-option="${kind}" data-value="${window.CodeArtsFormat.html(value)}" role="option" aria-selected="${selected}" class="${selected ? "selected" : ""}">${window.CodeArtsFormat.html(label)}</button>`; }
+  function selectionLabel(values, options, allLabel) {
+    if (!values.length) return allLabel;
+    if (values.length === 1) return options.find((item) => item.value === values[0])?.label || values[0];
+    return `已选 ${values.length} 项`;
+  }
+  function multiMenuHtml(kind, values, allLabel, options) {
+    return menuOptionHtml(kind, "all", allLabel, !values.length)
+      + options.map((item) => menuOptionHtml(kind, item.value, item.label, values.includes(item.value))).join("");
+  }
   function syncScopeChrome() {
-    for (const item of snapshot?.sources || []) knownSources.set(item.id, item.label);
-    for (const item of snapshot?.models || []) knownModels.add(item.name);
-    const sources = [...knownSources].map(([id, label]) => ({ id, label }));
-    const models = [...knownModels].map((name) => ({ name }));
-    const sourceLabel = sourceFilter === "all" ? "全部来源" : sources.find((item) => item.id === sourceFilter)?.label || sourceFilter;
-    const modelLabel = modelFilter === "all" ? "全部模型" : modelFilter;
-    element("#sourceMenu").innerHTML = menuOptionHtml("source", "all", "全部来源", sourceFilter === "all") + sources.map((item) => menuOptionHtml("source", item.id, item.label, sourceFilter === item.id)).join("");
-    element("#modelMenu").innerHTML = menuOptionHtml("model", "all", "全部模型", modelFilter === "all") + models.map((item) => menuOptionHtml("model", item.name, item.name, modelFilter === item.name)).join("");
+    const previousSelections = [sourceFilter.join("\0"), modelFilter.join("\0"), projectFilter.join("\0")];
+    knownSources.clear();
+    knownModels.clear();
+    knownProjects.clear();
+    for (const item of snapshot?.filterSources || snapshot?.sources || []) knownSources.set(item.id, item.label);
+    for (const item of snapshot?.filterModels || snapshot?.models || []) knownModels.add(item.name);
+    for (const item of snapshot?.filterProjects || snapshot?.projects || []) knownProjects.set(item.directory || item.id, { label: item.label, count: item.count });
+    const sources = [...knownSources].map(([value, label]) => ({ value, label }));
+    const models = [...knownModels].map((value) => ({ value, label: value }));
+    const projects = [...knownProjects].map(([value, item]) => ({ value, label: `${item.label} (${item.count})` }));
+    if (snapshot?.filterOptionsComplete) {
+      const sourceValues = new Set(sources.map((item) => item.value));
+      const modelValues = new Set(models.map((item) => item.value));
+      const projectValues = new Set(projects.map((item) => item.value));
+      sourceFilter = sourceFilter.filter((value) => sourceValues.has(value));
+      modelFilter = modelFilter.filter((value) => modelValues.has(value));
+      projectFilter = projectFilter.filter((value) => projectValues.has(value));
+    }
+    const sourceLabel = selectionLabel(sourceFilter, sources, "全部来源");
+    const modelLabel = selectionLabel(modelFilter, models, "全部模型");
+    const projectLabel = selectionLabel(projectFilter, projects.map((item) => ({ ...item, label: item.label.replace(/ \(\d+\)$/, "") })), "全部项目");
+    element("#sourceMenu").innerHTML = multiMenuHtml("source", sourceFilter, "全部来源", sources);
+    element("#modelMenu").innerHTML = multiMenuHtml("model", modelFilter, "全部模型", models);
+    element("#projectMenu").innerHTML = multiMenuHtml("project", projectFilter, "全部项目", projects);
     element("#sourceFilterValue").textContent = sourceLabel;
     element("#modelFilterValue").textContent = modelLabel;
-    element("#filterContext").textContent = `${dataRangeText()} · ${sourceLabel} · ${modelLabel}`;
-    const projects = snapshot?.projects || [];
-    const projectLabel = projectFilter === "all" ? "全部项目" : projects.find((item) => item.directory === projectFilter || item.id === projectFilter)?.label || "已选项目";
-    element("#projectMenu").innerHTML = menuOptionHtml("project", "all", "全部项目", projectFilter === "all") + projects.map((item) => menuOptionHtml("project", item.directory || item.id, `${item.label} (${item.count})`, projectFilter === (item.directory || item.id))).join("");
     element("#projectFilterValue").textContent = projectLabel;
+    element("#filterContext").textContent = `${dataRangeText()} · ${sourceLabel} · ${modelLabel} · ${projectLabel}`;
+    return previousSelections.some((value, index) => value !== [sourceFilter, modelFilter, projectFilter][index].join("\0"));
   }
   function requestScope() {
     document.body.classList.add("refreshing");
     vscode.setState(rangeState());
-    vscode.postMessage({ type: "filter", source: sourceFilter, model: modelFilter });
+    vscode.postMessage({ type: "filter", source: filterPayload(sourceFilter), model: filterPayload(modelFilter), project: filterPayload(projectFilter) });
     requestSessionsPage(true);
     requestRequestsPage(true);
   }
@@ -146,11 +182,14 @@
   }
   function requestSessionsPage(reset = false) {
     if (reset) sessionPage = 1;
-    vscode.postMessage({ type: "sessionsPage", page: sessionPage, pageSize: 20, search: element("#sessionSearch")?.value || "", source: sourceFilter, model: modelFilter, project: projectFilter, status: "active", range: selectedRangePayload() });
+    vscode.postMessage({ type: "sessionsPage", page: sessionPage, pageSize: sessionPageSize, search: element("#sessionSearch")?.value || "", source: filterPayload(sourceFilter), model: filterPayload(modelFilter), project: filterPayload(projectFilter), status: "active", range: selectedRangePayload() });
   }
   function requestRequestsPage(reset = false) {
     if (reset) requestPage = 1;
-    vscode.postMessage({ type: "requestsPage", page: requestPage, pageSize: 40, source: sourceFilter, model: modelFilter, range: selectedRangePayload() });
+    vscode.postMessage({ type: "requestsPage", page: requestPage, pageSize: requestPageSize, source: filterPayload(sourceFilter), model: filterPayload(modelFilter), project: filterPayload(projectFilter), range: selectedRangePayload() });
+  }
+  function sourceItem(items, id, source) {
+    return (items || []).find((item) => item.id === id && (!source || item.source === source));
   }
   function selectRange(next) {
     range = next;
@@ -160,10 +199,37 @@
     syncScopeChrome();
     if (range !== "custom") requestRange();
   }
+  function sessionKey(item) { return `${item?.source || ""}:${item?.id || ""}`; }
+  function updateSessionSelectionChrome() {
+    const selectedKeys = new Set(selectedSessions.keys());
+    const pageItems = sessionPageData.items || [];
+    const selectedOnPage = pageItems.filter((item) => selectedKeys.has(sessionKey(item))).length;
+    const selectPage = element("#sessionSelectPage");
+    if (selectPage) {
+      selectPage.checked = pageItems.length > 0 && selectedOnPage === pageItems.length;
+      selectPage.indeterminate = selectedOnPage > 0 && selectedOnPage < pageItems.length;
+    }
+    element("#sessionSelectedCount").textContent = `已选 ${selectedSessions.size}`;
+    element("#sessionClearSelection").disabled = selectedSessions.size === 0;
+    all("[data-session-bulk-export]").forEach((button) => { button.disabled = selectedSessions.size === 0; });
+    vscode.setState(rangeState());
+  }
+  function renderSessionPage() {
+    window.CodeArtsViews.sessionRows(sessionPageData.items || [], sessionPageData, new Set(selectedSessions.keys()));
+    updateSessionSelectionChrome();
+  }
+  function jumpPage(kind) {
+    const session = kind === "session";
+    const input = element(session ? "#sessionPageJump" : "#requestPageJump");
+    const pageCount = Math.max(1, Number((session ? sessionPageData : requestPageData).pageCount || 1));
+    const next = Math.max(1, Math.min(pageCount, Math.trunc(Number(input?.value || 1)) || 1));
+    if (session) { sessionPage = next; requestSessionsPage(); }
+    else { requestPage = next; requestRequestsPage(); }
+  }
   function render() {
     if (!snapshot?.ok) return;
     syncRangeChrome();
-    syncScopeChrome();
+    const scopeChanged = syncScopeChrome();
     element("#updated").textContent =
       `${snapshot.stale ? "\u7f13\u5b58\u6570\u636e \u00b7 " : ""}${snapshot.updatedAt || "\u521a\u521a\u66f4\u65b0"}${snapshot.adapter ? ` \u00b7 ${snapshot.adapter}` : ""}`;
     const views = window.CodeArtsViews;
@@ -181,6 +247,7 @@
       trendRows() || [],
       element("#chartEmpty"),
     );
+    return scopeChanged;
   }
   function receive(payload) {
     snapshot = payload;
@@ -194,7 +261,7 @@
     }
     element("#error").hidden = true;
     element("#dashboard").hidden = false;
-    render();
+    return render();
   }
   document.addEventListener("click", (event) => {
     const menuToggle = event.target.closest("[data-menu-toggle]");
@@ -207,11 +274,18 @@
     if (menuOption) {
       const kind = menuOption.dataset.menuOption;
       const value = menuOption.dataset.value;
-      setMenuOpen(kind, false);
-      if (kind === "range") selectRange(value);
-      if (kind === "source") { sourceFilter = value; syncScopeChrome(); requestScope(); }
-      if (kind === "model") { modelFilter = value; syncScopeChrome(); requestScope(); }
-      if (kind === "project") { projectFilter = value; vscode.setState(rangeState()); syncScopeChrome(); requestSessionsPage(true); }
+      if (kind === "range") { setMenuOpen(kind, false); selectRange(value); }
+      if (["source", "model", "project"].includes(kind)) {
+        const current = kind === "source" ? sourceFilter : kind === "model" ? modelFilter : projectFilter;
+        const next = value === "all" ? [] : current.includes(value) ? current.filter((item) => item !== value) : [...current, value];
+        if (kind === "source") sourceFilter = next;
+        if (kind === "model") modelFilter = next;
+        if (kind === "project") projectFilter = next;
+        syncScopeChrome();
+        requestScope();
+      }
+      if (kind === "sessionSize") { sessionPageSize = Number(value); sessionPage = 1; setMenuOpen(kind, false); element("#sessionPageSizeValue").textContent = value; vscode.setState(rangeState()); requestSessionsPage(); }
+      if (kind === "requestSize") { requestPageSize = Number(value); requestPage = 1; setMenuOpen(kind, false); element("#requestPageSizeValue").textContent = value; vscode.setState(rangeState()); requestRequestsPage(); }
       return;
     }
     const rangeButton = event.target.closest("[data-range]");
@@ -249,14 +323,22 @@
     const action = event.target.closest("[data-action]")?.dataset.action;
     if (action) vscode.postMessage({ type: action });
     if (event.target.closest("#sessionSearchButton")) requestSessionsPage(true);
+    if (event.target.closest("#sessionClearSelection")) { selectedSessions.clear(); renderSessionPage(); }
+    const bulkExportButton = event.target.closest("[data-session-bulk-export]");
+    if (bulkExportButton && selectedSessions.size) {
+      element("#sessionExportState").textContent = `正在导出 ${selectedSessions.size} 个会话...`;
+      vscode.postMessage({ type: "exportSessions", sessions: [...selectedSessions.values()], format: bulkExportButton.dataset.sessionBulkExport });
+    }
     if (event.target.closest("#sessionPrevious") && sessionPage > 1) { sessionPage -= 1; requestSessionsPage(); }
     if (event.target.closest("#sessionNext") && sessionPage < Number(sessionPageData.pageCount || 1)) { sessionPage += 1; requestSessionsPage(); }
+    if (event.target.closest("#sessionJump")) jumpPage("session");
     if (event.target.closest("#requestPrevious") && requestPage > 1) { requestPage -= 1; requestRequestsPage(); }
     if (event.target.closest("#requestNext") && requestPage < Number(requestPageData.pageCount || 1)) { requestPage += 1; requestRequestsPage(); }
+    if (event.target.closest("#requestJump")) jumpPage("request");
     const exportButton = event.target.closest("[data-session-export]");
     if (exportButton) {
       const row = exportButton.closest("[data-session-id]");
-      const session = sessionPageData.items.find((item) => item.id === row?.dataset.sessionId);
+      const session = sourceItem(sessionPageData.items, row?.dataset.sessionId, row?.dataset.sessionSource);
       if (session) {
         element("#sessionExportState").textContent = "正在导出会话...";
         vscode.postMessage({ type: "exportSession", session, format: exportButton.dataset.sessionExport });
@@ -265,20 +347,39 @@
     const requestRow = event.target.closest("[data-request-id]");
     if (requestRow) {
       selectedRequestId = requestRow.dataset.requestId || "";
+      selectedRequestSource = requestRow.dataset.requestSource || "";
       vscode.setState(rangeState());
-      window.CodeArtsViews.requestDetail(requestPageData.items.find((item) => item.id === selectedRequestId) || (snapshot?.requests || []).find((item) => item.id === selectedRequestId));
+      window.CodeArtsViews.requestDetail(sourceItem(requestPageData.items, selectedRequestId, selectedRequestSource) || sourceItem(snapshot?.requests, selectedRequestId, selectedRequestSource));
     }
-    if (event.target.closest("[data-request-detail-close]")) { selectedRequestId = ""; vscode.setState(rangeState()); window.CodeArtsViews.requestDetail(null); }
+    if (event.target.closest("[data-request-detail-close]")) { selectedRequestId = ""; selectedRequestSource = ""; vscode.setState(rangeState()); window.CodeArtsViews.requestDetail(null); }
     if (openMenu && !event.target.closest(".menu-control")) setMenuOpen(openMenu, false);
   });
   document.addEventListener("input", (event) => {
     if (event.target === element("#rangeStart") || event.target === element("#rangeEnd"))
       customDraftDirty = true;
+    const selection = event.target.closest("[data-session-select]");
+    if (selection) {
+      const row = selection.closest("[data-session-id]");
+      const item = sourceItem(sessionPageData.items, row?.dataset.sessionId, row?.dataset.sessionSource);
+      if (item) {
+        const key = sessionKey(item);
+        if (selection.checked) selectedSessions.set(key, item); else selectedSessions.delete(key);
+        updateSessionSelectionChrome();
+      }
+    }
+    if (event.target === element("#sessionSelectPage")) {
+      for (const item of sessionPageData.items || []) {
+        if (event.target.checked) selectedSessions.set(sessionKey(item), item); else selectedSessions.delete(sessionKey(item));
+      }
+      renderSessionPage();
+    }
   });
   document.addEventListener("keydown", (event) => {
     if (event.target === element("#sessionSearch") && event.key === "Enter") { event.preventDefault(); requestSessionsPage(true); return; }
+    if (event.target === element("#sessionPageJump") && event.key === "Enter") { event.preventDefault(); jumpPage("session"); return; }
+    if (event.target === element("#requestPageJump") && event.key === "Enter") { event.preventDefault(); jumpPage("request"); return; }
     const requestRow = event.target.closest("[data-request-id]");
-    if (requestRow && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); window.CodeArtsViews.requestDetail(requestPageData.items.find((item) => item.id === requestRow.dataset.requestId) || (snapshot?.requests || []).find((item) => item.id === requestRow.dataset.requestId)); return; }
+    if (requestRow && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); selectedRequestId = requestRow.dataset.requestId || ""; selectedRequestSource = requestRow.dataset.requestSource || ""; vscode.setState(rangeState()); window.CodeArtsViews.requestDetail(sourceItem(requestPageData.items, selectedRequestId, selectedRequestSource) || sourceItem(snapshot?.requests, selectedRequestId, selectedRequestSource)); return; }
     const toggle = event.target.closest("[data-menu-toggle]");
     if (toggle && event.key === "ArrowDown") {
       event.preventDefault();
@@ -297,13 +398,34 @@
       return;
     }
     if (event.key === "Escape" && openMenu) {
-      const trigger = openMenu === "range" ? element("#rangeMenuButton") : element(`#${openMenu}Filter`);
+      const trigger = openMenu === "range" ? element("#rangeMenuButton") : openMenu === "sessionSize" ? element("#sessionPageSizeButton") : openMenu === "requestSize" ? element("#requestPageSizeButton") : element(`#${openMenu}Filter`);
       setMenuOpen(openMenu, false);
       trigger.focus();
     }
   });
   window.addEventListener("message", (event) => {
     const message = event.data || {};
+    if (message.type === "reset") {
+      const generation = Number(message.generation || 0);
+      if (!Number.isInteger(generation) || generation <= 0 || generation < latestGeneration) return;
+      latestGeneration = generation;
+      snapshot = null;
+      databasePagesLoaded = false;
+      sessionPageData = { items: [], total: 0, page: 1, pageCount: 1 };
+      requestPageData = { items: [], total: 0, page: 1, pageCount: 1 };
+      sessionPage = 1;
+      requestPage = 1;
+      selectedRequestId = "";
+      selectedRequestSource = "";
+      selectedSessions.clear();
+      document.body.classList.add("refreshing");
+      element("#loading").hidden = false;
+      element("#dashboard").hidden = true;
+      element("#error").hidden = true;
+      window.CodeArtsViews.requestDetail(null);
+      vscode.setState(rangeState());
+      return;
+    }
     if (message.type === "snapshot" || message.type === "details") {
       const generation = Number(message.generation || 0);
       if (!Number.isInteger(generation) || generation <= 0 || generation < latestGeneration) return;
@@ -315,11 +437,13 @@
         vscode.setState(rangeState());
       }
       if (message.payload?.selectedScope) {
-        sourceFilter = message.payload.selectedScope.source || "all";
-        modelFilter = message.payload.selectedScope.model || "all";
+        sourceFilter = normalizeSelection(message.payload.selectedScope.source);
+        modelFilter = normalizeSelection(message.payload.selectedScope.model);
+        projectFilter = normalizeSelection(message.payload.selectedScope.project);
       }
-      receive(message.payload);
-      if (databasePagesLoaded) { requestSessionsPage(); requestRequestsPage(); }
+      const scopeChanged = receive(message.payload);
+      if (scopeChanged) requestScope();
+      else { requestSessionsPage(); requestRequestsPage(); }
     }
     if (message.type === "refreshing") {
       const generation = Number(message.generation || 0);
@@ -332,6 +456,12 @@
       if (generation < latestGeneration) return;
       latestGeneration = Math.max(latestGeneration, generation);
       document.body.classList.remove("refreshing");
+      if (!snapshot?.ok) {
+        element("#loading").hidden = true;
+        element("#dashboard").hidden = true;
+        element("#error").hidden = false;
+        element("#errorText").textContent = message.payload?.error || "使用分析加载失败，请重试";
+      }
     }
     if (message.type === "sessionsPage") {
       if (message.payload?.ok) {
@@ -339,7 +469,7 @@
         sessionPageData = message.payload.data || {};
         sessionPage = Number(sessionPageData.page || 1);
         vscode.setState(rangeState());
-        window.CodeArtsViews.sessionRows(sessionPageData.items || [], sessionPageData);
+        renderSessionPage();
       } else {
         element("#sessions").innerHTML = `<p class="empty-copy">${window.CodeArtsFormat.html(message.payload?.error || "会话加载失败")}</p>`;
       }
@@ -351,13 +481,13 @@
         requestPage = Number(requestPageData.page || 1);
         vscode.setState(rangeState());
         window.CodeArtsViews.requestRows(requestPageData.items || [], requestPageData);
-        if (selectedRequestId) window.CodeArtsViews.requestDetail(requestPageData.items.find((item) => item.id === selectedRequestId) || null);
+        if (selectedRequestId) window.CodeArtsViews.requestDetail(sourceItem(requestPageData.items, selectedRequestId, selectedRequestSource) || null);
       } else {
         element("#requests").innerHTML = `<tr><td colspan="11" class="empty-copy">${window.CodeArtsFormat.html(message.payload?.error || "请求加载失败")}</td></tr>`;
       }
     }
     if (message.type === "sessionExported") {
-      element("#sessionExportState").textContent = message.payload?.canceled ? "" : message.payload?.ok ? "会话已导出" : message.payload?.error || "会话导出失败";
+      element("#sessionExportState").textContent = message.payload?.canceled ? "" : message.payload?.ok ? `${message.payload.sessions || 1} 个会话已导出` : message.payload?.error || "会话导出失败";
     }
   });
   window.addEventListener(
@@ -371,6 +501,8 @@
       ),
   );
   if (element("#sessionSearch")) element("#sessionSearch").value = saved.sessionSearch || "";
+  element("#sessionPageSizeValue").textContent = String(sessionPageSize);
+  element("#requestPageSizeValue").textContent = String(requestPageSize);
   vscode.postMessage({ type: "ready", state: rangeState() });
   requestSessionsPage();
   requestRequestsPage();

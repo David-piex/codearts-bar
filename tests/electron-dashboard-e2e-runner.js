@@ -699,7 +699,7 @@ async function main() {
   await changeValue(win, "[data-request-page-size]", "20");
   await waitFor(win, () => localStorage.getItem("requestPageSize") === "20" && document.querySelector('[data-table-limit="requests"]')?.dataset?.pageSize === "20");
   const requestPagerOptions = await evalIn(win, () => [...document.querySelectorAll("[data-request-page-size] option")].map((x) => Number(x.value)));
-  assert.deepEqual(requestPagerOptions, [20, 50, 100], "request page size options should be 20/50/100");
+  assert.deepEqual(requestPagerOptions, [10, 20, 50, 100], "request page size options should be 10/20/50/100");
   await evalIn(win, () => {
     const scroller = document.querySelector(".request-main .table-scroll");
     if (scroller) scroller.scrollTop = 9999;
@@ -784,7 +784,7 @@ async function main() {
   await changeValue(win, "[data-session-page-size]", "20");
   await waitFor(win, () => localStorage.getItem("sessionPageSize") === "20" && document.querySelector('[data-table-limit="sessions"]')?.dataset?.pageSize === "20");
   const sessionPagerOptions = await evalIn(win, () => [...document.querySelectorAll("[data-session-page-size] option")].map((x) => Number(x.value)));
-  assert.deepEqual(sessionPagerOptions, [20, 50, 100], "session page size options should be 20/50/100");
+  assert.deepEqual(sessionPagerOptions, [10, 20, 50, 100], "session page size options should be 10/20/50/100");
   await waitFor(win, () => document.querySelectorAll(".session-scroll tbody tr.session-row").length >= 2);
   await captureScenario(win, "desktop-sessions");
   const sessionLocalInitial = await evalIn(win, () => {

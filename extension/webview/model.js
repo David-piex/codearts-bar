@@ -70,7 +70,7 @@ function viewModel(snapshot) {
       range: trend(snapshot.trends?.range, 400),
     },
     selectedRange: snapshot.selectedRange || null,
-    selectedScope: snapshot.selectedScope || { source: "all", model: "all" },
+    selectedScope: snapshot.selectedScope || { source: "all", model: "all", project: "all" },
     sourceErrors: (snapshot.sourceErrors || []).slice(0, 8).map((item) => ({ source: item.source || "", message: item.message || "\u6570\u636e\u6e90\u8bfb\u53d6\u5931\u8d25" })),
     models: (snapshot.models || []).slice(0, 8).map((item) => ({
       name: item.model || item.name || "\u672a\u77e5\u6a21\u578b",
@@ -79,6 +79,8 @@ function viewModel(snapshot) {
       messages: finite(item.messages) || 0,
       errors: finite(item.errors) || 0,
     })),
+    filterModels: (snapshot.filterModels || snapshot.models || []).map((item) => ({ name: item.model || item.name || item.key || "" })).filter((item) => item.name),
+    filterOptionsComplete: snapshot.filterOptionsComplete === true,
     providers: (snapshot.providerStats || []).slice(0, 8).map((item) => ({
       name: item.provider || item.name || "unknown",
       total: finite(item.total) || 0,
@@ -100,6 +102,10 @@ function viewModel(snapshot) {
         total: finite(item.total) || 0,
         messages: finite(item.messages ?? item.requests) || 0,
       })),
+    filterSources: (snapshot.filterSources || snapshot.sources || []).map((item) => ({
+      id: item.source || item.id || item.key || "unknown",
+      label: item.sourceLabel || item.label || item.key || item.source || item.id || "未知数据源",
+    })),
     sessions: (snapshot.sessions || [])
       .filter((item) => !item.archived)
       .slice(0, 8)
@@ -128,6 +134,7 @@ function viewModel(snapshot) {
     requestLogSampled: snapshot.requestLogSampled === true,
     requestLogSampleLimit: finite(snapshot.requestLogSampleLimit) ?? (snapshot.requests || []).length,
     projects: (snapshot.projects || []).slice(0, 20).map((item) => ({ id: item.id || item.directory || "__none", label: item.label || "未关联项目", directory: item.directory || "", count: finite(item.count) || 0 })),
+    filterProjects: (snapshot.filterProjects || snapshot.projects || []).map((item) => ({ id: item.id || item.directory || "__none", label: item.label || "未关联项目", directory: item.directory || "", count: finite(item.count) || 0 })),
     performance: {
       latencyAvg: finite(performance.latency?.avg),
       latencyP95: finite(performance.latency?.p95),

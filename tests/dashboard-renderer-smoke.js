@@ -172,7 +172,7 @@ async function main() {
   assert.match(sessionHtml, /session-table simple/);
   assert.match(sessionHtml, /data-table-limit="sessions"/);
   assert.match(sessionHtml, /data-session-page-size/);
-  assert.doesNotMatch(sessionHtml, /<option value="10"/);
+  assert.match(sessionHtml, /<option value="10"/);
   assert.match(sessionHtml, /<option value="20"/);
   assert.match(sessionHtml, /<option value="50"/);
   assert.match(sessionHtml, /<option value="100"/);
@@ -459,7 +459,7 @@ async function main() {
   assert.match(analyticsHtml, /date-range-control/);
   assert.match(analyticsHtml, /data-table-limit="requests"/);
   assert.match(analyticsHtml, /data-request-page-size/);
-  assert.doesNotMatch(analyticsHtml, /<option value="10"/);
+  assert.match(analyticsHtml, /<option value="10"/);
   assert.match(analyticsHtml, /data-request-page-input/);
   assert.match(analyticsHtml, /data-request-page-go/);
   assert.match(analyticsHtml, /data-date-range-toggle/);

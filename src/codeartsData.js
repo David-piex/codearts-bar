@@ -140,9 +140,10 @@ function buildSnapshotFromRows({ dbPath, stat, sources = [], dailyLimit, windowH
   const allRequests = buildRequestRows(messages, sessions, partMap, ttftMap, Infinity);
   const requests = allRequests.slice(0, REQUEST_LOG_SAMPLE_LIMIT);
   const sessionUsage = agg.buildSessionUsageMap(messages, partMap, 0);
-  const activeSessionCount = sessions.filter((s) => !s.time_archived).length;
-  const archivedSessionCount = sessions.filter((s) => s.time_archived).length;
-  const recentSessions = sessions
+  const visibleSessions = sessions.filter((s) => !localProvider.isInternalSession(s));
+  const activeSessionCount = visibleSessions.filter((s) => !s.time_archived).length;
+  const archivedSessionCount = visibleSessions.filter((s) => s.time_archived).length;
+  const recentSessions = visibleSessions
     .slice(0, 80)
     .map((s) => {
       const usage = sessionUsage.get(`${s.source || ''}:${s.id || ''}`) || { total: 0, input: 0, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0, userTurns: 0, modelCalls: 0, errors: 0, models: [], topModel: null };
@@ -180,7 +181,7 @@ function buildSnapshotFromRows({ dbPath, stat, sources = [], dailyLimit, windowH
     tools: { today: agg.toolStats(parts, dayStartMs), window: agg.toolStats(parts, windowStartMs), week: agg.toolStats(parts, weekStartMs), all: agg.toolStats(parts, 0) },
     trends: agg.buildTrends(messages, partMap, timestamp),
     sessions: recentSessions,
-    sessionSummary: { total: sessions.length, active: activeSessionCount, archived: archivedSessionCount, visible: recentSessions.length },
+    sessionSummary: { total: visibleSessions.length, active: activeSessionCount, archived: archivedSessionCount, visible: recentSessions.length },
     errors,
     balance,
     process: disableEnvironmentProbes ? {} : localProvider.detectProcesses(),

@@ -1,7 +1,7 @@
 'use strict';
 
 const agg = require('../../core/aggregator');
-const { listDataSources, ensureReadableDb, validateTables, tagRows, placeholders, jsonExtractExpr, messageModelExpr } = require('./sources');
+const { listDataSources, ensureReadableDb, validateTables, tagRows, placeholders, jsonExtractExpr, messageModelExpr, filterValues, tableColumnNames, isInternalSession } = require('./sources');
 const { safeDbError } = require('./diagnostics');
 const { openNativeDbReadonly, openSqlJsDbReadonly, nativeAll, sqlJsAll, nativeAllParams, sqlJsAllParams, closeDb } = require('./sqlite');
 
@@ -17,10 +17,12 @@ function collectOneNative(source) {
   try {
     const tables = nativeAll(db, "select name from sqlite_master where type='table'").map((r) => r.name);
     validateTables(tables);
+    const sessionColumns = tableColumnNames(nativeAllParams, db, 'session');
+    const sessionMetadata = `${sessionColumns.has('project_id') ? 'project_id' : 'null as project_id'}, ${sessionColumns.has('parent_id') ? 'parent_id' : 'null as parent_id'}`;
     return {
       adapter: 'node:sqlite', source, dbPath: source.dbPath, stat, tables,
       messages: tagRows(nativeAll(db, 'select id, session_id, time_created, time_updated, data from message order by time_created desc'), source),
-      sessions: tagRows(nativeAll(db, 'select id, title, directory, version, time_created, time_updated, time_archived from session order by time_updated desc'), source),
+      sessions: tagRows(nativeAll(db, `select id, ${sessionMetadata}, title, directory, version, time_created, time_updated, time_archived from session order by time_updated desc`), source),
       parts: tables.includes('part') ? tagRows(nativeAll(db, 'select id, message_id, session_id, time_created, time_updated, data from part order by time_created asc'), source) : [],
     };
   } finally { closeDb(db); }
@@ -31,10 +33,12 @@ async function collectOneSqlJs(source) {
   try {
     const tables = sqlJsAll(db, "select name from sqlite_master where type='table'").map((r) => r.name);
     validateTables(tables);
+    const sessionColumns = tableColumnNames(sqlJsAllParams, db, 'session');
+    const sessionMetadata = `${sessionColumns.has('project_id') ? 'project_id' : 'null as project_id'}, ${sessionColumns.has('parent_id') ? 'parent_id' : 'null as parent_id'}`;
     return {
       adapter: 'sql.js', source, dbPath: source.dbPath, stat, tables,
       messages: tagRows(sqlJsAll(db, 'select id, session_id, time_created, time_updated, data from message order by time_created desc'), source),
-      sessions: tagRows(sqlJsAll(db, 'select id, title, directory, version, time_created, time_updated, time_archived from session order by time_updated desc'), source),
+      sessions: tagRows(sqlJsAll(db, `select id, ${sessionMetadata}, title, directory, version, time_created, time_updated, time_archived from session order by time_updated desc`), source),
       parts: tables.includes('part') ? tagRows(sqlJsAll(db, 'select id, message_id, session_id, time_created, time_updated, data from part order by time_created asc'), source) : [],
     };
   } finally { closeDb(db); }
@@ -106,7 +110,7 @@ function requestRowsFromMessages(messages, sessions, parts) {
 function sessionsFromRows(sessions, messages, parts, timestamp = Date.now()) {
   const partMap = agg.buildPartMap(parts);
   const usageMap = agg.buildSessionUsageMap(messages, partMap, 0);
-  return (sessions || []).map((s) => {
+  return (sessions || []).filter((s) => !isInternalSession(s)).map((s) => {
     const usage = usageMap.get(`${s.source || ''}:${s.id || ''}`) || { total: 0, input: 0, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0, userTurns: 0, modelCalls: 0, errors: 0, models: [], topModel: null };
     return {
       id: s.id,
@@ -152,10 +156,11 @@ function queryMessagesForSessions(queryAll, db, source, sessionIds, payload = {}
   const end = Number(range.endExclusive ?? range.end ?? 0);
   if (Number.isFinite(start) && start > 0) { where.push('time_created >= ?'); params.push(start); }
   if (Number.isFinite(end) && end > 0) { where.push('time_created < ?'); params.push(end); }
-  if (payload.model && payload.model !== 'all') {
+  const models = filterValues(payload.model);
+  if (models.length) {
     where.push(`${jsonExtractExpr('data', '$.role')} = 'assistant'`);
-    where.push(`${messageModelExpr('data')} = ?`);
-    params.push(String(payload.model));
+    where.push(`${messageModelExpr('data')} in (${placeholders(models)})`);
+    params.push(...models);
   }
   const sql = `select id, session_id, time_created, time_updated, data from message where ${where.join(' and ')} order by time_created desc`;
   return tagRows(queryAll(db, sql, params), source);

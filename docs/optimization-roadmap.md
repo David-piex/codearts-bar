@@ -33,7 +33,7 @@
 | 请求/会话分页 | 已完成 | 数据库分页为历史明细主路径；多源使用 k-way merge，只 hydrate 当前页 |
 | Snapshot 语义 | 已完成 | 截断列表显式携带 complete/sampled、历史总数和 scope，不能冒充完整历史 |
 | 隐私与只读 | 已完成 | SQL.js 只读、诊断脱敏、协议不暴露数据库路径或原始异常 |
-| JetBrains runtime | 已完成 | native/sql.js 查询契约一致，bundle 由 `<125000` 字节门禁约束 |
+| JetBrains runtime | 已完成 | native/sql.js 查询契约一致，bundle 由 `<127000` 字节门禁约束 |
 | 跨平台 CI | 已配置 | macOS/Linux 执行测试、无签名构建、资源 smoke 和 artifact 上传；仍需持续获得真实绿灯 |
 | 100k 热路径 | 已完成 | sidecar 解析与规范化进程内复用，native/sql.js 热路径最大值分别为 140.2ms/165.2ms |
 

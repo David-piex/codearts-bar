@@ -19,8 +19,8 @@ function waitSync(ms) {
 }
 
 function renameWithRetry(source, destination, options = {}) {
-  const attempts = Math.max(1, Number(options.attempts || (process.platform === 'win32' ? 20 : 1)));
-  const delayMs = Math.max(0, Number(options.delayMs || 250));
+  const attempts = Math.max(1, Number(options.attempts || (process.platform === 'win32' ? 60 : 1)));
+  const delayMs = Math.max(0, Number(options.delayMs ?? 500));
   let lastError;
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
     try { fs.renameSync(source, destination); return; }

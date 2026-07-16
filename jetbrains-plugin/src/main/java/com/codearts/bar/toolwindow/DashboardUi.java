@@ -33,13 +33,13 @@ final class DashboardUi {
             new JBColor(new Color(94, 94, 99), new Color(174, 174, 178)));
     static final JBColor SUBTLE = JBColor.namedColor("Label.disabledForeground",
             new JBColor(new Color(125, 125, 130), new Color(142, 142, 147)));
-    static final JBColor CANVAS = new JBColor(new Color(245, 245, 247), new Color(28, 28, 30));
+    static final JBColor CANVAS = new JBColor(new Color(245, 245, 247), new Color(30, 30, 32));
     static final JBColor SURFACE = new JBColor(new Color(255, 255, 255), new Color(44, 44, 46));
-    static final JBColor SURFACE_ALT = new JBColor(new Color(247, 247, 249), new Color(36, 36, 38));
-    static final JBColor CONTROL_FILL = new JBColor(new Color(232, 232, 237), new Color(58, 58, 60));
-    static final JBColor SEGMENT_SELECTED = new JBColor(new Color(255, 255, 255), new Color(92, 92, 96));
-    static final JBColor HOVER = new JBColor(new Color(238, 243, 249), new Color(51, 54, 58));
-    static final JBColor SELECTION = new JBColor(new Color(218, 233, 252), new Color(25, 60, 94));
+    static final JBColor SURFACE_ALT = new JBColor(new Color(242, 242, 247), new Color(38, 38, 40));
+    static final JBColor CONTROL_FILL = new JBColor(new Color(233, 233, 236), new Color(58, 58, 60));
+    static final JBColor SEGMENT_SELECTED = new JBColor(new Color(255, 255, 255), new Color(82, 82, 86));
+    static final JBColor HOVER = new JBColor(new Color(239, 239, 242), new Color(49, 49, 52));
+    static final JBColor SELECTION = new JBColor(new Color(220, 238, 255), new Color(34, 73, 111));
     static final JBColor SELECTION_MUTED = new JBColor(new Color(75, 91, 110), new Color(199, 214, 230));
     static final JBColor BORDER = new JBColor(new Color(209, 209, 214), new Color(72, 72, 74));
     static final JBColor SEPARATOR = new JBColor(new Color(229, 229, 234), new Color(58, 58, 60));
@@ -68,7 +68,7 @@ final class DashboardUi {
     }
 
     static JPanel segmentedBar(ViewToggleButton... buttons) {
-        RoundedPanel panel = new RoundedPanel(new GridLayout(1, buttons.length, JBUI.scale(1), 0), 9, CONTROL_FILL);
+        RoundedPanel panel = new RoundedPanel(new GridLayout(1, buttons.length, JBUI.scale(1), 0), 8, CONTROL_FILL);
         panel.setBorder(JBUI.Borders.empty(3));
         panel.getAccessibleContext().setAccessibleName("分段视图选择");
         for (ViewToggleButton button : buttons) panel.add(button);
@@ -152,7 +152,7 @@ final class DashboardUi {
         JBScrollPane scroll = new JBScrollPane(table);
         scroll.setBorder(JBUI.Borders.empty());
         scroll.getViewport().setBackground(SURFACE);
-        RoundedPanel surface = new RoundedPanel(new BorderLayout(), 10, SURFACE, false);
+        RoundedPanel surface = new RoundedPanel(new BorderLayout(), 8, SURFACE);
         surface.setBorder(JBUI.Borders.empty(1));
         surface.add(scroll);
         return surface;
@@ -433,10 +433,14 @@ final class DashboardUi {
                 g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
                 int arc = JBUI.scale(7);
                 if (isSelected()) {
+                    g.setColor(new Color(0, 0, 0, 22));
+                    g.fillRoundRect(1, 1, Math.max(0, getWidth() - 2), Math.max(0, getHeight() - 1), arc, arc);
                     g.setColor(SEGMENT_SELECTED);
-                    g.fillRoundRect(0, 0, getWidth(), getHeight(), arc, arc);
+                    g.fillRoundRect(1, 0, Math.max(0, getWidth() - 2), Math.max(0, getHeight() - 1), arc, arc);
                     g.setColor(BORDER);
-                    g.drawRoundRect(0, 0, getWidth() - 1, getHeight() - 1, arc, arc);
+                    g.drawRoundRect(1, 0, Math.max(0, getWidth() - 3), Math.max(0, getHeight() - 2), arc, arc);
+                    g.setColor(new Color(255, 255, 255, 92));
+                    g.drawLine(JBUI.scale(4), 1, Math.max(JBUI.scale(4), getWidth() - JBUI.scale(5)), 1);
                 } else if (getModel().isRollover()) {
                     g.setColor(HOVER);
                     g.fillRoundRect(0, 0, getWidth(), getHeight(), arc, arc);
@@ -495,6 +499,9 @@ final class DashboardUi {
                 g.setStroke(new BasicStroke(stroke));
                 g.draw(new RoundRectangle2D.Float(inset, inset, Math.max(0, getWidth() - stroke),
                         Math.max(0, getHeight() - stroke), arc, arc));
+                g.setColor(new Color(255, 255, 255, 24));
+                g.drawLine(JBUI.scale(radius / 2), 1,
+                        Math.max(JBUI.scale(radius / 2), getWidth() - JBUI.scale(radius / 2) - 1), 1);
             } finally {
                 g.dispose();
             }
@@ -614,7 +621,7 @@ final class DashboardUi {
             setShowGrid(false);
             setIntercellSpacing(new Dimension(0, 0));
             setFillsViewportHeight(true);
-            setRowHeight(JBUI.scale(44));
+            setRowHeight(JBUI.scale(40));
             setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
             setSelectionBackground(SELECTION);
             setSelectionForeground(PRIMARY);

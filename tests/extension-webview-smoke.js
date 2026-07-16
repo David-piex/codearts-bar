@@ -127,6 +127,7 @@ assert.match(
 assert.doesNotMatch(extensionSource, /getSnapshotWithCache/);
 assert.match(extensionSource, /getExtensionSummary/);
 assert.match(extensionSource, /getExtensionDetails/);
+assert.match(fs.readFileSync(path.join(root, "src", "extension-data.js"), "utf8"), /source: 'all', model: 'all', project: 'all'/, "current usage and quota must stay global while project filters scope detail analytics");
 assert.match(extensionSource, /hasTargets/);
 assert.match(htmlSource, /Content-Security-Policy/);
 assert.match(dashboardSource, /retainContextWhenHidden/);
@@ -148,7 +149,10 @@ assert.match(dashboardSource, /onDidChangeVisibility/, "sidebar visibility must 
 assert.match(dashboardSource, /onDidChangeViewState/, "panel visibility must control heavy detail aggregation");
 assert.match(dashboardSource, /some\(\(target\) => target\.visible\)/, "hidden retained webviews must not keep detail refresh active");
 assert.match(extensionSource, /Math\.max\(configured, 300000\)/, "hidden VS Code webviews must reduce summary polling to at least five minutes");
-assert.match(dashboardSource, /if \(!target\.visible\) target\.generation \+= 1/, "hiding a VS Code target must invalidate its in-flight detail generation");
+assert.match(extensionSource, /affectsConfiguration\("codeartsBar\.dbPath"\)[\s\S]*dashboardHost\?\.resetTargets\(\)/, "database configuration changes must clear stale webview rows before loading the new source");
+assert.match(extensionSource, /if \(options\.force === true\) return refresh/, "configuration changes during an active refresh must queue a follow-up summary read");
+assert.match(dashboardSource, /if \(!target\.visible\) \{[\s\S]*target\.generation \+= 1;[\s\S]*this\.invalidateAsync\(target, \["sessions", "requests"\]\)/, "hiding a VS Code target must invalidate detail and database-page generations without canceling exports");
+assert.match(dashboardSource, /remove\(target\) \{[\s\S]*this\.invalidateAsync\(target\)/, "disposing a VS Code target must invalidate every asynchronous operation");
 assert.match(dashboardSource, /!target\?\.visible \|\| !this\.targets\.has\(target\) \|\| target\.generation !== generation/, "detail payloads must only target the current visible webview generation");
 assert.match(dashboardSource, /visibleTargets\(\)/, "details must be scheduled per visible webview");
 assert.match(dashboardSource, /target\.generation === request\.generation/, "stale detail requests must not commit");
@@ -186,8 +190,8 @@ assert.doesNotMatch(
 );
 assert.doesNotMatch(tokenCss, /--vscode-/, "webview palette must stay aligned with Desktop instead of inheriting the editor theme");
 assert.match(tokenCss, /color-scheme:\s*light/);
-assert.match(tokenCss, /--page:\s*#f5f6f8/);
-assert.match(tokenCss, /--accent:\s*#0a84ff/);
+assert.match(tokenCss, /--page:\s*#f5f5f7/);
+assert.match(tokenCss, /--accent:\s*#007aff/);
 assert.match(tokenCss, /SF Pro/);
 assert.match(
   foundationCss,
@@ -207,13 +211,24 @@ for (const id of ["sourceFilter", "modelFilter", "projectFilter", "metricInput",
 assert.match(htmlSource, /Desktop/, "unsupported VS Code session writes must be explained instead of exposing broken controls");
 assert.match(clientSource, /type: "filter"/);
 assert.match(clientSource, /type: "requestsPage"/);
-assert.match(clientSource, /project: projectFilter/);
+assert.match(clientSource, /project: filterPayload\(projectFilter\)/);
+assert.match(htmlSource, /aria-multiselectable="true"/, "source, model and project menus must expose multi-select semantics");
+assert.match(clientSource, /`已选 \$\{values\.length\} 项`/, "multi-select controls must summarize multiple selections");
 assert.match(viewsSource, /function requests\(snapshot\)/);
 assert.match(viewsSource, /snapshot\.requestTotal/);
 const { viewModel: directViewModel } = require('../extension/webview/model');
 const counted = directViewModel({ ok: true, requests: [{ id: 'one' }], requestTotal: 41, sessions: [{ id: 'session-one' }], sessionTotal: 12, sessionTotalExact: true });
 assert.equal(counted.requestTotal, 41);
 assert.equal(counted.sessionTotal, 12);
+const manyProjects = Array.from({ length: 101 }, (_, index) => ({
+  id: `project-${index}`,
+  directory: `C:/projects/project-${index}`,
+  label: `project-${index}`,
+  count: 1,
+}));
+const completeProjectOptions = directViewModel({ ok: true, filterProjects: manyProjects });
+assert.equal(completeProjectOptions.filterProjects.length, 101, "authoritative project options must not be truncated before stale selections are pruned");
+assert.equal(completeProjectOptions.filterProjects.at(-1).id, "project-100");
 assert.match(responsiveCss, /\.request-surface \{ display:none; \}/, "sidebar must not render the full request workbench");
 for (const range of ["today", "window", "week", "14d", "30d", "all", "custom"]) assert.match(htmlSource, new RegExp(`data-range="${range}"`), `missing range option ${range}`);
 assert.doesNotMatch(htmlSource, /<select/, "native selects must not leak platform menus into the macOS-style workbench");
@@ -223,7 +238,15 @@ assert.match(clientSource, /event\.key === "Escape"/);
 assert.match(clientSource, /generation < latestGeneration/, "webview must ignore stale detail messages");
 assert.match(clientSource, /customDraftDirty/, "realtime refresh must preserve active custom date input");
 assert.match(clientSource, /if \(!databasePagesLoaded\) \{[\s\S]*?views\.sessions\(snapshot\);[\s\S]*?views\.requests\(snapshot\);[\s\S]*?\}/, "detail refreshes must not replace database-backed pages with snapshot samples");
-assert.match(clientSource, /sessionPage, requestPage, selectedRequestId/, "persisted state must include both pages and the selected request");
+assert.match(clientSource, /sessionPage, requestPage, selectedRequestId, selectedRequestSource/, "persisted state must include both pages and the source-qualified selected request");
+assert.match(clientSource, /selectedSessions: \[\.\.\.selectedSessions\.values\(\)\]/, "persisted state must retain source-qualified batch selections across pages");
+assert.match(clientSource, /sessionPageSize, requestPageSize/, "persisted state must retain both page-size choices");
+assert.match(clientSource, /function jumpPage\(kind\)/, "both database pages must support bounded direct jumps");
+assert.match(htmlSource, /data-session-bulk-export="xlsx"[\s\S]*data-session-bulk-export="md"[\s\S]*data-session-bulk-export="json"/, "VS Code sessions must expose all batch export formats");
+assert.match(htmlSource, /data-menu-toggle="sessionSize"[\s\S]*data-menu-toggle="requestSize"/, "session and request pages must expose controlled page-size menus");
+assert.match(viewsSource, /data-session-select/, "session rows must expose a checkbox selection control");
+assert.match(viewsSource, /data-session-source=/, "session export rows must retain their data source when IDs overlap");
+assert.match(viewsSource, /data-request-source=/, "request rows must retain their data source when IDs overlap");
 assert.match(clientSource, /sessionSearch: element\("#sessionSearch"\)/, "persisted state must include the session search");
 assert.match(clientSource, /scrollTop: Number\(document\.scrollingElement\?\.scrollTop/, "persisted state must include scroll position");
 assert.match(clientSource, /function dataRangeText\(\)/, "unapplied custom date drafts must not relabel committed data");
@@ -303,6 +326,18 @@ assert.equal(posted.at(-1).type, "refreshing");
 assert.equal(posted.at(-1).value, false);
 assert.equal(posted.at(-1).generation, newRequest.generation);
 
+const failureMessages = [];
+const failureWebview = {
+  options: {}, html: "", asWebviewUri: (value) => value,
+  onDidReceiveMessage(handler) { this.receive = handler; },
+  postMessage(message) { failureMessages.push(message); },
+};
+const failureTarget = host.attach(failureWebview, "sidebar");
+const failureRequest = host.beginDetails({ target: failureTarget })[0];
+assert.equal(host.failDetails(failureRequest, new Error("details unavailable")), true);
+assert.equal(failureMessages.findLast((message) => message.type === "detailsError").payload.error, "details unavailable", "initial detail failures must carry a user-visible error");
+host.remove(failureTarget);
+
 const postedSecond = [];
 const secondWebview = {
   options: {},
@@ -325,6 +360,11 @@ host.commitDetails(firstRefresh, { ok: true, marker: "panel-30d" });
 host.commitDetails(secondRefresh, { ok: true, marker: "sidebar-week" });
 assert.equal(posted.findLast((message) => message.type === "details").payload.marker, "panel-30d");
 assert.equal(postedSecond.findLast((message) => message.type === "details").payload.marker, "sidebar-week");
+host.resetTargets();
+assert.equal(target.snapshot, null);
+assert.equal(secondTarget.snapshot, null);
+assert.ok(posted.findLast((message) => message.type === "reset").generation > firstRefresh.generation, "database switches must invalidate the visible panel generation");
+assert.ok(postedSecond.findLast((message) => message.type === "reset").generation > secondRefresh.generation, "database switches must invalidate the visible sidebar generation");
 
 const fakeVscode = {
   Uri: { joinPath: (...parts) => parts.map((part) => String(part)).join("/") },
@@ -405,7 +445,7 @@ assert.match(extensionSource, /closeSqlJsWorker/);
 assert.match(extensionSource, /closeSettingsStore/);
 assert.equal((extensionSource.match(/context\.subscriptions\.push\(\{ dispose:/g) || []).length, 1, "refresh rescheduling should not accumulate disposables");
 
-const { exportSessionWithPrivacy } = require("../extension/session-export");
+const { exportSessionWithPrivacy, exportSessionsWithPrivacy } = require("../extension/session-export");
 
 function exportHarness({ choose, saveUri }) {
   const calls = { quickPick: [], save: [], export: [], info: [] };
@@ -428,6 +468,10 @@ function exportHarness({ choose, saveUri }) {
     async exportSessionToFile(options) {
       calls.export.push(options);
       return { path: options.outputPath, format: options.format, bytes: 321 };
+    },
+    async exportSessionsToFile(options) {
+      calls.export.push(options);
+      return { path: options.outputPath, format: options.format, bytes: 654, model: { sessions: options.sessions } };
     },
   };
   return { calls, vscode, localProvider };
@@ -479,6 +523,29 @@ function exportHarness({ choose, saveUri }) {
   }]);
   assert.equal(defaults.calls.info.length, 1);
 
+  const batch = exportHarness({
+    choose: (items) => items.filter((item) => item.picked),
+    saveUri: { fsPath: "C:\\exports\\sessions.json" },
+  });
+  const batchSessions = [
+    { id: "session-1", title: "one", source: "desktop" },
+    { id: "session-2", title: "two", source: "cli" },
+  ];
+  const batchResult = await exportSessionsWithPrivacy({
+    vscode: batch.vscode,
+    localProvider: batch.localProvider,
+    providerOptions: { dbPath: "fixture.db", useSavedSettings: false },
+    sessions: batchSessions,
+    format: "json",
+  });
+  assert.equal(batchResult.sessions, 2);
+  assert.equal(batch.calls.quickPick.length, 1, "batch export must ask privacy once");
+  assert.equal(batch.calls.save.length, 1, "batch export must ask for one destination");
+  assert.equal(batch.calls.export.length, 1, "batch export must write one combined file");
+  assert.deepEqual(batch.calls.export[0].sessions, batchSessions);
+  assert.match(batch.calls.quickPick[0].options.title, /2/);
+  assert.match(batch.calls.info[0], /2/);
+
   const custom = exportHarness({
     choose: (items) => items.filter((item) => ["includeReasoning", "includeToolIO"].includes(item.privacyKey)),
     saveUri: { fsPath: "C:\\exports\\session.md" },
@@ -524,6 +591,57 @@ function exportHarness({ choose, saveUri }) {
   assert.deepEqual(saveCanceledResult, { ok: false, canceled: true, stage: "save" });
   assert.equal(saveCanceled.calls.export.length, 0, "save cancellation must not write a file");
   assert.equal(saveCanceled.calls.info.length, 0);
+
+  let resolveOldPage;
+  let resolveNewPage;
+  const racePosted = [];
+  const raceWebview = {
+    options: {}, html: "", asWebviewUri: (value) => value,
+    onDidReceiveMessage(handler) { this.receive = handler; },
+    postMessage(message) { racePosted.push(message); },
+  };
+  const raceHost = new DashboardHost(
+    { extensionUri: "extension" },
+    () => null,
+    () => undefined,
+    () => undefined,
+    () => undefined,
+    {
+      querySessionsPage(message) {
+        return new Promise((resolve) => {
+          if (message.page === 1) resolveOldPage = resolve;
+          else resolveNewPage = resolve;
+        });
+      },
+      exportSessions(sessions, format) { return { ok: true, sessions: sessions.length, format }; },
+    },
+  );
+  const raceTarget = raceHost.attach(raceWebview, "dashboard");
+  await raceHost.handleMessage({ type: "exportSessions", sessions: [{ id: "s1" }, { id: "s2" }], format: "json" }, raceTarget);
+  assert.equal(racePosted.findLast((message) => message.type === "sessionExported").payload.sessions, 2);
+  const oldPage = raceHost.handleMessage({ type: "sessionsPage", page: 1 }, raceTarget);
+  const newPage = raceHost.handleMessage({ type: "sessionsPage", page: 2 }, raceTarget);
+  resolveNewPage({ ok: true, data: { page: 2, items: [{ id: "new" }] } });
+  await newPage;
+  resolveOldPage({ ok: true, data: { page: 1, items: [{ id: "old" }] } });
+  await oldPage;
+  const pageMessages = racePosted.filter((message) => message.type === "sessionsPage");
+  assert.deepEqual(pageMessages.map((message) => message.payload.data.page), [2], "stale database pages must not overwrite the latest filter or page request");
+
+  const preRefreshPage = raceHost.handleMessage({ type: "sessionsPage", page: 1 }, raceTarget);
+  raceHost.beginDetails({ target: raceTarget, source: "cli" });
+  resolveOldPage({ ok: true, data: { page: 1, items: [{ id: "pre-refresh" }] } });
+  await preRefreshPage;
+  assert.equal(racePosted.filter((message) => message.type === "sessionsPage").length, 1, "starting a new detail generation must invalidate in-flight database pages");
+
+  let resolveExport;
+  raceHost.operations.exportSession = () => new Promise((resolve) => { resolveExport = resolve; });
+  const exportDuringRefresh = raceHost.handleMessage({ type: "exportSession", session: { id: "s1" }, format: "json" }, raceTarget);
+  raceHost.beginDetails({ target: raceTarget, source: "desktop" });
+  raceHost.setVisible(raceTarget, false);
+  resolveExport({ ok: true, path: "session.json" });
+  await exportDuringRefresh;
+  assert.equal(racePosted.findLast((message) => message.type === "sessionExported").payload.ok, true, "detail refreshes and temporary hiding must not discard a completed export");
 
   console.log("ok - extension webview and export privacy smoke");
 })().catch((error) => {

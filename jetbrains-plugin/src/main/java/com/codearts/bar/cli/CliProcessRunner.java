@@ -31,6 +31,14 @@ public final class CliProcessRunner {
             return execute(settings, CliLocator.exportCommand(settings, args));
         }
     }
+    public JsonObject exportSessions(CodeArtsSettings.State settings, java.util.List<String> args) throws IOException, InterruptedException {
+        List<String> command = CliLocator.exportSessionsCommand(settings, args);
+        try { return execute(settings, command); }
+        catch (IOException first) {
+            if (!CliLocator.repairEmbeddedRuntime(command)) throw first;
+            return execute(settings, CliLocator.exportSessionsCommand(settings, args));
+        }
+    }
     public JsonObject loadQuery(CodeArtsSettings.State settings, String resource, java.util.List<String> args) throws IOException, InterruptedException {
         List<String> command = CliLocator.queryCommand(settings, resource, args);
         try { return queryData(execute(settings, command)); }

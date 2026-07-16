@@ -201,9 +201,9 @@ function modelStatsForSourceSql({ source, db, tables, queryAll, payload }) {
   });
 }
 
-function sessionSummaryForSourceSql({ source, db, queryAll, payload }) {
+function sessionSummaryForSourceSql({ source, db, queryAll, payload, sessionColumns }) {
   const basePayload = { ...payload, status: 'all' };
-  const { where, params } = sessionWhere(basePayload);
+  const { where, params } = sessionWhere(basePayload, { sessionColumns });
   const weekAgo = resolveTimestamp(payload) - 7 * 86400000;
   const totalRow = queryAll(db, `select
       count(*) as total,
@@ -241,7 +241,8 @@ function sessionSummaryForSourceSql({ source, db, queryAll, payload }) {
   };
 }
 
-function sessionRowsForSourceSql({ db, queryAll }) {
+function sessionRowsForSourceSql({ db, queryAll, sessionColumns }) {
+  const { where, params } = sessionWhere({ status: 'all' }, { sessionColumns });
   return queryAll(db, `select
       id,
       title,
@@ -249,7 +250,8 @@ function sessionRowsForSourceSql({ db, queryAll }) {
       time_created as timeCreated,
       time_updated as timeUpdated,
       time_archived as timeArchived
-    from session`, []).map((row) => ({
+    from session
+    where ${where}`, params).map((row) => ({
     id: row.id,
     title: row.title || '',
     directory: row.directory || '',

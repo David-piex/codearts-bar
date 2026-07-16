@@ -49,6 +49,7 @@ function createDb(source) {
     db.exec(`
       create table session (
         id text primary key,
+        parent_id text,
         title text,
         directory text,
         version text,
@@ -66,16 +67,17 @@ function createDb(source) {
       create index idx_message_time on message(time_created);
       create index idx_session_time on session(time_updated);
     `);
-    const insertSession = db.prepare("insert into session(id,title,directory,version,time_created,time_updated,time_archived) values(?,?,?,?,?,?,?)");
+    const insertSession = db.prepare("insert into session(id,parent_id,title,directory,version,time_created,time_updated,time_archived) values(?,?,?,?,?,?,?,?)");
     const insertMessage = db.prepare("insert into message(id,session_id,time_created,time_updated,data) values(?,?,?,?,?)");
     db.exec("begin");
     for (let i = 0; i < perSource; i += 1) {
       const sessionTime = baseTime - (i * 2 + sourceOffset) * 2000;
       const messageTime = baseTime - (i * 2 + sourceOffset) * 1000;
       const sessionId = `s-${i}`;
-      insertSession.run(sessionId, `${source} 会话 ${i}`, `C:/stress/${source}/${i % 12}`, "1", sessionTime - 60000, sessionTime, i % 29 === 0 ? sessionTime + 1000 : null);
+      insertSession.run(sessionId, '', `${source} 会话 ${i}`, `C:/stress/${source}/${i % 12}`, "1", sessionTime - 60000, sessionTime, i % 29 === 0 ? sessionTime + 1000 : null);
       insertMessage.run(`m-${i}`, sessionId, messageTime, messageTime + 1000, assistantData(source, i, messageTime));
     }
+    insertSession.run(`internal-${source}`, 's-0', `Internal ${source} (@explore subagent)`, `C:/stress/${source}`, '1', baseTime, baseTime + 1000, null);
     db.exec("commit");
   } catch (error) {
     try { db.exec("rollback"); } catch {}
@@ -109,6 +111,7 @@ async function assertPage(runtime, kind, page) {
   assert.ok(page.hydrated < page.scanned, `${runtime} ${kind} should not hydrate skipped offset rows`);
   assert.ok(page.hydrateGroups <= 2, `${runtime} ${kind} should group hydration by data source`);
   assert.deepEqual(page.items.map((x) => `${x.source}:${x.id}`), expectedKeys(kind, offset, limit));
+  if (kind === 'sessions') assert.ok(page.items.every((item) => !item.id.startsWith('internal-')));
 }
 
 async function main() {

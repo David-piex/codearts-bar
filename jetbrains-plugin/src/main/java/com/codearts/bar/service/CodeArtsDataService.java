@@ -4,6 +4,7 @@ import com.codearts.bar.cli.CliProcessRunner;
 import com.codearts.bar.cli.CliLocator;
 import com.codearts.bar.model.UsageSnapshot;
 import com.codearts.bar.model.SensitiveText;
+import com.codearts.bar.model.DataSourceIdentity;
 import com.codearts.bar.settings.CodeArtsSettings;
 import com.intellij.notification.NotificationGroupManager;
 import com.intellij.notification.NotificationType;
@@ -45,25 +46,38 @@ public final class CodeArtsDataService implements Disposable {
 
     private void startRefresh(RefreshCoordinator.Start start) {
         if (!start.run() || disposed) return;
+        CodeArtsSettings.State settings = copySettings(CodeArtsSettings.getInstance().getState());
+        String settingsIdentity = settingsIdentity(settings);
         try {
             submitTracked(() -> {
+            boolean publish = false;
             try {
-                snapshot = runner.loadSnapshot(CodeArtsSettings.getInstance().getState());
+                UsageSnapshot loaded = runner.loadSnapshot(settings);
+                if (settingsIdentity.equals(settingsIdentity(CodeArtsSettings.getInstance().getState()))) {
+                    snapshot = loaded;
+                    publish = true;
+                }
             } catch (InterruptedException interrupted) {
                 Thread.currentThread().interrupt();
             } catch (Exception error) {
-                String message = SensitiveText.safeSummary(error.getMessage() == null ? error.toString() : error.getMessage());
-                snapshot = UsageSnapshot.empty(message);
-                if (start.notifyOnError()) ApplicationManager.getApplication().invokeLater(() -> {
-                    if (!disposed) NotificationGroupManager.getInstance().getNotificationGroup("CodeArts Bar")
-                            .createNotification("码道刷新失败", message, NotificationType.ERROR).notify(null);
-                });
+                if (settingsIdentity.equals(settingsIdentity(CodeArtsSettings.getInstance().getState()))) {
+                    String message = SensitiveText.safeSummary(error.getMessage() == null ? error.toString() : error.getMessage());
+                    snapshot = UsageSnapshot.empty(message);
+                    publish = true;
+                    if (start.notifyOnError()) ApplicationManager.getApplication().invokeLater(() -> {
+                        if (!disposed) NotificationGroupManager.getInstance().getNotificationGroup("CodeArts Bar")
+                                .createNotification("码道刷新失败", message, NotificationType.ERROR).notify(null);
+                    });
+                }
             } finally {
-                UsageSnapshot current = snapshot;
-                ApplicationManager.getApplication().invokeLater(() -> {
-                    if (!disposed) listeners.forEach(listener -> listener.accept(current));
-                });
-                startRefresh(refreshCoordinator.complete());
+                if (publish) {
+                    UsageSnapshot current = snapshot;
+                    ApplicationManager.getApplication().invokeLater(() -> {
+                        if (!disposed) listeners.forEach(listener -> listener.accept(current));
+                    });
+                }
+                RefreshCoordinator.Start next = refreshCoordinator.complete(!publish && !disposed, start.notifyOnError());
+                startRefresh(next);
             }
             });
         } catch (RuntimeException rejected) {
@@ -74,10 +88,31 @@ public final class CodeArtsDataService implements Disposable {
 
 
     public Future<?> query(String resource, java.util.List<String> args, Consumer<JsonObject> onSuccess, Consumer<String> onError) {
+        CodeArtsSettings.State settings = copySettings(CodeArtsSettings.getInstance().getState());
+        String settingsIdentity = settingsIdentity(settings);
         return submitTracked(() -> {
             try {
-                JsonObject data = runner.loadQuery(CodeArtsSettings.getInstance().getState(), resource, args);
-                ApplicationManager.getApplication().invokeLater(() -> { if (!disposed) onSuccess.accept(data); });
+                JsonObject data = runner.loadQuery(settings, resource, args);
+                ApplicationManager.getApplication().invokeLater(() -> {
+                    if (!disposed && settingsIdentity.equals(settingsIdentity(CodeArtsSettings.getInstance().getState()))) onSuccess.accept(data);
+                });
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+            } catch (Exception error) {
+                String message = SensitiveText.safeSummary(error.getMessage() == null ? error.toString() : error.getMessage());
+                ApplicationManager.getApplication().invokeLater(() -> {
+                    if (!disposed && settingsIdentity.equals(settingsIdentity(CodeArtsSettings.getInstance().getState()))) onError.accept(message);
+                });
+            }
+        });
+    }
+
+    public Future<?> exportSession(java.util.List<String> args, Consumer<JsonObject> onSuccess, Consumer<String> onError) {
+        CodeArtsSettings.State settings = copySettings(CodeArtsSettings.getInstance().getState());
+        return submitTracked(() -> {
+            try {
+                JsonObject result = runner.exportSession(settings, args);
+                ApplicationManager.getApplication().invokeLater(() -> { if (!disposed) onSuccess.accept(result); });
             } catch (InterruptedException interrupted) {
                 Thread.currentThread().interrupt();
             } catch (Exception error) {
@@ -87,10 +122,11 @@ public final class CodeArtsDataService implements Disposable {
         });
     }
 
-    public Future<?> exportSession(java.util.List<String> args, Consumer<JsonObject> onSuccess, Consumer<String> onError) {
+    public Future<?> exportSessions(java.util.List<String> args, Consumer<JsonObject> onSuccess, Consumer<String> onError) {
+        CodeArtsSettings.State settings = copySettings(CodeArtsSettings.getInstance().getState());
         return submitTracked(() -> {
             try {
-                JsonObject result = runner.exportSession(CodeArtsSettings.getInstance().getState(), args);
+                JsonObject result = runner.exportSessions(settings, args);
                 ApplicationManager.getApplication().invokeLater(() -> { if (!disposed) onSuccess.accept(result); });
             } catch (InterruptedException interrupted) {
                 Thread.currentThread().interrupt();
@@ -99,6 +135,35 @@ public final class CodeArtsDataService implements Disposable {
                 ApplicationManager.getApplication().invokeLater(() -> { if (!disposed) onError.accept(message); });
             }
         });
+    }
+
+    static CodeArtsSettings.State copySettings(CodeArtsSettings.State source) {
+        CodeArtsSettings.State copy = new CodeArtsSettings.State();
+        copy.nodePath = source.nodePath;
+        copy.cliPath = source.cliPath;
+        copy.dbPath = source.dbPath;
+        copy.dailyLimit = source.dailyLimit;
+        copy.windowHours = source.windowHours;
+        copy.refreshSeconds = source.refreshSeconds;
+        copy.timeoutSeconds = source.timeoutSeconds;
+        copy.showStatusBar = source.showStatusBar;
+        copy.analyticsRange = source.analyticsRange;
+        copy.analyticsCustomStart = source.analyticsCustomStart;
+        copy.analyticsCustomEnd = source.analyticsCustomEnd;
+        copy.sessionRange = source.sessionRange;
+        copy.sessionCustomStart = source.sessionCustomStart;
+        copy.sessionCustomEnd = source.sessionCustomEnd;
+        return copy;
+    }
+
+    static String settingsIdentity(CodeArtsSettings.State settings) {
+        return String.join("\u001f",
+                settings.nodePath == null ? "" : settings.nodePath.trim(),
+                settings.cliPath == null ? "" : settings.cliPath.trim(),
+                DataSourceIdentity.of(settings.dbPath),
+                Long.toString(settings.dailyLimit),
+                Integer.toString(settings.windowHours),
+                Integer.toString(settings.timeoutSeconds));
     }
 
     private synchronized Future<?> submitTracked(Runnable action) {

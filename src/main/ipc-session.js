@@ -15,7 +15,7 @@ function registerSessionIpc({
     ok: false,
     code: String(error?.code || 'SESSION_EXPORT_FAILED'),
     message: String(error?.message || '会话导出失败'),
-    retryable: !['SESSION_EXPORT_ID_REQUIRED', 'SESSION_EXPORT_NOT_FOUND'].includes(error?.code),
+    retryable: !['SESSION_EXPORT_ID_REQUIRED', 'SESSION_EXPORT_NOT_FOUND', 'SESSION_EXPORT_INTERNAL_SESSION'].includes(error?.code),
   });
   ipcMain.handle('dashboard:openSession', (_event, session) => openSessionDir(session));
   ipcMain.handle('dashboard:openCodeArtsSession', (_event, session) => openCodeArts(session && session.directory));
@@ -76,7 +76,8 @@ function registerSessionIpc({
         redactPaths: exportOptions.redactPaths !== false,
         includeErrors: exportOptions.includeErrors !== false,
       });
-      return { ok: true, path: result.path, format: result.format, bytes: result.bytes, sessions: selected.length };
+      const exportedSessions = Array.isArray(result.model?.sessions) ? result.model.sessions.length : selected.length;
+      return { ok: true, path: result.path, format: result.format, bytes: result.bytes, sessions: exportedSessions };
     } catch (error) { return exportFailure(error); }
   });
   ipcMain.handle('dashboard:openLogs', () => openLogFile());

@@ -11,7 +11,7 @@ const { databaseFingerprint } = require("./core/source-fingerprint");
 const { closeSettingsStore } = require("./settings");
 const { databasePagePayload } = require("./protocol/query-results");
 const { redactSensitiveText } = require("./core/sensitive-text");
-const { exportSessionWithPrivacy } = require("./session-export");
+const { exportSessionWithPrivacy, exportSessionsWithPrivacy } = require("./session-export");
 
 let statusItem;
 let timer;
@@ -216,6 +216,7 @@ async function loadDashboardDetails(options = {}) {
 async function refresh(options = {}) {
   if (refreshPromise) {
     await refreshPromise;
+    if (options.force === true) return refresh({ ...options, force: false });
     return options.details === true || options.target
       ? loadDashboardDetails(options)
       : lastSnapshot;
@@ -226,7 +227,7 @@ async function refresh(options = {}) {
       const sources = localProvider.listDataSources({ ...c, useSavedSettings: false });
       const fingerprint = databaseFingerprint(fs, sources);
       const cacheKey = JSON.stringify({ dbPath: c.dbPath || "", dailyLimit: c.dailyLimit, windowHours: c.windowHours, fingerprint });
-      if (summaryCache?.ok && cacheKey === summaryCacheKey && Date.now() - summaryCachedAt < SUMMARY_CACHE_TTL_MS) {
+      if (options.force !== true && summaryCache?.ok && cacheKey === summaryCacheKey && Date.now() - summaryCachedAt < SUMMARY_CACHE_TTL_MS) {
         lastSnapshot = summaryCache;
       } else {
         lastSnapshot = await getExtensionSummary(c);
@@ -283,9 +284,9 @@ async function querySessionsPage(options = {}) {
   const result = await localProvider.getSessionsPage({
     ...c,
     useSavedSettings: false,
-    source: options.source || "all",
-    model: options.model || "all",
-    project: options.project || "all",
+    source: options.source ?? "all",
+    model: options.model ?? "all",
+    project: options.project ?? "all",
     status: options.status || "active",
     query: options.search || "",
     range: options.range || {},
@@ -310,7 +311,7 @@ async function queryRequestsPage(options = {}) {
   const page = Math.max(1, Number(options.page || 1));
   const pageSize = Math.max(1, Math.min(100, Number(options.pageSize || 40)));
   const result = await localProvider.getRequestsPage({
-    ...c, useSavedSettings: false, source: options.source || "all", model: options.model || "all",
+    ...c, useSavedSettings: false, source: options.source ?? "all", model: options.model ?? "all", project: options.project ?? "all",
     query: options.search || "", range: options.range || {}, limit: pageSize, offset: (page - 1) * pageSize,
   });
   return databasePagePayload({ ...result, items: (result.items || []).map((item) => ({
@@ -321,7 +322,7 @@ async function queryRequestsPage(options = {}) {
     cacheRead: Number(item.cacheRead || 0), cacheWrite: Number(item.cacheWrite || 0), latencyMs: item.latencyMs,
     ttftMs: item.ttftMs, firstContentMs: item.firstContentMs, outputTokensPerSec: item.outputTokensPerSec,
     error: redactSensitiveText(item.error || ""),
-  })) }, { page, pageSize, resource: "requests", source: options.source, model: options.model, query: options.search, range: options.range });
+  })) }, { page, pageSize, resource: "requests", source: options.source, model: options.model, project: options.project, query: options.search, range: options.range });
 }
 
 async function exportSession(session, format = "json") {
@@ -334,6 +335,16 @@ async function exportSession(session, format = "json") {
   });
 }
 
+async function exportSessions(sessions, format = "json") {
+  return exportSessionsWithPrivacy({
+    vscode,
+    localProvider,
+    sessions,
+    format,
+    providerOptions: { ...config(), useSavedSettings: false },
+  });
+}
+
 function activate(context) {
   dashboardHost = new DashboardHost(
     context,
@@ -341,7 +352,7 @@ function activate(context) {
     refresh,
     loadDashboardDetails,
     openDataFolder,
-    { querySessionsPage, queryRequestsPage, exportSession, onVisibilityChanged: schedule },
+    { querySessionsPage, queryRequestsPage, exportSession, exportSessions, onVisibilityChanged: schedule },
   );
   const overviewProvider = new OverviewViewProvider(dashboardHost);
   statusItem = vscode.window.createStatusBarItem(
@@ -384,7 +395,8 @@ function activate(context) {
     vscode.workspace.onDidChangeConfiguration((event) => {
       if (event.affectsConfiguration("codeartsBar")) {
         schedule();
-        refresh();
+        if (event.affectsConfiguration("codeartsBar.dbPath")) dashboardHost?.resetTargets();
+        refresh({ force: true });
       }
     }),
   );
@@ -408,4 +420,4 @@ async function deactivate() {
   summaryCachedAt = 0;
 }
 
-module.exports = { activate, deactivate, querySessionsPage, queryRequestsPage, exportSession };
+module.exports = { activate, deactivate, querySessionsPage, queryRequestsPage, exportSession, exportSessions };

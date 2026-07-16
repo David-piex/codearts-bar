@@ -45,6 +45,15 @@ class UsageSnapshotTest {
         assertEquals("custom", rows.getFirst().source());
     }
 
+    @Test void keepsMachineSourceIdForPagedRequestQueries() {
+        String json = """
+          {"items":[{"id":"r1","source":"desktop","sourceLabel":"桌面端","ok":true,"total":10}]}
+          """;
+        var rows = UsageSnapshot.requestItems(JsonParser.parseString(json).getAsJsonObject());
+        assertEquals(1, rows.size());
+        assertEquals("desktop", rows.getFirst().source());
+    }
+
     @Test void parsesRangeFilteredAnalyticsPayload() {
         String json = """
           {"usage":{"total":220,"input":130,"cacheHitRate":7.8},
