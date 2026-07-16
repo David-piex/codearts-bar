@@ -1,34 +1,20 @@
 'use strict';
 
 const fs = require('node:fs');
-const { envelope, failure } = require('../../protocol/envelope');
-const { databasePagePayload, analyticsPayload, ideDashboardPayload, sanitizeIdeValue } = require('../../protocol/query-results');
+const { envelope, failure, databasePagePayload, analyticsPayload, ideDashboardPayload, sanitizeIdeValue } = require('../../protocol/query-results');
 const aggregation = require('./aggregation-engine');
+const usageRollup = require('./usage-rollup');
+const { sourceList } = require('./aggregation-runtime');
+const { nativeSqliteStatus } = require('./sqlite');
+const { writeRollupState } = require('./rollup-state');
 const pagination = require('./pagination');
 
-function finite(value, fallback = 0) { const number = Number(value); return Number.isFinite(number) ? number : fallback; }
-
-
-function readOption(args, name, fallback = null) {
-  const index = args.indexOf(name);
-  return index >= 0 && index + 1 < args.length ? args[index + 1] : fallback;
-}
-function readOptions(args, name) {
+function readOption(args, name, multiple = false, fallback = null) {
   const values = [];
   for (let index = 0; index < args.length - 1; index += 1) {
     if (args[index] === name) values.push(args[index + 1]);
   }
-  return values.length > 1 ? values : values[0] || null;
-}
-
-function positiveNumber(value, fallback) {
-  const number = Number(value);
-  return Number.isFinite(number) && number > 0 ? number : fallback;
-}
-
-function databaseSize(source) {
-  try { return fs.statSync(source?.dbPath || '').size; }
-  catch { return 0; }
+  return multiple && values.length > 1 ? values : values[0] ?? fallback;
 }
 
 function dashboardSnapshot(result, timestamp, settings) {
@@ -50,11 +36,9 @@ function dashboardSnapshot(result, timestamp, settings) {
     message: `${item?.source || 'local'} 数据源读取失败`,
   }));
   return {
-    ok: true,
     timestamp,
     updatedAt: new Date(timestamp).toLocaleString('zh-CN', { hour12: false }),
-    dbPath: primarySource.dbPath || '',
-    dbSize: databaseSize(primarySource),
+    dbSize: primarySource.dbPath ? fs.statSync(primarySource.dbPath).size : 0,
     adapter: result.nativeError ? 'sql.js' : 'node:sqlite',
     config: settings,
     status: { label: `${Math.round(usagePercent)}%`, usagePercent, level, resetAt, remaining },
@@ -63,49 +47,47 @@ function dashboardSnapshot(result, timestamp, settings) {
     trends: { hourly24h: result.buckets || [], daily14d: [] },
     models: result.modelStats || [],
     sourceStats: result.sourceStats || [],
-    sessions: [],
     sessionSummary: result.sessionSummary || {},
-    requestLog: [],
     performance: {},
+    rollupState: result.rollupState || result.perf?.usageRollup?.current || null,
     queue: {},
-    tools: {},
     health: {
       level: issues.length ? 'warning' : 'ok',
       label: issues.length ? '部分数据源不可用' : '本地数据正常',
-      message: issues.length ? '部分本地数据源读取失败' : '数据库与本地聚合可用',
       issues,
     },
     quota: {
       primary: { id: 'daily', label: '今日', used, limit, remaining, percent: usagePercent, resetAt, level },
-      note: 'dailyLimit 是本地显示软上限，不代表码道官方限制。',
+      note: 'dailyLimit 是本地显示软上限。',
     },
-    freshness: { source: 'live', stale: false, ageMs: 0 },
   };
 }
 
 async function query(resource, args = []) {
-  const page = Math.max(1, Math.trunc(Number(readOption(args, '--page', 1)) || 1));
-  const pageSize = Math.max(1, Math.min(500, Math.trunc(Number(readOption(args, '--page-size', 50)) || 50)));
+  const requireResult = (result) => {
+    if (!result?.ok) throw new Error(result?.error || 'Unable to read local usage data.');
+    return result;
+  };
+  const page = Math.max(1, Math.trunc(Number(readOption(args, '--page', false, 1)) || 1));
+  const pageSize = Math.max(1, Math.min(500, Math.trunc(Number(readOption(args, '--page-size', false, 50)) || 50)));
   const sessionId = readOption(args, '--session-id');
-  const source = readOptions(args, '--source');
-  const model = readOptions(args, '--model');
-  const project = readOptions(args, '--project');
-  const search = readOption(args, '--search', '');
-  const start = Math.max(0, Number(readOption(args, '--start', 0)) || 0);
-  const end = Math.max(0, Number(readOption(args, '--end', 0)) || 0);
+  const source = readOption(args, '--source', true);
+  const model = readOption(args, '--model', true);
+  const project = readOption(args, '--project', true);
+  const search = readOption(args, '--search', false, '');
+  const start = Math.max(0, Number(readOption(args, '--start', false, 0)) || 0);
+  const end = Math.max(0, Number(readOption(args, '--end', false, 0)) || 0);
   const range = { start, end };
   const pageOptions = { page, pageSize, sessionId, source, model, project, query: search, range };
   if (resource === 'analytics') {
-    const bucketMs = Math.max(60000, Number(readOption(args, '--bucket-ms', 3600000)) || 3600000);
+    const bucketMs = Math.max(60000, Number(readOption(args, '--bucket-ms', false, 3600000)) || 3600000);
     const offsetValue = readOption(args, '--bucket-offset-ms');
     const bucketOffsetMs = offsetValue == null ? undefined : Number(offsetValue);
-    const result = await aggregation.getDashboardAggregates({ source, model, project, range, timestamp: end || Date.now(), bucketMs, bucketOffsetMs, disableUsageRollup: true });
-    if (!result?.ok) throw new Error(result?.error || 'Unable to aggregate local usage data.');
+    const result = requireResult(await aggregation.getDashboardAggregates({ source, model, project, range, timestamp: end || Date.now(), bucketMs, bucketOffsetMs, disableUsageRollup: true }));
     return analyticsPayload(result, { ...pageOptions, bucketMs, bucketOffsetMs });
   }
   if (resource === 'filters') {
-    const result = await aggregation.getDashboardAggregates({ source, range, timestamp: end || Date.now(), bucketMs: 86400000, disableUsageRollup: true });
-    if (!result?.ok) throw new Error(result?.error || 'Unable to load local filter options.');
+    const result = requireResult(await aggregation.getDashboardAggregates({ source, range, timestamp: end || Date.now(), bucketMs: 86400000, disableUsageRollup: true }));
     return envelope({
       models: result.modelStats || [],
       projects: (result.sessionSummary?.projects || []).map((item) => ({
@@ -114,6 +96,31 @@ async function query(resource, args = []) {
     }, pageOptions);
   }
   if (resource === 'diagnostics') return envelope(sanitizeIdeValue(await aggregation.getDatabaseHealth({ source })));
+  if (resource === 'rollup') {
+    const adapter = process.env.CODEARTS_BAR_FORCE_SQLJS === '1' || !nativeSqliteStatus().available ? 'sql.js' : 'node:sqlite';
+    const selected = sourceList({ source });
+    const results = [];
+    for (const item of selected) {
+      const startedAt = Date.now();
+      const progress = (state = {}) => writeRollupState(item, {
+        adapter, status: state.phase === 'completed' ? 'ready' : 'running',
+        phase: state.phase || 'running', percent: state.percent || 0,
+        scannedRows: state.scannedRows || 0, totalRows: state.totalRows || 0,
+        attempt: 1, fallback: 'direct-sql', startedAt, error: '',
+      });
+      try {
+        writeRollupState(item, { adapter, status: 'running', phase: 'opening', percent: 2, attempt: 1, fallback: 'direct-sql', startedAt, error: '' });
+        const result = await usageRollup.buildAndWriteUsageRollupForSource(item, { adapter, onProgress: progress });
+        const rowCount = Number(result?.usageRollup?.rowCount || 0);
+        writeRollupState(item, { adapter, status: 'ready', phase: 'completed', percent: 100, scannedRows: rowCount, totalRows: rowCount, attempt: 1, fallback: null, startedAt, completedAt: Date.now(), nextRetryAt: 0, error: '' });
+        results.push({ sourceId: item.id || 'unknown', status: 'ready', rowCount });
+      } catch (error) {
+        writeRollupState(item, { adapter, status: 'failed', phase: 'failed', percent: 0, attempt: 1, fallback: 'direct-sql', startedAt, completedAt: Date.now(), nextRetryAt: 0, error });
+        throw error;
+      }
+    }
+    return envelope({ status: 'ready', adapter, sources: results });
+  }
   if (resource === 'sessions' || resource === 'requests') {
     const payload = { limit: pageSize, offset: (page - 1) * pageSize, query: search, source, model, project, range };
     const result = resource === 'sessions'
@@ -124,13 +131,13 @@ async function query(resource, args = []) {
     return databasePagePayload(result, pageOptions);
   }
   if (resource === 'dashboard') {
+    const positiveNumber = (value, fallback) => Number(value) > 0 ? Number(value) : fallback;
     const timestamp = positiveNumber(process.env.CODEARTS_BAR_NOW_MS, Date.now());
     const settings = {
       dailyLimit: positiveNumber(process.env.CODEARTS_BAR_DAILY_LIMIT, 200000),
       windowHours: Math.min(8760, positiveNumber(process.env.CODEARTS_BAR_WINDOW_HOURS, 24)),
     };
-    const result = await aggregation.getDashboardAggregates({ source, timestamp, windowHours: settings.windowHours, bucketMs: 3600000 });
-    if (!result?.ok) throw new Error(result?.error || 'Unable to read local usage data.');
+    const result = requireResult(await aggregation.getDashboardAggregates({ source, timestamp, windowHours: settings.windowHours, bucketMs: 3600000 }));
     return ideDashboardPayload(dashboardSnapshot(result, result.timestamp || timestamp, settings), pageOptions);
   }
   throw new Error(`Unknown query resource: ${resource}`);

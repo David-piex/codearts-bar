@@ -155,6 +155,9 @@ class DashboardHost {
     return true;
   }
   hasTargets() { return [...this.targets].some((target) => target.visible); }
+  postRollupState(state) {
+    for (const target of this.visibleTargets()) target.webview.postMessage({ type: 'rollupState', payload: state || {} });
+  }
   visibleTargets() { return [...this.targets].filter((target) => target.visible); }
   resetTargets() {
     for (const target of this.targets) {

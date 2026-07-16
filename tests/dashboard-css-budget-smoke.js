@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const root = path.resolve(__dirname, '..');
 const src = path.join(root, 'src');
+const baseline = require('../quality-baseline.json');
 const manifest = JSON.parse(fs.readFileSync(path.join(src, 'dashboard-css-sources.json'), 'utf8'));
 assert.equal(manifest.length, 10, 'dashboard CSS domain source count must not grow without an intentional budget update');
 for (const owner of ['styles/domain-controls.css','styles/domain-sessions.css','styles/domain-chart.css','styles/domain-semantic.css','styles/domain-workbench.css']) assert.equal(manifest.includes(owner), true, `semantic owner missing from CSS manifest: ${owner}`);
@@ -44,7 +45,7 @@ assert.ok(metrics.backdropFilter <= 60, `effectful backdrop-filter budget exceed
 assert.ok(metrics.boxShadow <= 265, `effectful box-shadow budget exceeded: ${metrics.boxShadow}`);
 assert.ok(metrics.media <= 70, `media-query budget exceeded: ${metrics.media}`);
 const bundleBytes = fs.statSync(path.join(src, 'dashboard-bundle.css')).size;
-assert.ok(bundleBytes <= 202 * 1024, `dashboard CSS bundle exceeded 202 KiB: ${bundleBytes}`);
+assert.ok(bundleBytes <= baseline.limits.cssBytesMax, `dashboard CSS bundle exceeded ${baseline.limits.cssBytesMax} bytes: ${bundleBytes}`);
 const popover = fs.readFileSync(path.join(src, 'styles', 'domain-semantic.css'), 'utf8');
 assert.match(popover, /\.date-range-popover,\s*\.chart-tip,\s*\.perf-panel\s*\{[^}]*color:\s*var\(--cb-text\)/s, 'popover semantic owner should share the common text color rule');
 console.log(`ok - dashboard css budget bundle=${bundleBytes} important=${metrics.important} backdrop=${metrics.backdropFilter} shadow=${metrics.boxShadow} media=${metrics.media}`);

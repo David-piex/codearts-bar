@@ -10,6 +10,10 @@ const { recordBestEffortFailure } = require('../../core/best-effort');
 const { assistantWhere, validateTables, tableColumnNames } = require('./sources');
 const { safeDbError } = require('./diagnostics');
 const {
+  aggregateRollupState,
+  writeRollupState,
+} = require('./rollup-state');
+const {
   openNativeDbReadonly,
   openSqlJsDbReadonly,
   nativeAll,
@@ -39,6 +43,7 @@ const SESSION_SUMMARY_ROLLUP_KIND = 'session-summary-v4';
 const HOUR_MS = 60 * 60 * 1000;
 const pendingBuilds = new Map();
 let buildListener = null;
+let stateListener = null;
 const normalizedPayloads = new WeakMap();
 const rollupStats = {
   compactHits: 0,
@@ -53,6 +58,8 @@ const rollupStats = {
   skippedDisabled: 0,
   buildCompleted: 0,
   buildFailed: 0,
+  buildRetries: 0,
+  buildRecovered: 0,
   buildRuns: 0,
   incrementalBuilds: 0,
   incrementalRows: 0,
@@ -84,7 +91,42 @@ function pendingBuildEntry(source = {}, options = {}) {
     dbHash: hashPath(dbPath),
     dbName: dbPath ? path.basename(dbPath) : '',
     startedAt: Date.now(),
+    status: Number(options.attempt || 1) > 1 ? 'retrying' : 'queued',
+    phase: 'queued',
+    percent: 0,
+    scannedRows: 0,
+    totalRows: 0,
+    attempt: Math.max(1, Number(options.attempt || 1)),
+    fallback: options.fallback === 'direct-sql' ? 'direct-sql' : null,
   };
+}
+
+function publishRollupState(source, patch = {}) {
+  let state = null;
+  try { state = writeRollupState(source, patch); }
+  catch (error) { recordBestEffortFailure('rollup.state-write', error, { sourceId: source.id }); }
+  if (state && isMainThread && stateListener) {
+    try { stateListener(state); }
+    catch (error) { recordBestEffortFailure('rollup.state-listener', error, { sourceId: source.id }); }
+  }
+  return state;
+}
+
+function progressReporter(source, options = {}) {
+  const startedAt = Number(options.startedAt || Date.now());
+  return (progress = {}) => publishRollupState(source, {
+    adapter: options.adapter || 'node:sqlite',
+    status: 'running',
+    phase: progress.phase || 'running',
+    percent: progress.percent || 0,
+    scannedRows: progress.scannedRows || 0,
+    totalRows: progress.totalRows || 0,
+    attempt: options.attempt || 1,
+    fallback: options.fallback,
+    startedAt,
+    nextRetryAt: 0,
+    error: '',
+  });
 }
 
 function nowMs() {
@@ -145,7 +187,12 @@ function canUseSessionSummaryRollup(payload = {}) {
 }
 
 function buildUsageRollupForSource(args, payload = {}) {
-  const rows = normalizeTokenRows(nativeSql.messageTokenRowsForSourceSql({ ...args, payload }));
+  const rows = normalizeTokenRows(nativeSql.messageTokenRowsForSourceSql({
+    ...args,
+    payload,
+    onProgress: payload.onProgress,
+    estimatedRows: payload.estimatedRows,
+  }));
   return {
     source: { id: args.source.id, label: args.source.label, dbPath: args.source.dbPath },
     rows,
@@ -341,7 +388,7 @@ function readOrBuildUsageRollup(args, options = {}) {
       Number(row.timeUpdated || row.timeCreated || 0),
     ), 0);
     const updatedSince = Math.max(0, maxUpdatedTime - HOUR_MS);
-    const changed = buildUsageRollupForSource(args, { updatedSince }).rows;
+    const changed = buildUsageRollupForSource(args, { updatedSince, onProgress: options.onProgress, estimatedRows: options.totalRows }).rows;
     const currentIds = currentUsageMessageIds(args);
     const retained = stale.rows.filter((row) => currentIds.has(String(row.id || '')));
     const merged = new Map(retained.map((row) => [row.id, row]));
@@ -352,9 +399,10 @@ function readOrBuildUsageRollup(args, options = {}) {
     rollupStats.incrementalRows += changed.length;
     rollupStats.incrementalDeletedRows += stale.rows.length - retained.length;
   } else {
-    built = buildUsageRollupForSource(args);
+    built = buildUsageRollupForSource(args, { onProgress: options.onProgress, estimatedRows: options.totalRows });
   }
   try {
+    options.onProgress?.({ phase: 'writing', percent: 82, scannedRows: built.rows.length, totalRows: Math.max(built.rows.length, Number(options.totalRows || 0)) });
     const written = writeRollupCache(args.source.dbPath, built, {
       kind,
       rowCount: built.rows.length,
@@ -394,25 +442,37 @@ async function buildAndWriteUsageRollupForSource(source, options = {}) {
   const kind = options.kind || MESSAGE_TOKEN_CACHE_KIND;
   let db;
   const started = nowMs();
+  const onProgress = typeof options.onProgress === 'function' ? options.onProgress : () => {};
   try {
+    onProgress({ phase: 'opening', percent: 5, scannedRows: 0, totalRows: 0 });
     let result;
     if (adapter === 'sql.js') {
       db = await openSqlJsDbReadonly(source.dbPath);
       const tables = sqlJsAll(db, "select name from sqlite_master where type='table'").map((r) => r.name);
       validateTables(tables);
+      onProgress({ phase: 'validating', percent: 12, scannedRows: 0, totalRows: 0 });
       const sessionColumns = tableColumnNames(sqlJsAllParams, db, 'session');
-      result = readOrBuildUsageRollup({ source, db, tables, sessionColumns, queryAll: sqlJsAllParams }, { kind });
+      const estimatedRows = Number(sqlJsAllParams(db, "select count(*) as count from message where json_extract(data, '$.role') = ?", ['assistant'])[0]?.count || 0);
+      onProgress({ phase: 'scanning', percent: 20, scannedRows: 0, totalRows: estimatedRows });
+      result = readOrBuildUsageRollup({ source, db, tables, sessionColumns, queryAll: sqlJsAllParams }, { kind, onProgress, totalRows: estimatedRows });
+      onProgress({ phase: 'sessions', percent: 90, scannedRows: result.rows?.length || 0, totalRows: Math.max(result.rows?.length || 0, estimatedRows) });
       try { result.usageRollup.session = readOrBuildSessionSummaryRollup({ source, db, tables, sessionColumns, queryAll: sqlJsAllParams }).usageRollup; } catch (error) { recordBestEffortFailure('rollup.session-sqljs', error, { sourceId: source.id }); }
       recordRollupBuild(source, { ...options, adapter, kind }, result, nowMs() - started, null);
+      onProgress({ phase: 'completed', percent: 100, scannedRows: result.rows?.length || 0, totalRows: estimatedRows });
       return result;
     }
     db = openNativeDbReadonly(source.dbPath);
     const tables = nativeAll(db, "select name from sqlite_master where type='table'").map((r) => r.name);
     validateTables(tables);
+    onProgress({ phase: 'validating', percent: 12, scannedRows: 0, totalRows: 0 });
     const sessionColumns = tableColumnNames(nativeAllParams, db, 'session');
-    result = readOrBuildUsageRollup({ source, db, tables, sessionColumns, queryAll: nativeAllParams }, { kind });
+    const estimatedRows = Number(nativeAllParams(db, "select count(*) as count from message where json_extract(data, '$.role') = ?", ['assistant'])[0]?.count || 0);
+    onProgress({ phase: 'scanning', percent: 20, scannedRows: 0, totalRows: estimatedRows });
+    result = readOrBuildUsageRollup({ source, db, tables, sessionColumns, queryAll: nativeAllParams }, { kind, onProgress, totalRows: estimatedRows });
+    onProgress({ phase: 'sessions', percent: 90, scannedRows: result.rows?.length || 0, totalRows: Math.max(result.rows?.length || 0, estimatedRows) });
     try { result.usageRollup.session = readOrBuildSessionSummaryRollup({ source, db, tables, sessionColumns, queryAll: nativeAllParams }).usageRollup; } catch (error) { recordBestEffortFailure('rollup.session-native', error, { sourceId: source.id }); }
     recordRollupBuild(source, { ...options, adapter, kind }, result, nowMs() - started, null);
+    onProgress({ phase: 'completed', percent: 100, scannedRows: result.rows?.length || 0, totalRows: estimatedRows });
     return result;
   } catch (error) {
     recordRollupBuild(source, { ...options, adapter, kind }, null, nowMs() - started, error);
@@ -423,6 +483,7 @@ async function buildAndWriteUsageRollupForSource(source, options = {}) {
 }
 
 function scheduleUsageRollupBuild(source, options = {}) {
+  if (!isMainThread) return { scheduled: false, reason: 'main-thread-required' };
   if (process.env.CODEARTS_BAR_DISABLE_USAGE_ROLLUP_BUILD === '1') {
     rollupStats.skippedDisabled += 1;
     return { scheduled: false, reason: 'disabled' };
@@ -433,19 +494,35 @@ function scheduleUsageRollupBuild(source, options = {}) {
     rollupStats.skippedPending += 1;
     return { scheduled: false, reason: 'pending' };
   }
-  const entry = pendingBuildEntry(source, { ...options, adapter });
-  const timer = setTimeout(() => {
+  const attempt = Math.max(1, Number(options.attempt || 1));
+  const maxAttempts = Math.max(1, Number(options.maxAttempts || 3));
+  const entry = pendingBuildEntry(source, { ...options, adapter, attempt });
+  const runBuild = () => {
     const started = nowMs();
+    const startedAt = Date.now();
+    const reportProgress = progressReporter(source, { ...options, adapter, attempt, startedAt });
+    reportProgress({ phase: 'opening', percent: 3 });
     const workerFile = path.join(__dirname, 'usage-rollup-worker-pool.js');
     const workerPool = isMainThread && fs.existsSync(workerFile) ? module.require(workerFile) : null;
-    const useWorker = Boolean(isMainThread && workerPool?.usageRollupWorkerAvailable());
-    const build = useWorker
-      ? workerPool.runUsageRollupWorker(source, { ...options, adapter })
-      : buildAndWriteUsageRollupForSource(source, options);
+    const injectedBuild = typeof options.buildTask === 'function' ? options.buildTask : null;
+    const useWorker = Boolean(!injectedBuild && isMainThread && workerPool?.usageRollupWorkerAvailable());
+    const build = injectedBuild
+      ? injectedBuild(source, { adapter, attempt, onProgress: reportProgress })
+      : useWorker
+      ? workerPool.runUsageRollupWorker(source, { ...options, adapter, attempt }, 'build', reportProgress)
+      : buildAndWriteUsageRollupForSource(source, { ...options, adapter, attempt, onProgress: reportProgress });
+    let retry = null;
     Promise.resolve(build)
       .then((result) => {
         if (useWorker) recordRollupBuild(source, { ...options, adapter }, result, nowMs() - started, null);
         rollupStats.buildCompleted += 1;
+        if (attempt > 1) rollupStats.buildRecovered += 1;
+        publishRollupState(source, {
+          adapter, status: 'ready', phase: 'completed', percent: 100,
+          scannedRows: result?.usageRollup?.rowCount || 0,
+          totalRows: result?.usageRollup?.rowCount || 0,
+          attempt, fallback: null, startedAt, completedAt: Date.now(), nextRetryAt: 0, error: '',
+        });
         if (isMainThread && buildListener) {
           try { buildListener({ source, adapter, result, completedAt: Date.now() }); }
           catch (error) { recordBestEffortFailure('rollup.build-listener', error, { sourceId: source.id }); }
@@ -454,12 +531,51 @@ function scheduleUsageRollupBuild(source, options = {}) {
       .catch((error) => {
         if (useWorker) recordRollupBuild(source, { ...options, adapter }, null, nowMs() - started, error);
         rollupStats.buildFailed += 1;
+        const safeError = safeDbError(error);
+        if (attempt < maxAttempts && process.env.CODEARTS_BAR_DISABLE_USAGE_ROLLUP_RETRY !== '1') {
+          const retryDelayMs = Math.max(100, Number(options.retryDelayMs || 1000) * (2 ** (attempt - 1)));
+          const nextRetryAt = Date.now() + retryDelayMs;
+          rollupStats.buildRetries += 1;
+          publishRollupState(source, {
+            adapter, status: 'retrying', phase: 'backoff', percent: 0,
+            attempt, fallback: 'direct-sql', startedAt, nextRetryAt, error: safeError,
+          });
+          retry = { retryDelayMs, nextAttempt: attempt + 1, error: safeError };
+        } else {
+          publishRollupState(source, {
+            adapter, status: 'failed', phase: 'failed', percent: 0,
+            attempt, fallback: 'direct-sql', startedAt, completedAt: Date.now(), nextRetryAt: 0, error: safeError,
+          });
+        }
         if (process.env.CODEARTS_BAR_DEBUG_ROLLUP === '1') {
-          console.warn(`[codearts-bar] usage rollup build failed for ${source.id}: ${safeDbError(error)}`);
+          console.warn(`[codearts-bar] usage rollup build failed for ${source.id}: ${safeError}`);
         }
       })
-      .finally(() => pendingBuilds.delete(key));
-  }, Math.max(0, Number(options.delayMs || 0)));
+      .finally(() => {
+        pendingBuilds.delete(key);
+        if (retry) scheduleUsageRollupBuild(source, {
+          ...options,
+          adapter,
+          attempt: retry.nextAttempt,
+          delayMs: retry.retryDelayMs,
+          fallback: 'direct-sql',
+          lastError: retry.error,
+        });
+      });
+  };
+  publishRollupState(source, {
+    adapter,
+    status: attempt > 1 ? 'retrying' : 'queued',
+    phase: attempt > 1 ? 'backoff' : 'queued',
+    percent: 0,
+    attempt,
+    fallback: options.fallback,
+    startedAt: entry.startedAt,
+    nextRetryAt: attempt > 1 ? entry.startedAt + Math.max(0, Number(options.delayMs || 0)) : 0,
+    error: options.lastError || '',
+  });
+  const timer = setTimeout(runBuild, Math.max(0, Number(options.delayMs || 0)));
+  timer.unref?.();
   pendingBuilds.set(key, { ...entry, timer });
   rollupStats.scheduled += 1;
   return { scheduled: true };
@@ -467,6 +583,10 @@ function scheduleUsageRollupBuild(source, options = {}) {
 
 function setUsageRollupBuildListener(listener) {
   buildListener = typeof listener === 'function' ? listener : null;
+}
+
+function setUsageRollupStateListener(listener) {
+  stateListener = typeof listener === 'function' ? listener : null;
 }
 
 function usageRollupStats() {
@@ -516,9 +636,11 @@ module.exports = {
   readOrBuildSessionSummaryRollup,
   buildAndWriteUsageRollupForSource,
   scheduleUsageRollupBuild,
+  aggregateRollupState,
   usageRollupStats,
   resetUsageRollupStats,
   setUsageRollupBuildListener,
+  setUsageRollupStateListener,
   sessionSummaryPartFromRollup,
   dashboardPartFromCompactRollup,
   dashboardPartFromUsageRollup,

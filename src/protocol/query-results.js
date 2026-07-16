@@ -1,6 +1,6 @@
 'use strict';
 
-const { envelope } = require('./envelope');
+const { envelope, failure } = require('./envelope');
 const { redactSensitiveText } = require('../core/sensitive-text');
 
 function finite(value, fallback = 0) { const number = Number(value); return Number.isFinite(number) ? number : fallback; }
@@ -140,6 +140,7 @@ function analyticsPayload(result = {}, options = {}) {
     models: result.modelStats || [], providers: providerStatsFromModels(result.modelStats || []), sources: result.sourceStats || [],
     projects: projectStatsFromSummary(result.sessionSummary || {}),
     performance,
+    rollupState: result.rollupState || result.perf?.usageRollup?.current || null,
     completeness: {
       complete: completenessReasons.length === 0,
       sampled: false,
@@ -164,9 +165,9 @@ function ideDashboardPayload(snapshot = {}, options = {}) {
   return envelope(sanitizeIdeValue({
     updatedAt: snapshot.updatedAt || '', dbSize: finite(snapshot.dbSize), adapter: snapshot.adapter || '', config: snapshot.config || {},
     status: snapshot.status || {}, usage: snapshot.usage || {}, trends: snapshot.trends || {}, models: snapshot.models || [], sources: snapshot.sourceStats || snapshot.sources || [],
-    sessionSummary: snapshot.sessionSummary || {}, performance: snapshot.performance || {}, queue: snapshot.queue || {}, health: snapshot.health || {}, quota: snapshot.quota || {},
+    sessionSummary: snapshot.sessionSummary || {}, performance: snapshot.performance || {}, queue: snapshot.queue || {}, health: snapshot.health || {}, quota: snapshot.quota || {}, rollupState: snapshot.rollupState || null,
     completeness: { complete: completenessReasons.length === 0, sampled: false, reasons: completenessReasons, sources: sourceCoverage },
   }), { ...options, generatedAt: finite(snapshot.timestamp, Date.now()), diagnostics: { adapter: snapshot.adapter || '', cache: null } });
 }
 
-module.exports = { safeIdeText, sanitizeIdeValue, databasePagePayload, usageFromBuckets, providerStatsFromModels, projectStatsFromSummary, performanceFromBuckets, analyticsSourceCoverage, analyticsPayload, ideDashboardPayload };
+module.exports = { envelope, failure, safeIdeText, sanitizeIdeValue, databasePagePayload, usageFromBuckets, providerStatsFromModels, projectStatsFromSummary, performanceFromBuckets, analyticsSourceCoverage, analyticsPayload, ideDashboardPayload };

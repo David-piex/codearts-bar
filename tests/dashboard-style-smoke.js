@@ -90,7 +90,7 @@ assert.match(
 const generatedRenderer = fs.readFileSync(path.join(__dirname, "..", "src", "dashboard-renderer.js"), "utf8");
 const rendererEntry = fs.readFileSync(path.join(__dirname, "..", "src", "dashboard", "renderer-entry.js"), "utf8");
 const rendererBundler = fs.readFileSync(path.join(__dirname, "..", "src", "build-dashboard-renderer.js"), "utf8");
-const rendererIncludeSources = `${rendererEntry}\n${fs.readFileSync(path.join(__dirname, "..", "src", "dashboard-sessions.js"), "utf8")}`;
+const rendererIncludeSources = `${rendererEntry}\n${renderer}`;
 const mainFiles = [
   "main.js",
   "main/logger.js",
@@ -207,7 +207,7 @@ assert.match(html, /usage-total-cache/);
 assert.match(html, /usage-total-request-spark/);
 assert.match(html, /--cache-hit:/);
 assert.match(html, /grid-template-columns:repeat\(4,minmax\(140px,1fr\)\) minmax\(220px,1\.25fr\)/);
-assert.match(html, /AppKit workbench finish/);
+assert.match(html, /\.session-overview\s*\{[^}]*grid-template-columns:\s*repeat\(4,\s*minmax\(0,\s*1fr\)\)/s);
 assert.match(html, /\.cc-usage-summary\.usage-summary/);
 assert.match(html, /background:transparent/);
 assert.match(html, /usage-detail-stack/);
@@ -217,7 +217,7 @@ assert.match(html, /session-essential-actions/);
 assert.match(html, /session-essential-summary/);
 assert.match(html, /session-essential-meta/);
 assert.match(html, /--session-hit:/);
-assert.match(html, /Session workbench: one metric strip, one table and a flat inspector/);
+assert.match(html, /\.session-essential-inspector\s*\{[^}]*position:\s*relative/s);
 assert.match(html, /session-table\.simple \.session-row\.selected td/);
 assert.match(html, /session-table\.simple \.session-row\.selected td:first-child/);
 assert.match(html, /\.cache-pill i/);

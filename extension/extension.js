@@ -21,6 +21,7 @@ let dashboardHost;
 let summaryCache = null;
 let summaryCacheKey = "";
 let summaryCachedAt = 0;
+let rollupRecoveryRefreshTimer = null;
 const SUMMARY_CACHE_TTL_MS = 30000;
 
 const T = {
@@ -354,6 +355,20 @@ function activate(context) {
     openDataFolder,
     { querySessionsPage, queryRequestsPage, exportSession, exportSessions, onVisibilityChanged: schedule },
   );
+  localProvider.setUsageRollupStateListener?.((state) => {
+    const sources = localProvider.listDataSources({ ...config(), useSavedSettings: false });
+    const currentHashes = new Set((localProvider.aggregateRollupState?.(sources)?.sources || []).map((item) => item.sourceHash));
+    if (state?.sourceHash && currentHashes.size && !currentHashes.has(state.sourceHash)) return;
+    dashboardHost?.postRollupState(state);
+    if (state?.status !== 'ready') return;
+    if (rollupRecoveryRefreshTimer) clearTimeout(rollupRecoveryRefreshTimer);
+    rollupRecoveryRefreshTimer = setTimeout(() => {
+      rollupRecoveryRefreshTimer = null;
+      summaryCache = null;
+      refresh({ force: true, details: dashboardHost?.hasTargets() }).catch(() => {});
+    }, 150);
+    rollupRecoveryRefreshTimer.unref?.();
+  });
   const overviewProvider = new OverviewViewProvider(dashboardHost);
   statusItem = vscode.window.createStatusBarItem(
     vscode.StatusBarAlignment.Right,
@@ -401,7 +416,7 @@ function activate(context) {
     }),
   );
 
-  context.subscriptions.push({ dispose: () => { if (timer) clearTimeout(timer); timer = null; } });
+  context.subscriptions.push({ dispose: () => { if (timer) clearTimeout(timer); timer = null; if (rollupRecoveryRefreshTimer) clearTimeout(rollupRecoveryRefreshTimer); rollupRecoveryRefreshTimer = null; localProvider.setUsageRollupStateListener?.(null); } });
   schedule();
   refresh();
   return { querySessionsPage, queryRequestsPage, exportSession };
@@ -411,6 +426,9 @@ async function deactivate() {
   if (timer) clearTimeout(timer);
   timer = null;
   refreshPromise = null;
+  if (rollupRecoveryRefreshTimer) clearTimeout(rollupRecoveryRefreshTimer);
+  rollupRecoveryRefreshTimer = null;
+  localProvider.setUsageRollupStateListener?.(null);
   await localProvider.closeSqlJsWorker?.();
   closeSettingsStore?.();
   dashboardHost = null;

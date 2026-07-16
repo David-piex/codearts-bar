@@ -22,6 +22,8 @@ import java.util.concurrent.FutureTask;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 import com.google.gson.JsonObject;
 
@@ -34,6 +36,8 @@ public final class CodeArtsDataService implements Disposable {
     private volatile UsageSnapshot snapshot = UsageSnapshot.empty("等待首次刷新");
     private volatile ScheduledFuture<?> scheduled;
     private volatile boolean disposed;
+    private final AtomicBoolean rollupRecoveryRunning = new AtomicBoolean();
+    private final AtomicInteger rollupRecoveryAttempt = new AtomicInteger();
 
     public CodeArtsDataService() { reschedule(); }
     public static CodeArtsDataService getInstance() { return ApplicationManager.getApplication().getService(CodeArtsDataService.class); }
@@ -56,6 +60,7 @@ public final class CodeArtsDataService implements Disposable {
                 if (settingsIdentity.equals(settingsIdentity(CodeArtsSettings.getInstance().getState()))) {
                     snapshot = loaded;
                     publish = true;
+                    startRollupRecovery(loaded, settings, settingsIdentity);
                 }
             } catch (InterruptedException interrupted) {
                 Thread.currentThread().interrupt();
@@ -84,6 +89,35 @@ public final class CodeArtsDataService implements Disposable {
             refreshCoordinator.abort();
             if (!disposed) throw rejected;
         }
+    }
+
+    private void startRollupRecovery(UsageSnapshot loaded, CodeArtsSettings.State settings, String identity) {
+        if (disposed || loaded == null || !loaded.ok() || !loaded.rollupState().needsRecovery()) return;
+        if (!rollupRecoveryRunning.compareAndSet(false, true)) return;
+        int attempt = rollupRecoveryAttempt.incrementAndGet();
+        submitTracked(() -> {
+            boolean recovered = false;
+            try {
+                runner.rebuildRollup(settings);
+                recovered = true;
+                rollupRecoveryAttempt.set(0);
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+            } catch (Exception ignored) {
+                // The persisted rollup state carries the sanitized failure.
+            } finally {
+                rollupRecoveryRunning.set(false);
+                if (disposed || !identity.equals(settingsIdentity(CodeArtsSettings.getInstance().getState()))) return;
+                if (recovered) {
+                    refresh(false);
+                } else if (attempt < 3) {
+                    long delay = Math.min(30, 2L << Math.max(0, attempt - 1));
+                    AppExecutorUtil.getAppScheduledExecutorService().schedule(
+                            () -> startRollupRecovery(snapshot, copySettings(CodeArtsSettings.getInstance().getState()), identity),
+                            delay, TimeUnit.SECONDS);
+                }
+            }
+        });
     }
 
 
@@ -207,6 +241,7 @@ public final class CodeArtsDataService implements Disposable {
         for (Future<?> task : activeTasks) task.cancel(true);
         activeTasks.clear();
         refreshCoordinator.dispose();
+        rollupRecoveryRunning.set(false);
         listeners.clear();
         CliLocator.releaseEmbeddedRuntime();
     }

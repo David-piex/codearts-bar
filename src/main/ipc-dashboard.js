@@ -217,7 +217,12 @@ function registerDashboardIpc({
     try {
       performance = {
         aggregateCache: typeof localProvider.aggregateCacheStats === 'function' ? localProvider.aggregateCacheStats() : null,
-        usageRollup: typeof localProvider.usageRollupStats === 'function' ? localProvider.usageRollupStats() : null,
+        usageRollup: typeof localProvider.usageRollupStats === 'function' ? {
+          ...localProvider.usageRollupStats(),
+          current: typeof localProvider.aggregateRollupState === 'function'
+            ? localProvider.aggregateRollupState(typeof localProvider.listDataSources === 'function' ? localProvider.listDataSources({}) : [])
+            : null,
+        } : null,
         slowAggregates: typeof localProvider.slowAggregateStats === 'function' ? localProvider.slowAggregateStats() : null,
       };
     } catch (error) {

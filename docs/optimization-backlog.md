@@ -1,8 +1,8 @@
 # CodeArts Bar 优化 Backlog
 
-最后更新：2026-07-15
+最后更新：2026-07-16
 
-当前版本：`1.16.34`
+当前版本：`1.16.36`
 
 本清单只保留尚未完成或需要长期守护的事项。已经落地的统计、筛选和稳定性修复不再重复列为“下一步”。
 
@@ -16,19 +16,24 @@
 - [x] canonical `status`/`quota` 不受历史、来源和模型筛选覆盖。
 - [x] Request/Session 数据库分页与多源 k-way merge。
 - [x] Electron、VS Code、JetBrains、CLI 查询协议对齐。
-- [x] JetBrains runtime `<127000` 字节质量门禁（多选筛选后实测 126090 字节）。
+- [x] JetBrains 查询 bundle `<=136000` 字节与 runtime JS `<=1250000` 字节门禁；首次 rollup 跨进程进度与恢复加入后当前分别为 `135187` / `1244611` 字节。
+- [x] Desktop `1.3.17`、CLI `26.5.4` / `26.5.6` 脱敏真实结构 fixture 与确定性重建检查。
+- [x] Desktop、VS Code、JetBrains、CLI 在 native/sql.js 下的四端自动对账矩阵。
+- [x] 质量指标绑定 package 版本、commit、质量基线和 renderer/CSS 产物 SHA256。
 - [x] macOS/Linux 无签名构建 workflow、资源 smoke 和 artifact 上传配置。
 
 ## P0：数据准确性
 
 ### DATA-1 真实数据库 fixture
 
-状态：部分完成。
+状态：已完成，持续扩充样本。
 
 - 覆盖旧版 message usage、`part.step-finish`、缓存读写、错误和中断回复。
 - 覆盖零 Token placeholder 与零 Token 错误请求。
 - fixture 必须脱敏并能在 native/sql.js 下复现。
-- 当前真实数据库已完成 all/30d、桌面/CLI、native/sql.js、rollup/no-rollup 对账；仍需固化多版本脱敏 fixture。
+- 已固化 Desktop `1.3.17`、CLI `26.5.4` / `26.5.6` 的脱敏重建 fixture，覆盖现代 tokens、兼容 usage aliases、`step-finish`、缓存读写、错误、中断、已完成零 Token 与 placeholder。
+- `tests/real-fixture-cross-client-smoke.js` 对 3 个 fixture、2 个 adapter、4 个客户端自动核对总量、模型、Provider、分页、完整性与隐私字段。
+- 新观察到的 CodeArts 数据版本必须先加入 `tests/fixtures/real/manifest.json` 和确定性生成器，再声明兼容。
 
 验收：四端在相同 scope 下的总量、请求数、模型、来源和时间 bucket 一致。
 
@@ -50,11 +55,12 @@
 
 ### PERF-1 首次 rollup 构建
 
-状态：待优化。
+状态：已完成第一阶段，持续优化冷路径耗时。
 
-- 展示构建中、扫描行数、阶段、耗时和失败原因。
-- 构建失败时保留直接 SQL fallback，并允许后台重试。
-- 避免首次构建阻塞 Electron 窗口交互或 IDE UI 线程。
+- [x] 展示排队、打开、结构检查、扫描、内容补全、归一化、写入、会话汇总和完成阶段，以及扫描行数、百分比与失败原因。
+- [x] 构建失败时保留直接 SQL fallback，按指数退避后台重试，恢复后自动刷新。
+- [x] Electron、VS Code 使用 Worker 与轻量状态事件；JetBrains 使用独立后台 CLI 任务，不阻塞 IDE UI 线程。
+- [ ] 继续缩短 50k/100k SQL.js 冷路径本身的绝对耗时。
 
 ### PERF-2 当前版本重新基线
 
@@ -99,11 +105,11 @@
 
 ### UX-1 冷启动和零数据表达
 
-状态：部分完成。
+状态：已完成，持续守护。
 
 - 区分“当前范围无数据”“数据库无数据”“正在生成”“统计不可用”。
-- 首次 rollup 期间显示进度，不让用户误以为数字丢失。
-- 已区分完整总量、完整记录、当前页样本和聚合中；下一步补充扫描行数与阶段进度。
+- 首次 rollup 期间显示阶段、百分比和扫描行数，不让用户误以为数字丢失。
+- 已区分完整总量、完整记录、当前页样本、直接 SQL 回退、后台重试和聚合完成。
 
 ### UX-2 原生工具感
 

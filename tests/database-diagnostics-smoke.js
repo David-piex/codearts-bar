@@ -74,6 +74,12 @@ try {
         buildFailed: 0,
         buildCompleted: 1,
       }),
+      aggregateRollupState: () => ({
+        status: "retrying", phase: "backoff", percent: 30, scannedRows: 30, totalRows: 100,
+        attempt: 1, fallback: "direct-sql", nextRetryAt: Date.now() + 1000,
+        error: `${tmpHome} should-not-leak`,
+      }),
+      listDataSources: () => [],
     },
     appendLog: () => {},
     logPath: () => path.join(tmpHome, "codearts-bar.log"),
@@ -111,6 +117,9 @@ try {
   assert.ok(diagnosticsPayload.summary.nextActions.some((action) => action.code === "wait_sidecar_build"));
   assert.equal(diagnosticsPayload.summary.sidecar.pendingCount, 1);
   assert.equal(diagnosticsPayload.summary.sidecar.lastBuildStatus, "compact-hit");
+  assert.equal(diagnosticsPayload.summary.sidecar.current.status, "retrying");
+  assert.equal(diagnosticsPayload.summary.sidecar.current.fallback, "direct-sql");
+  assert.equal(diagnosticsPayload.summary.sidecar.current.scannedRows, 30);
   assert.equal(diagnosticsPayload.summary.aggregateCache.hits, 1);
   assert.equal(diagnosticsPayload.summary.aggregateCache.limit, 64);
   assert.equal(diagnosticsPayload.performance.slowAggregates.count, 2);

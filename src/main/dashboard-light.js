@@ -309,6 +309,8 @@ function makeLightSnapshotFromAggregates(aggregates = {}, payload = {}, options 
     errors: [],
     freshness: { stale: false, source: 'aggregate', ageMs: 0 },
     lightRefresh: true,
+    rollupState: aggregates.rollupState || aggregates.perf?.usageRollup?.current || null,
+    perf: aggregates.perf || {},
   };
   if (Array.isArray(aggregates.buckets)) {
     if (bucketMs >= 86400000) snap.trends.daily14d = aggregates.buckets;
@@ -423,6 +425,8 @@ async function buildDashboardLightPair(fullBase, payload = {}, canonicalSnapshot
   if (aggregates?.ok && aggregates.sessionSummary && !preserveCompleteAggregate) fullSnap.sessionSummary = aggregates.sessionSummary;
   if (aggregates?.sourceErrors) fullSnap.sourceErrors = aggregates.sourceErrors;
   if (aggregates?.nativeError) fullSnap.nativeError = aggregates.nativeError;
+  if (aggregates?.rollupState) fullSnap.rollupState = aggregates.rollupState;
+  if (aggregates?.perf) fullSnap.perf = { ...(fullSnap.perf || {}), ...aggregates.perf };
   delete fullSnap.lightRefresh;
   applyUsageDerivedFields(fullSnap, settings, timestamp, { canonicalSnapshot });
   const dashboardSnap = {

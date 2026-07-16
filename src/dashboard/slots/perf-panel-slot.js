@@ -12,14 +12,16 @@ function perfPanelRow(label, value, tone = ''){
 }
 function perfPanelSlowHint(perf = {}){
   const rollup = perf.usageRollup || {};
+  const current = rollup.current || {};
   const slow = perf.slowAggregates || {};
   const pending = Number(rollup.pendingCount || 0);
   const misses = Number(rollup.misses || 0) + Number(rollup.invalid || 0);
-  const failed = Number(rollup.buildFailed || 0) + Number(slow.failed || 0);
+  const failed = (current.status === 'failed' ? 1 : 0) + Number(slow.failed || 0);
   const maxMs = Number(slow.maxMs || 0);
-  if(failed > 0) return { tone: 'bad', label: '聚合异常', detail: 'rollup 构建失败或冷聚合失败，建议查看诊断中心' };
+  if(current.status === 'retrying') return { tone: 'warn', label: '后台恢复中', detail: '当前使用直接 SQL，sidecar 正在按退避策略重试' };
+  if(failed > 0) return { tone: 'bad', label: '聚合异常', detail: '当前 rollup 构建失败或冷聚合失败，建议查看诊断中心' };
   if(maxMs >= 300) return { tone: 'warn', label: `冷聚合 ${perfPanelMs(maxMs)}`, detail: '当前使用 sidecar 回退或冷聚合较慢，建议等待缓存完成' };
-  if(pending > 0) return { tone: 'warn', label: `sidecar 构建中 ${perfPanelCount(pending)}`, detail: '后台正在生成使用量 rollup，完成后会更快' };
+  if(current.status === 'queued' || current.status === 'running' || pending > 0) return { tone: 'warn', label: `sidecar 构建中 ${perfPanelCount(current.percent ?? pending)}%`, detail: '后台正在生成使用量 rollup，当前数据由直接 SQL 提供' };
   if(misses > 0) return { tone: 'warn', label: `rollup miss ${perfPanelCount(misses)}`, detail: '部分时间桶未命中，已回退到实时聚合' };
   if(Number(rollup.reads || 0) > 0 || Number(perf.aggregateCache?.reads || 0) > 0) return { tone: 'ok', label: '缓存命中', detail: '聚合已命中 sidecar 或内存缓存' };
   return { tone: '', label: '等待数据', detail: '打开数据页后会显示数据层性能' };

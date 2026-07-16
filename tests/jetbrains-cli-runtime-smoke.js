@@ -16,6 +16,7 @@ const {
 } = require('../src/providers/codearts/jetbrains-cli');
 
 const root = path.resolve(__dirname, '..');
+const qualityBaseline = require('../quality-baseline.json');
 const fixtureDb = path.join(root, 'tests', 'fixtures', 'opencode-fixture.db');
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'codearts-jetbrains-cli-'));
 const runtimeDir = path.join(temp, 'runtime');
@@ -31,6 +32,7 @@ const contractOptions = { page: 1, pageSize: 50, range: { start: 1, end: 2 }, ge
 assert.deepEqual(dashboardPayload(contractSnapshot, contractOptions), ideDashboardPayload(contractSnapshot, contractOptions));
 const pageContract = { limit: 2, offset: 2, total: 5, hasMore: true, items: [{ id: 's3', dbPath: 'private' }] };
 assert.deepEqual(jetbrainsDatabasePagePayload(pageContract, contractOptions), canonicalDatabasePagePayload(pageContract, contractOptions));
+assert.equal(dashboardSnapshot({ sources: [] }, 1783512000000, { dailyLimit: 1000, windowHours: 48 }).dbSize, 0);
 
 function run(entry, args, forceSqlJs) {
   const output = execFileSync(process.execPath, [entry, ...args], {
@@ -75,9 +77,19 @@ try {
   const entrySource = fs.readFileSync(entry, 'utf8');
   assert.match(entrySource, /require\(["']sql\.js["']\)/, 'bundled CLI must load the packaged sql.js runtime as an external dependency');
   assert.equal(entrySource.includes('sql.js is a port of SQLite'), false, 'bundled CLI must not embed the sql.js implementation');
-  assert.equal(fs.statSync(entry).size < 150000, true, 'bundled CLI must stay within the slim runtime budget');
+  assert.ok(
+    fs.statSync(entry).size <= qualityBaseline.limits.jetbrainsQueryBundleBytesMax,
+    `bundled CLI must stay within ${qualityBaseline.limits.jetbrainsQueryBundleBytesMax} bytes`,
+  );
   const exportEntry = path.join(runtimeDir, 'src', 'providers', 'codearts', 'session-export-cli.js');
   assert.equal(fs.existsSync(exportEntry), true, 'bundled runtime must include the separate session exporter');
+  const runtimeJsBytes = manifest.files
+    .filter((relative) => relative.endsWith('.js'))
+    .reduce((sum, relative) => sum + fs.statSync(path.join(runtimeDir, ...relative.split('/'))).size, 0);
+  assert.ok(
+    runtimeJsBytes <= qualityBaseline.limits.jetbrainsRuntimeJsBytesMax,
+    `bundled runtime JS must stay within ${qualityBaseline.limits.jetbrainsRuntimeJsBytesMax} bytes`,
+  );
 
   for (const forceSqlJs of [false, true]) {
     const dashboard = run(entry, ['query', 'dashboard'], forceSqlJs);

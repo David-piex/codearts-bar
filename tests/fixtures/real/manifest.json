@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 1,
+  "sanitized": true,
+  "capturedAt": "2026-07-16",
+  "description": "Deterministic, fully sanitized reconstructions of CodeArts database shapes observed locally. No original IDs, titles, directories, prompts, tool input/output, or error text are retained.",
+  "fixtures": [
+    {
+      "id": "desktop-1.3.17",
+      "file": "desktop-1.3.17.db",
+      "producer": "desktop",
+      "observedVersion": "1.3.17",
+      "observedShapes": ["message.tokens", "part.step-finish", "part.text", "part.tool", "part.reasoning"],
+      "expected": {
+        "usage": { "total": 150, "input": 90, "output": 20, "reasoning": 5, "cacheRead": 25, "cacheWrite": 10, "messages": 3, "errors": 1 },
+        "models": ["desktop-model"],
+        "requests": 3,
+        "sessions": 1
+      }
+    },
+    {
+      "id": "cli-26.5.4",
+      "file": "cli-26.5.4.db",
+      "producer": "cli",
+      "observedVersion": "26.5.4",
+      "observedShapes": ["message.tokens", "part.step-finish", "part.text", "part.tool", "part.reasoning"],
+      "expected": {
+        "usage": { "total": 160, "input": 82, "output": 25, "reasoning": 6, "cacheRead": 39, "cacheWrite": 10, "messages": 3, "errors": 1 },
+        "models": ["cli-model-a", "cli-model-b"],
+        "requests": 3,
+        "sessions": 1
+      }
+    },
+    {
+      "id": "cli-26.5.6",
+      "file": "cli-26.5.6.db",
+      "producer": "cli",
+      "observedVersion": "26.5.6",
+      "observedShapes": ["message.tokens", "part.step-finish"],
+      "compatibilityShapes": ["message.usage snake_case aliases", "Anthropic cache aliases"],
+      "expected": {
+        "usage": { "total": 105, "input": 65, "output": 16, "reasoning": 4, "cacheRead": 13, "cacheWrite": 7, "messages": 2, "errors": 0 },
+        "models": ["cli-model-compat"],
+        "requests": 2,
+        "sessions": 1
+      }
+    }
+  ]
+}

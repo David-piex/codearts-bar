@@ -118,6 +118,11 @@ function handleUsageRollupBuilt({ source, result, completedAt }) {
   rollupRefreshTimer.unref?.();
 }
 localProvider.setUsageRollupBuildListener?.(handleUsageRollupBuilt);
+localProvider.setUsageRollupStateListener?.((state) => {
+  const currentHashes = new Set((localProvider.aggregateRollupState?.(localProvider.listDataSources(loadSettings()))?.sources || []).map((item) => item.sourceHash));
+  if (state?.sourceHash && currentHashes.size && !currentHashes.has(state.sourceHash)) return;
+  if (dashboardWindow && !dashboardWindow.isDestroyed()) dashboardWindow.webContents.send('dashboard:rollupState', state);
+});
 
 function markCanonicalSnapshot(snap) {
   if (!snap?.ok) return snap;
@@ -183,6 +188,7 @@ function cleanupRuntime() {
   if (rollupRefreshTimer) clearTimeout(rollupRefreshTimer);
   rollupRefreshTimer = null;
   localProvider.setUsageRollupBuildListener?.(null);
+  localProvider.setUsageRollupStateListener?.(null);
   dbWatchService.cleanup();
   stopSettingsWatch?.();
   closeSettingsStore();

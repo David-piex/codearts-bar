@@ -739,8 +739,16 @@ final class CodeArtsDashboardPanel extends SimpleToolWindowPanel implements Disp
 
         hasRenderedData = true;
         refreshState.setForeground(MUTED);
-        refreshState.setText("已更新 " + snapshot.updatedAt());
-        refreshState.setToolTipText("数据适配器：" + snapshot.adapter());
+        UsageSnapshot.RollupState rollup = snapshot.rollupState();
+        if (rollup.active()) {
+            String rows = rollup.totalRows() > 0 ? " · " + number(rollup.scannedRows()) + "/" + number(rollup.totalRows()) + " 行" : "";
+            refreshState.setText("首次缓存 " + rollup.percent() + "%" + rows);
+        } else if (rollup.status().equals("failed")) {
+            refreshState.setText("缓存失败，已回退直接 SQL");
+        } else {
+            refreshState.setText("已更新 " + snapshot.updatedAt());
+        }
+        refreshState.setToolTipText(rollup.error().isBlank() ? "数据适配器：" + snapshot.adapter() : "缓存恢复：" + safeText(rollup.error()));
 
         int usagePercentage = (int) Math.max(0, Math.min(100, Math.round(snapshot.usagePercent())));
         quotaProgress.setValue(usagePercentage);

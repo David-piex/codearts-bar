@@ -129,6 +129,7 @@ async function getExtensionSummary(options = {}) {
     dbSize: sourceBytes(summary.sources),
     summaryOnly: true,
     aggregatePending: true,
+    rollupState: summary.rollupState || summary.perf?.usageRollup?.current || null,
     freshness: { stale: false, source: 'summary', ageMs: 0 },
     completeness: extensionCompleteness(summary),
     perf: summary.perf || {},
@@ -217,6 +218,7 @@ async function getExtensionDetails(options = {}) {
     dbSize: sourceBytes(aggregates.sources),
     summaryOnly: false,
     aggregatePending: false,
+    rollupState: aggregates.rollupState || aggregates.perf?.usageRollup?.current || null,
     freshness: { stale: false, source: 'aggregates', ageMs: 0 },
     selectedRange,
     selectedScope: scope,
@@ -240,7 +242,7 @@ async function getExtensionDetails(options = {}) {
     },
     sourceErrors: (aggregates.sourceErrors || []).map((item) => ({ source: item.source || item.id || '', message: safeIdeText(item.message || item.error || '数据源读取失败') })),
     completeness: extensionCompleteness(aggregates, rangePerformance),
-    perf: { range: aggregates.perf || {} },
+    perf: { range: aggregates.perf || {}, usageRollup: aggregates.perf?.usageRollup || {} },
   }, config);
 }
 

@@ -51,6 +51,7 @@ function viewModel(snapshot) {
     timestamp: finite(snapshot.timestamp) || Date.now(),
     updatedAt: snapshot.updatedAt || "",
     adapter: snapshot.adapter || "",
+    rollupState: snapshot.rollupState || snapshot.perf?.usageRollup?.current || null,
     capabilities: {
       performance: snapshot.capabilities?.performance !== false,
       queue: snapshot.capabilities?.queue !== false,

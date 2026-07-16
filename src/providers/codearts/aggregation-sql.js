@@ -506,7 +506,7 @@ function aggregateBundleForSourceSql(args) {
   };
 }
 
-function messageTokenRowsForSourceSql({ db, tables, queryAll, payload = {} }) {
+function messageTokenRowsForSourceSql({ db, tables, queryAll, payload = {}, onProgress = null, estimatedRows = 0 }) {
   const { where, params } = assistantWhere(payload);
   const sql = `${assistantTokenCtes(tables, where, { materialized: true, excludePlaceholders: true })}
     select
@@ -527,6 +527,12 @@ function messageTokenRowsForSourceSql({ db, tables, queryAll, payload = {} }) {
     from assistant_tokens
     order by time_created asc`;
   const rows = queryAll(db, sql, params);
+  if (typeof onProgress === 'function') onProgress({
+    phase: tables.includes('part') && rows.length ? 'enriching' : 'normalizing',
+    percent: tables.includes('part') && rows.length ? 58 : 72,
+    scannedRows: rows.length,
+    totalRows: Math.max(rows.length, Number(estimatedRows || 0)),
+  });
   const partTimes = new Map();
   if (tables.includes('part') && rows.length) {
     const ids = rows.map((row) => row.id);
@@ -540,6 +546,12 @@ function messageTokenRowsForSourceSql({ db, tables, queryAll, payload = {} }) {
         if (type === 'step-start' || type === 'step-finish') continue;
         if (!partTimes.has(part.message_id)) partTimes.set(part.message_id, Number(part.time_created || 0));
       }
+      if (typeof onProgress === 'function') onProgress({
+        phase: 'enriching',
+        percent: 58 + Math.round((Math.min(ids.length, offset + chunk.length) / ids.length) * 14),
+        scannedRows: Math.min(ids.length, offset + chunk.length),
+        totalRows: Math.max(ids.length, Number(estimatedRows || 0)),
+      });
     }
   }
   return rows.map((row) => ({

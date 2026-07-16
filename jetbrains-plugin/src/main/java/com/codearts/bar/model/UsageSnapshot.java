@@ -12,7 +12,7 @@ public record UsageSnapshot(
         UsageWindow today, UsageWindow window, UsageWindow week, UsageWindow all,
         List<TrendPoint> hourlyTrend, List<TrendPoint> dailyTrend,
         List<ModelUsage> models, List<SourceInfo> sources, List<SessionInfo> sessions, List<RequestInfo> requests,
-        Performance performance, QueueStats queue, Health health, Quota quota,
+        Performance performance, QueueStats queue, Health health, Quota quota, RollupState rollupState,
         long sessionTotal, long sessionActive
 ) {
     private static final int MAX_DENSE_TREND_BUCKETS = 400;
@@ -42,6 +42,10 @@ public record UsageSnapshot(
     public record QueueStats(long samples, Double avgMs, Double p95Ms, Double maxMs) {}
     public record Health(String level, String label, String message, List<String> issues) {}
     public record Quota(long used, Long limit, Long remaining, Double percent, long resetAt, String label, String note) {}
+    public record RollupState(String status, String phase, int percent, long scannedRows, long totalRows, int attempt, String fallback, long nextRetryAt, String error) {
+        public boolean needsRecovery() { return status.equals("queued") || status.equals("retrying") || status.equals("failed"); }
+        public boolean active() { return status.equals("queued") || status.equals("running") || status.equals("retrying"); }
+    }
 
     public long todayTokens() { return today.total(); }
     public long windowTokens() { return window.total(); }
@@ -54,7 +58,7 @@ public record UsageSnapshot(
         UsageWindow zero = usage(new JsonObject());
         return new UsageSnapshot(false, message, 1, 0, "", "", 0, "", 0, "unknown", "--", zero, zero, zero, zero,
                 List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), new Performance(0,0,null,null,null,null,null,null,null),
-                new QueueStats(0,null,null,null), new Health("unknown","Unknown",message,List.of()), new Quota(0,null,null,null,0,"", ""),0,0);
+                new QueueStats(0,null,null,null), new Health("unknown","Unknown",message,List.of()), new Quota(0,null,null,null,0,"", ""), rollupState(new JsonObject()),0,0);
     }
 
     public static UsageSnapshot fromJson(JsonObject envelope) {
@@ -79,7 +83,7 @@ public record UsageSnapshot(
                 trend(array(trends,"hourly24h")), trend(array(trends,"daily14d")), models(array(root,"models")), sources(array(root,"sources")),
                 sessions(array(root,"sessions")), requests(array(root,"requests")), performance(perf), queue(queue),
                 new Health(string(health,"level"), string(health,"label"), string(health,"message"), List.copyOf(issues)),
-                new Quota(number(primaryQuota,"used"), longOrNull(primaryQuota,"limit"), longOrNull(primaryQuota,"remaining"), decimalOrNull(primaryQuota,"percent"), number(primaryQuota,"resetAt"), string(primaryQuota,"label"), string(object(root,"quota"),"note")),
+                new Quota(number(primaryQuota,"used"), longOrNull(primaryQuota,"limit"), longOrNull(primaryQuota,"remaining"), decimalOrNull(primaryQuota,"percent"), number(primaryQuota,"resetAt"), string(primaryQuota,"label"), string(object(root,"quota"),"note")), rollupState(object(root,"rollupState")),
                 number(sessionSummary,"total"), number(sessionSummary,"active"));
     }
 
@@ -137,6 +141,7 @@ public record UsageSnapshot(
     private static Performance performance(JsonObject x) { JsonObject latency=object(x,"latency"),ttft=object(x,"ttft"),content=object(x,"firstContentApprox"),rate=object(x,"outputTokensPerSec");return new Performance(number(x,"samples"),number(x,"errors"),decimalOrNull(x,"errorRate"),decimalOrNull(latency,"avg"),decimalOrNull(latency,"p95"),decimalOrNull(ttft,"avg"),decimalOrNull(ttft,"p95"),decimalOrNull(content,"avg"),decimalOrNull(rate,"avg")); }
     private static MetricCompleteness metricCompleteness(JsonObject x) { return new MetricCompleteness(bool(x,"latency",false),bool(x,"firstContentApprox",false),bool(x,"outputTokensPerSec",false),bool(x,"ttft",false)); }
     private static QueueStats queue(JsonObject x) { return new QueueStats(number(x,"samples"),decimalOrNull(x,"avg"),decimalOrNull(x,"p95"),decimalOrNull(x,"max")); }
+    private static RollupState rollupState(JsonObject x) { return new RollupState(string(x,"status"),string(x,"phase"),(int)number(x,"percent"),number(x,"scannedRows"),number(x,"totalRows"),(int)Math.max(1,number(x,"attempt")),string(x,"fallback"),number(x,"nextRetryAt"),string(x,"error")); }
     private static JsonObject object(JsonObject o,String k){JsonElement v=o==null?null:o.get(k);return v!=null&&v.isJsonObject()?v.getAsJsonObject():new JsonObject();}
     private static JsonArray array(JsonObject o,String k){JsonElement v=o==null?null:o.get(k);return v!=null&&v.isJsonArray()?v.getAsJsonArray():new JsonArray();}
     private static String string(JsonObject o,String k){JsonElement v=o==null?null:o.get(k);try{return v==null||v.isJsonNull()?"":v.getAsString();}catch(Exception e){return "";}}

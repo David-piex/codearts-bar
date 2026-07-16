@@ -9,6 +9,7 @@ const { performance } = require("node:perf_hooks");
 const aggregation = require("../src/providers/codearts/aggregation");
 const aggregateCache = require("../src/providers/codearts/aggregate-cache");
 const usageRollup = require("../src/providers/codearts/usage-rollup");
+const qualityBaseline = require("../quality-baseline.json");
 
 const FULL_SIZES = [10000, 50000, 100000];
 const QUICK_SIZES = [1000, 10000];
@@ -223,7 +224,9 @@ async function runSize(messageCount) {
     usageRollup.resetUsageRollupStats();
     await aggregation.clearSqlJsWorkerCaches();
     const sqljsHot = await runRuntime("sql.js", dbPath, payload, { expectRollup: true });
-    const hotBudgetMs = messageCount >= 50000 ? 500 : 250;
+    const hotBudgetMs = messageCount >= 50000
+      ? qualityBaseline.limits.aggregationHotPathMsMax.large
+      : qualityBaseline.limits.aggregationHotPathMsMax.small;
     assert.ok(nativeHot.maxMs < hotBudgetMs, `native sidecar hot path should stay below ${hotBudgetMs}ms for ${messageCount}, got ${nativeHot.maxMs}ms`);
     assert.ok(sqljsHot.maxMs < hotBudgetMs, `sql.js sidecar hot path should stay below ${hotBudgetMs}ms for ${messageCount}, got ${sqljsHot.maxMs}ms`);
     const slowStats = aggregation.slowAggregateStats();

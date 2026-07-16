@@ -230,7 +230,9 @@
     if (!snapshot?.ok) return;
     syncRangeChrome();
     const scopeChanged = syncScopeChrome();
-    element("#updated").textContent =
+    const rollup = snapshot.rollupState || {};
+    const rollupText = rollupStatusText(rollup);
+    element("#updated").textContent = rollupText ||
       `${snapshot.stale ? "\u7f13\u5b58\u6570\u636e \u00b7 " : ""}${snapshot.updatedAt || "\u521a\u521a\u66f4\u65b0"}${snapshot.adapter ? ` \u00b7 ${snapshot.adapter}` : ""}`;
     const views = window.CodeArtsViews;
     views.metrics(snapshot, snapshot.selectedRange?.preset || range, dataRangeText());
@@ -248,6 +250,14 @@
       element("#chartEmpty"),
     );
     return scopeChanged;
+  }
+  function rollupStatusText(state = {}) {
+    const status = String(state.status || 'idle');
+    if(status === 'queued' || status === 'running') return `首次缓存 ${Math.round(Number(state.percent || 0))}%${Number(state.totalRows || 0) ? ` · ${Number(state.scannedRows || 0)}/${Number(state.totalRows)} 行` : ''}`;
+    if(status === 'retrying') return `缓存失败，直接 SQL 可用 · 正在后台重试`;
+    if(status === 'failed') return `缓存失败，已回退直接 SQL`;
+    if(status === 'ready') return `缓存已就绪 · ${snapshot?.updatedAt || '刚刚更新'}`;
+    return '';
   }
   function receive(payload) {
     snapshot = payload;
@@ -441,6 +451,9 @@
       if (generation < latestGeneration) return;
       latestGeneration = Math.max(latestGeneration, generation);
       document.body.classList.toggle("refreshing", Boolean(message.value));
+    }
+    if (message.type === 'rollupState') {
+      if(snapshot?.ok){ snapshot.rollupState = message.payload || {}; render(); }
     }
     if (message.type === "detailsError") {
       const generation = Number(message.generation || 0);

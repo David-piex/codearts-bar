@@ -74,6 +74,7 @@ function build() {
     charset: 'utf8',
     minifySyntax: true,
     minifyWhitespace: true,
+    minifyIdentifiers: true,
   });
   if (/\beval\s*\(/.test(result.code)) throw new Error('Generated dashboard renderer still contains eval(...)');
   const manifest = [...includedParts].map((name) => ` * - ${name}`).join('\n');

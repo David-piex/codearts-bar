@@ -39,6 +39,17 @@ function dashboardSessionSummaryPayload(payload = {}) {
   return { ...payload, query: payload.sessionQuery || '' };
 }
 
+function attachCurrentRollupState(result, payload = {}) {
+  if (!result || typeof result !== 'object') return result;
+  const current = usageRollup.aggregateRollupState(sourceList(payload));
+  result.rollupState = current;
+  result.perf = {
+    ...(result.perf || {}),
+    usageRollup: { ...(result.perf?.usageRollup || {}), current },
+  };
+  return result;
+}
+
 function explicitSessionSummaryPayload(payload = {}) {
   return 'sessionQuery' in payload
     ? dashboardSessionSummaryPayload(payload)
@@ -46,7 +57,7 @@ function explicitSessionSummaryPayload(payload = {}) {
 }
 
 function getSummaryNative(payload = {}) {
-  return timeAggregateSync('summary', 'node:sqlite', payload, () => {
+  return attachCurrentRollupState(timeAggregateSync('summary', 'node:sqlite', payload, () => {
     const rollupBundle = dashboardBundleFromUsageRollups(payload, 'node:sqlite');
     if (rollupBundle) return summaryFromDashboardBundle(rollupBundle, payload);
     const windows = timeWindows(payload);
@@ -54,17 +65,17 @@ function getSummaryNative(payload = {}) {
     const merged = mergeSummaryParts(result.items, payload);
     if (result.errors.length) merged.sourceErrors = result.errors;
     return merged;
-  });
+  }), payload);
 }
 async function getSummarySqlJs(payload = {}) {
-  return timeAggregateAsync('summary', 'sql.js', payload, async () => {
+  return attachCurrentRollupState(await timeAggregateAsync('summary', 'sql.js', payload, async () => {
     const rollupBundle = dashboardBundleFromUsageRollups(payload, 'sql.js');
     if (rollupBundle) return summaryFromDashboardBundle(rollupBundle, payload);
     const result = await runSqlJsAggregate(payload, summaryWorker(payload));
     const merged = mergeSummaryParts(result.items, payload);
     if (result.errors.length) merged.sourceErrors = result.errors;
     return merged;
-  });
+  }), payload);
 }
 async function getSummary(payload = {}) {
   if (process.env.CODEARTS_BAR_FORCE_SQLJS !== '1') {
@@ -280,7 +291,7 @@ function sessionSummaryFromUsageRollups(payload = {}, adapter = 'node:sqlite', s
   for (const source of selectedSources) {
     const rollup = usageRollup.readSessionSummaryRollupForSource(source);
     if (!rollup.ok) {
-      usageRollup.scheduleUsageRollupBuild(source, { adapter, delayMs: 500 });
+      usageRollup.scheduleUsageRollupBuild(source, { adapter, delayMs: 500, fallback: 'direct-sql' });
       return null;
     }
     items.push(usageRollup.sessionSummaryPartFromRollup(rollup, payload));
@@ -319,7 +330,7 @@ function attachSessionSummaryFromRollupOrSql(part, args, payload = {}, adapter =
       };
       return part;
     }
-    usageRollup.scheduleUsageRollupBuild(args.source, { adapter, delayMs: 500 });
+    usageRollup.scheduleUsageRollupBuild(args.source, { adapter, delayMs: 500, fallback: 'direct-sql' });
   }
   if (!part.sessionSummary) {
     if (!args.db || typeof args.queryAll !== 'function') return part;
@@ -352,7 +363,7 @@ function dashboardBundleFromUsageRollups(payload = {}, adapter = 'node:sqlite', 
       continue;
     }
     misses.push({ source: source.id, reason: rollup.reason || compact.reason || 'missing' });
-    usageRollup.scheduleUsageRollupBuild(source, { adapter, delayMs: 500 });
+    usageRollup.scheduleUsageRollupBuild(source, { adapter, delayMs: 500, fallback: 'direct-sql' });
   }
   if (misses.length) return null;
   const bundle = mergeDashboardAggregateBundle(items, payload, []);
@@ -360,7 +371,7 @@ function dashboardBundleFromUsageRollups(payload = {}, adapter = 'node:sqlite', 
   return bundle;
 }
 function getDashboardAggregatesNative(payload = {}) {
-  return timeAggregateSync('dashboardAggregates', 'node:sqlite', payload, () => {
+  return attachCurrentRollupState(timeAggregateSync('dashboardAggregates', 'node:sqlite', payload, () => {
     const windows = timeWindows(payload);
     const trendRange = normalizeTrendRange(payload);
     const queryTrendRange = { ...trendRange, bucketMs: trendRange.queryBucketMs, bucketOffsetMs: trendRange.queryBucketOffsetMs };
@@ -378,17 +389,17 @@ function getDashboardAggregatesNative(payload = {}) {
           return attachSessionSummaryFromRollupOrSql(part, args, sessionPayload, 'node:sqlite');
         }
         const part = nativeSql.aggregateBundleForSourceSql({ ...args, payload, sessionPayload, windows, trendRange: queryTrendRange });
-        usageRollup.scheduleUsageRollupBuild(args.source, { adapter: 'node:sqlite', delayMs: 500 });
+        usageRollup.scheduleUsageRollupBuild(args.source, { adapter: 'node:sqlite', delayMs: 500, fallback: 'direct-sql' });
         part.usageRollup = { status: 'miss-pass-through', previousReason: rollup.reason || null, rowCount: null };
         return part;
       }
       return nativeSql.aggregateBundleForSourceSql({ ...args, payload, sessionPayload, windows, trendRange: queryTrendRange });
     });
     return mergeDashboardAggregateBundle(result.items, payload, result.errors);
-  });
+  }), payload);
 }
 async function getDashboardAggregatesSqlJs(payload = {}) {
-  return timeAggregateAsync('dashboardAggregates', 'sql.js', payload, async () => {
+  return attachCurrentRollupState(await timeAggregateAsync('dashboardAggregates', 'sql.js', payload, async () => {
     const windows = timeWindows(payload);
     const trendRange = normalizeTrendRange(payload);
     const queryTrendRange = { ...trendRange, bucketMs: trendRange.queryBucketMs, bucketOffsetMs: trendRange.queryBucketOffsetMs };
@@ -406,14 +417,14 @@ async function getDashboardAggregatesSqlJs(payload = {}) {
           return attachSessionSummaryFromRollupOrSql(part, args, sessionPayload, 'sql.js');
         }
         const part = nativeSql.aggregateBundleForSourceSql({ ...args, payload, sessionPayload, windows, trendRange: queryTrendRange });
-        usageRollup.scheduleUsageRollupBuild(args.source, { adapter: 'sql.js', delayMs: 500 });
+        usageRollup.scheduleUsageRollupBuild(args.source, { adapter: 'sql.js', delayMs: 500, fallback: 'direct-sql' });
         part.usageRollup = { status: 'miss-pass-through', previousReason: rollup.reason || null, rowCount: null };
         return part;
       }
       return nativeSql.aggregateBundleForSourceSql({ ...args, payload, sessionPayload, windows, trendRange: queryTrendRange });
     });
     return mergeDashboardAggregateBundle(result.items, payload, result.errors);
-  });
+  }), payload);
 }
 async function getDashboardAggregates(payload = {}) {
   if (process.env.CODEARTS_BAR_FORCE_SQLJS !== '1') {

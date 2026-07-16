@@ -47,6 +47,18 @@ public final class CliProcessRunner {
             return queryData(execute(settings, CliLocator.queryCommand(settings, resource, args)));
         }
     }
+    public JsonObject rebuildRollup(CodeArtsSettings.State settings) throws IOException, InterruptedException {
+        CodeArtsSettings.State extended = new CodeArtsSettings.State();
+        extended.nodePath = settings.nodePath;
+        extended.cliPath = settings.cliPath;
+        extended.dbPath = settings.dbPath;
+        extended.dailyLimit = settings.dailyLimit;
+        extended.windowHours = settings.windowHours;
+        extended.refreshSeconds = settings.refreshSeconds;
+        extended.timeoutSeconds = Math.max(180, settings.timeoutSeconds);
+        extended.showStatusBar = settings.showStatusBar;
+        return loadQuery(extended, "rollup", List.of());
+    }
 
     static JsonObject queryData(JsonObject payload) throws IOException {
         if (payload == null || !payload.has("data") || !payload.get("data").isJsonObject()) {

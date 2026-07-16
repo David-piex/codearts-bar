@@ -1,10 +1,16 @@
 ﻿{
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "limits": {
     "rendererBytesMax": 330000,
-    "cssBytesMax": 220000,
+    "cssBytesMax": 206848,
     "jetbrainsZipBytesMax": 950000,
+    "jetbrainsQueryBundleBytesMax": 136000,
+    "jetbrainsRuntimeJsBytesMax": 1250000,
     "snapshotMsMax": 1000,
+    "aggregationHotPathMsMax": {
+      "small": 250,
+      "large": 500
+    },
     "coverageLinesMin": 75,
     "coverageFunctionsMin": 73,
     "coverageBranchesMin": 55

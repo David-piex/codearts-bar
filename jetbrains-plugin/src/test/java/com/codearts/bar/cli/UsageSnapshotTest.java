@@ -14,7 +14,8 @@ class UsageSnapshotTest {
           "status":{"usagePercent":41.3,"level":"ok","label":"41%"},"usage":{"today":{"total":82600,"input":50000,"output":32000,"messages":52,"cacheHitRate":12.5},"window":{"total":143200},"week":{"total":200000},"all":{"total":300000}},
           "trends":{"hourly24h":[{"start":1,"total":5}],"daily14d":[]},"models":[{"name":"provider / model","provider":"provider","model":"model","total":100,"messages":2}],
           "sources":[{"key":"local","total":100,"requests":2}],"sessions":[{"id":"s1","title":"Session","usage":{"total":100,"modelCalls":2,"topModel":{"model":"model"}}}],
-          "requests":[{"id":"r1","ok":true,"total":100,"status":200,"cacheRead":30,"cacheWrite":12}],"health":{"level":"ok","label":"OK","message":"healthy"},"quota":{"primary":{"used":82600,"limit":200000,"percent":41.3}}}}
+          "requests":[{"id":"r1","ok":true,"total":100,"status":200,"cacheRead":30,"cacheWrite":12}],"health":{"level":"ok","label":"OK","message":"healthy"},"quota":{"primary":{"used":82600,"limit":200000,"percent":41.3}},
+          "rollupState":{"status":"retrying","phase":"backoff","percent":30,"scannedRows":30,"totalRows":100,"attempt":1,"fallback":"direct-sql","nextRetryAt":99,"error":"temporary"}}}
           """;
         UsageSnapshot snapshot=UsageSnapshot.fromJson(JsonParser.parseString(json).getAsJsonObject());
         assertTrue(snapshot.ok()); assertEquals(1,snapshot.protocolVersion()); assertEquals(82600,snapshot.todayTokens()); assertEquals(52,snapshot.requestCount());
@@ -24,6 +25,9 @@ class UsageSnapshotTest {
         assertEquals(200, snapshot.requests().getFirst().status());
         assertEquals("成功", snapshot.requests().getFirst().displayStatus());
         assertEquals("db", snapshot.dbPath(), "legacy payloads remain readable during protocol rollout");
+        assertTrue(snapshot.rollupState().needsRecovery());
+        assertEquals(30, snapshot.rollupState().percent());
+        assertEquals("direct-sql", snapshot.rollupState().fallback());
     }
 
     @Test void omitsNonNumericRequestStatusInsteadOfRenderingErrorZero() {

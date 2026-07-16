@@ -8,7 +8,7 @@ const WORKER_PATH = path.join(__dirname, 'usage-rollup-worker.js');
 
 function usageRollupWorkerAvailable() { return fs.existsSync(WORKER_PATH); }
 
-function runUsageRollupWorker(source, options = {}, operation = 'build') {
+function runUsageRollupWorker(source, options = {}, operation = 'build', onProgress = null) {
   const timeoutMs = Math.max(5000, Number(options.workerTimeoutMs || 120000));
   return new Promise((resolve, reject) => {
     const worker = new Worker(WORKER_PATH, { name: 'codearts-usage-rollup' });
@@ -23,7 +23,11 @@ function runUsageRollupWorker(source, options = {}, operation = 'build') {
     };
     const timer = setTimeout(() => finish(reject, new Error(`usage rollup worker timed out after ${timeoutMs}ms`)), timeoutMs);
     timer.unref?.();
-    worker.once('message', (message) => {
+    worker.on('message', (message) => {
+      if (message?.type === 'progress') {
+        if (typeof onProgress === 'function') onProgress(message.state || {});
+        return;
+      }
       if (message?.ok) finish(resolve, message.result);
       else {
         const error = new Error(message?.error?.message || 'usage rollup worker failed');
@@ -36,7 +40,7 @@ function runUsageRollupWorker(source, options = {}, operation = 'build') {
     worker.once('exit', (code) => {
       if (!settled && code !== 0) finish(reject, new Error(`usage rollup worker exited with code ${code}`));
     });
-    worker.postMessage({ operation, source, options: { ...options, delayMs: 0 } });
+    worker.postMessage({ operation, source, options: { ...options, delayMs: 0, reportProgress: true } });
   });
 }
 

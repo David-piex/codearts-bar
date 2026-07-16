@@ -17,6 +17,16 @@ function sanitizeText(value = '') {
     .slice(0, 300);
 }
 
+function sanitizeRollupError(value = '') {
+  const text = String(value || '');
+  if (!text) return '';
+  if (/timed? out|timeout|超时/i.test(text)) return '后台缓存构建超时';
+  if (/EACCES|EPERM|permission|权限|access denied/i.test(text)) return '后台缓存无写入权限';
+  if (/busy|locked|SQLITE_BUSY|SQLITE_LOCKED/i.test(text)) return '数据库暂时被占用';
+  if (/malformed|corrupt|database disk image|file is not a database|缺少.*表|no such table|schema/i.test(text)) return '数据库结构不兼容或已损坏';
+  return '后台缓存构建失败';
+}
+
 function safePathSummary(filePath = '', pathLike = pathModule) {
   const value = String(filePath || '');
   if (!value) return { name: '', hash: '', exists: false };
@@ -132,7 +142,7 @@ function diagnosticNextActions({ status, missingSources, emptyReadableSources, f
       detail: 'usage rollup 正在后台构建。大数据量首次生成可能稍慢，完成后刷新会明显加快。',
     });
   }
-  if (Number(sidecar.buildFailed || 0) > 0 || Number(sidecar.invalid || 0) > 0) {
+  if (sidecar.current?.status === 'failed' || Number(sidecar.invalid || 0) > 0) {
     actions.push({
       code: 'check_sidecar_cache',
       title: '检查 sidecar 缓存',
@@ -184,6 +194,7 @@ function buildDiagnosticsSummary(payload = {}, pathLike = pathModule) {
   const emptyReadableSources = sources.filter((source) => source.exists && source.readable && source.empty);
   const readableSources = sources.filter((source) => source.exists && source.readable);
   const usageRollup = payload.performance?.usageRollup || {};
+  const currentRollup = usageRollup.current || {};
   const aggregateCache = payload.performance?.aggregateCache || {};
   const slowAggregates = payload.performance?.slowAggregates || {};
   const wasmPath = sqliteRuntime?.fallback?.wasm || '';
@@ -216,6 +227,17 @@ function buildDiagnosticsSummary(payload = {}, pathLike = pathModule) {
       lastBuildStatus: usageRollup.lastBuild?.status || null,
       buildFailed: Number(usageRollup.buildFailed || 0),
       buildCompleted: Number(usageRollup.buildCompleted || 0),
+      current: {
+        status: String(currentRollup.status || 'idle'),
+        phase: String(currentRollup.phase || 'idle'),
+        percent: Number(currentRollup.percent || 0),
+        scannedRows: Number(currentRollup.scannedRows || 0),
+        totalRows: Number(currentRollup.totalRows || 0),
+        attempt: Number(currentRollup.attempt || 1),
+        fallback: currentRollup.fallback === 'direct-sql' ? 'direct-sql' : null,
+        nextRetryAt: Number(currentRollup.nextRetryAt || 0),
+        error: sanitizeRollupError(currentRollup.error || ''),
+      },
     },
     aggregateCache: {
       hits: Number(aggregateCache.hits || 0),

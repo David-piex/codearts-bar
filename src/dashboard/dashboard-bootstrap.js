@@ -393,6 +393,28 @@ async function refreshDashboardAggregates(s, token){
 
 
 function setRefreshState(text){ const el = document.getElementById('refreshState'); if(el) el.textContent = text || ''; }
+function rollupStateText(state = {}){
+  const phaseLabels = { queued:'排队', opening:'打开数据库', validating:'检查结构', scanning:'扫描请求', enriching:'补全内容时间', normalizing:'归一化', writing:'写入缓存', sessions:'汇总会话', backoff:'等待重试', failed:'构建失败', completed:'构建完成' };
+  const status = String(state.status || 'idle');
+  const phase = phaseLabels[state.phase] || phaseLabels[status] || '准备中';
+  const percent = Math.max(0, Math.min(100, Number(state.percent || 0)));
+  const rows = Number(state.totalRows || 0) > 0 ? ` · ${Math.min(Number(state.scannedRows || 0), Number(state.totalRows || 0))}/${Number(state.totalRows)} 行` : '';
+  if(status === 'retrying'){
+    const seconds = Math.max(0, Math.ceil((Number(state.nextRetryAt || 0) - Date.now()) / 1000));
+    return `缓存构建失败，直接 SQL 可用 · ${seconds} 秒后重试 ${Number(state.attempt || 1) + 1}`;
+  }
+  if(status === 'failed') return `缓存构建失败，已回退直接 SQL · ${state.error || '可稍后刷新重试'}`;
+  if(status === 'queued' || status === 'running') return `首次缓存 ${phase} ${Math.round(percent)}%${rows}`;
+  if(status === 'ready') return '首次缓存已就绪';
+  return '';
+}
+function applyRollupState(state = {}){
+  if(snapshot?.ok) snapshot.rollupState = state;
+  const text = rollupStateText(state);
+  document.body?.classList?.toggle?.('cache-building', state.status === 'queued' || state.status === 'running' || state.status === 'retrying');
+  if(text) setRefreshState(text);
+  if(state.status === 'ready') setTimeout(() => { if(snapshot?.rollupState?.status === 'ready') setRefreshState(''); }, 1200);
+}
 function toast(text, timeout = 900){
   setRefreshState(text || '');
   clearTimeout(lastToastTimer);
