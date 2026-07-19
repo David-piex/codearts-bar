@@ -83,6 +83,11 @@ function hashPath(value = '') {
   return crypto.createHash('sha1').update(String(value || '')).digest('hex').slice(0, 12);
 }
 
+function displayDbName(dbPath = '') {
+  const value = String(dbPath || '');
+  return value ? path.win32.basename(value.replace(/\//g, '\\')) : '';
+}
+
 function pendingBuildEntry(source = {}, options = {}) {
   const dbPath = source.dbPath || '';
   return {
@@ -91,7 +96,7 @@ function pendingBuildEntry(source = {}, options = {}) {
     adapter: options.adapter || 'node:sqlite',
     kind: options.kind || MESSAGE_TOKEN_CACHE_KIND,
     dbHash: hashPath(dbPath),
-    dbName: dbPath ? path.basename(dbPath) : '',
+    dbName: displayDbName(dbPath),
     startedAt: Date.now(),
     status: Number(options.attempt || 1) > 1 ? 'retrying' : 'queued',
     phase: 'queued',
@@ -154,7 +159,7 @@ function recordRollupBuild(source = {}, options = {}, result = null, durationMs 
     adapter: options.adapter || 'node:sqlite',
     kind: options.kind || MESSAGE_TOKEN_CACHE_KIND,
     dbHash: hashPath(dbPath),
-    dbName: dbPath ? path.basename(dbPath) : '',
+    dbName: displayDbName(dbPath),
     status,
     durationMs: Number(Number(durationMs || 0).toFixed(1)),
     rowCount: result?.usageRollup?.rowCount ?? result?.rows?.length ?? null,

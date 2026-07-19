@@ -84,6 +84,9 @@ async function main() {
   assert.equal(batchCall.includeToolIO, true);
   assert.equal(batchCall.redactPaths, false);
   assert.equal(batchCall.includeErrors, false);
+  await assert.rejects(() => batchHandler({ sender: { id: 'renderer' } }, Array.from({ length: 501 }, (_, index) => ({ id: `s-${index}` }))), /最多支持 500/);
+  const renameHandler = handlers.get('dashboard:renameSession');
+  await assert.rejects(() => renameHandler({}, session, 'x'.repeat(201)), /最多 200/);
   console.log('ok - desktop session export IPC contract');
 }
 

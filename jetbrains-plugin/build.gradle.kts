@@ -70,3 +70,10 @@ tasks {
     }
     test { useJUnitPlatform() }
 }
+
+tasks.withType<org.jetbrains.intellij.platform.gradle.tasks.VerifyPluginTask>().configureEach {
+    // This plugin only depends on bundled platform modules. Offline verifier
+    // mode keeps the full IDE compatibility scan while avoiding an unrelated
+    // Marketplace metadata request that can fail on restricted networks.
+    offline.set(true)
+}

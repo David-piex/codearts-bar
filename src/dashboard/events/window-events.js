@@ -9,6 +9,10 @@ document.addEventListener('keydown', (e) => {
 applyZoom();
 document.getElementById('refresh').onclick = refreshNow;
 document.getElementById('settings').onclick = () => ipcRenderer.invoke('dashboard:settings');
+document.addEventListener('visibilitychange', () => {
+  setupAutoRefresh();
+  if(document.visibilityState !== 'hidden' && snapshot?.ok) refreshNow({ windowLayout: false, instantChart: true, partial: true });
+});
 const legacyLayoutButton = document.getElementById('layoutMode');
 if(legacyLayoutButton) legacyLayoutButton.onclick = () => switchLayoutMode(layoutMode === 'compact' ? 'dashboard' : 'compact');
 document.addEventListener('keydown', async (e) => { if((e.ctrlKey || e.metaKey) && e.shiftKey && String(e.key || '').toLowerCase() === 'p'){ e.preventDefault(); togglePerfPanel(); return; } if(e.key === 'Enter' && e.target.closest('[data-request-page-input]')){ e.preventDefault(); document.querySelector('[data-request-page-go]')?.click?.(); return; } if(e.key === 'Enter' && e.target.closest('[data-session-page-input]')){ e.preventDefault(); document.querySelector('[data-session-page-go]')?.click?.(); return; } if(dateRangeOpen && e.key === 'Escape'){ e.preventDefault(); dateRangeOpen = false; if(!patchDateRangeChrome?.() && snapshot?.ok) render(snapshot, { windowLayout: false, instantChart: true, deferHeavy: true, partial: true }); return; } if(e.key === 'Enter' && e.target.closest('[data-saved-session-name]')){ saveCurrentSessionView(); patchSessionsOrRender({ table: false, toolbar: true, inspector: false, overview: false }); return; } if(bulkMetaOpen && e.key === 'Escape'){ bulkMetaOpen = false; bulkMetaTagsDraft = ''; bulkMetaNoteDraft = ''; patchSessionModalOrRender(); return; } if(!renameSessionKey) return; if(e.key === 'Escape'){ renameSessionKey = ''; renameDraft = ''; patchSessionModalOrRender(); } if(e.key === 'Enter' && e.target.closest('[data-rename-input]')){ await saveRenameSheet(); } });

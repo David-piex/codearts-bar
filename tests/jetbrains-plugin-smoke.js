@@ -39,13 +39,17 @@ const exportDialogSource = fs.readFileSync(path.join(pluginRoot, 'src/main/java/
 const gradleBuildSource = fs.readFileSync(path.join(pluginRoot, 'build.gradle.kts'), 'utf8');
 const gradleSettingsSource = fs.readFileSync(path.join(pluginRoot, 'settings.gradle.kts'), 'utf8');
 const gradleRunnerSource = fs.readFileSync(path.join(root, 'src/run-jetbrains-gradle.js'), 'utf8');
-const { discoverJavaHome, javaMajorVersion, parseJavaMajor, usableJavaHome } = require('../src/run-jetbrains-gradle');
+const { discoverJavaHome, isTransientNetworkFailure, javaMajorVersion, parseJavaMajor, usableJavaHome } = require('../src/run-jetbrains-gradle');
 assert.match(gradleBuildSource, /gradleProperty\("codeartsBarVersion"\)/, 'JetBrains version must participate in the Gradle configuration-cache key');
+assert.match(gradleBuildSource, /VerifyPluginTask[\s\S]*offline\.set\(true\)/, 'JetBrains compatibility verification must not depend on Marketplace availability');
 assert.match(gradleSettingsSource, /org\.gradle\.toolchains\.foojay-resolver-convention/, 'missing JDK 21 compilers must be auto-provisioned by the Gradle toolchain resolver');
 assert.match(gradleRunnerSource, /-PcodeartsBarVersion=\$\{packageVersion\}/, 'JetBrains builds must receive the current package version explicitly');
 assert.doesNotMatch(gradleRunnerSource, /IntelliJ IDEA 2025\.3\.3/, 'JetBrains JBR discovery must not rely on a developer-specific IDE path');
 assert.equal(parseJavaMajor('1.8.0_402'), 8);
 assert.equal(parseJavaMajor('21.0.8'), 21);
+assert.equal(isTransientNetworkFailure('java.net.SocketException: Connection reset'), true);
+assert.equal(isTransientNetworkFailure('javax.net.ssl.SSLHandshakeException: Remote host terminated the handshake'), true);
+assert.equal(isTransientNetworkFailure('Plugin verification failed: binary incompatible API usage'), false);
 {
   const javaFixture = fs.mkdtempSync(path.join(os.tmpdir(), 'codearts-bar-java-home-'));
   const makeJavaHome = (name, version) => {
@@ -238,6 +242,9 @@ if (process.platform === 'win32') {
     fs.mkdirSync(jarExtractDir);
     execFileSync('tar.exe', ['-xf', jarPath, '-C', jarExtractDir]);
     const cliDir = path.join(jarExtractDir, 'cli');
+    const packagedPluginXml = fs.readFileSync(path.join(jarExtractDir, 'META-INF', 'plugin.xml'), 'utf8');
+    assert.match(packagedPluginXml, /since-build="242"/, 'packaged JetBrains plugin must keep the 2024.2 floor');
+    assert.match(packagedPluginXml, /until-build="261\.\*"/, 'packaged JetBrains plugin must support IDEA 2026.1');
     const manifest = JSON.parse(fs.readFileSync(path.join(cliDir, 'CLI_RUNTIME_MANIFEST.json'), 'utf8'));
     assert.equal(manifest.entry, 'src/providers/codearts/jetbrains-cli.js', 'embedded CLI manifest must use the dedicated query entry');
     assert.match(manifest.contentHash, /^[0-9a-f]{64}$/, 'embedded CLI manifest must include its content hash');

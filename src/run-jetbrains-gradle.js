@@ -11,10 +11,40 @@ if (!/^[0-9A-Za-z][0-9A-Za-z.+-]*$/u.test(String(packageVersion || ''))) {
 }
 const wrapperName = process.platform === 'win32' ? 'gradlew.bat' : './gradlew';
 const wrapper = path.join(projectDir, process.platform === 'win32' ? 'gradlew.bat' : 'gradlew');
-const requestedArgs = process.argv.slice(2).length ? process.argv.slice(2) : ['buildPlugin'];
+const retryPrefix = '--retry-transient-network=';
+const rawArgs = process.argv.slice(2).length ? process.argv.slice(2) : ['buildPlugin'];
+const retryArg = rawArgs.find((arg) => String(arg).startsWith(retryPrefix));
+const transientNetworkRetries = retryArg
+  ? Math.max(0, Math.min(3, Number.parseInt(String(retryArg).slice(retryPrefix.length), 10) || 0))
+  : 0;
+const requestedArgs = rawArgs.filter((arg) => !String(arg).startsWith(retryPrefix));
 const gradleArgs = requestedArgs.some((arg) => String(arg).startsWith('-PcodeartsBarVersion='))
   ? requestedArgs
   : [`-PcodeartsBarVersion=${packageVersion}`, ...requestedArgs];
+
+const TRANSIENT_NETWORK_PATTERNS = [
+  /connection (?:was )?reset/iu,
+  /connection (?:was )?closed/iu,
+  /connection refused/iu,
+  /connect(?:ion)? timed out/iu,
+  /read timed out/iu,
+  /socket(?:exception|timeout)/iu,
+  /sslhandshakeexception/iu,
+  /remote host terminated (?:the )?handshake/iu,
+  /unexpected end of file from server/iu,
+  /temporary failure in name resolution/iu,
+  /could not resolve host/iu,
+];
+
+function isTransientNetworkFailure(output) {
+  const value = String(output || '');
+  return TRANSIENT_NETWORK_PATTERNS.some((pattern) => pattern.test(value));
+}
+
+function waitMs(ms) {
+  if (!(ms > 0)) return;
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
 
 function parseJavaMajor(version) {
   const match = String(version || '').trim().match(/^(?:1\.)?(\d+)/u);
@@ -110,17 +140,39 @@ function main() {
   } else {
     delete gradleEnv.JAVA_HOME;
   }
-  let result;
-  if (process.platform === 'win32') {
-    const quote = (value) => /[\s"]/u.test(String(value)) ? `"${String(value).replace(/"/g, '""')}"` : String(value);
-    const command = [wrapperName, ...gradleArgs.map(quote)].join(' ');
-    const comspec = process.env.ComSpec || process.env.COMSPEC || 'C:\\Windows\\System32\\cmd.exe';
-    result = spawnSync(comspec, ['/d', '/s', '/c', command], { cwd: projectDir, stdio: 'inherit', env: gradleEnv });
-  } else {
-    result = spawnSync(wrapperName, gradleArgs, { cwd: projectDir, stdio: 'inherit', env: gradleEnv });
+  const captureOutput = transientNetworkRetries > 0;
+  for (let attempt = 0; attempt <= transientNetworkRetries; attempt += 1) {
+    const spawnOptions = captureOutput
+      ? { cwd: projectDir, encoding: 'utf8', env: gradleEnv, maxBuffer: 64 * 1024 * 1024, windowsHide: true }
+      : { cwd: projectDir, stdio: 'inherit', env: gradleEnv, windowsHide: true };
+    let result;
+    if (process.platform === 'win32') {
+      const quote = (value) => /[\s"]/u.test(String(value)) ? `"${String(value).replace(/"/g, '""')}"` : String(value);
+      const command = [wrapperName, ...gradleArgs.map(quote)].join(' ');
+      const comspec = process.env.ComSpec || process.env.COMSPEC || 'C:\\Windows\\System32\\cmd.exe';
+      result = spawnSync(comspec, ['/d', '/s', '/c', command], spawnOptions);
+    } else {
+      result = spawnSync(wrapperName, gradleArgs, spawnOptions);
+    }
+    if (captureOutput) {
+      if (result.stdout) process.stdout.write(result.stdout);
+      if (result.stderr) process.stderr.write(result.stderr);
+    }
+    if (result.error) throw result.error;
+    if (result.status === 0) {
+      process.exitCode = 0;
+      return;
+    }
+    const output = `${result.stdout || ''}\n${result.stderr || ''}`;
+    const shouldRetry = attempt < transientNetworkRetries && isTransientNetworkFailure(output);
+    if (!shouldRetry) {
+      process.exitCode = result.status ?? 1;
+      return;
+    }
+    const delayMs = Math.min(5000, 1500 * (attempt + 1));
+    process.stderr.write(`JetBrains verification hit a transient network error; retrying in ${delayMs}ms (${attempt + 1}/${transientNetworkRetries}).\n`);
+    waitMs(delayMs);
   }
-  if (result.error) throw result.error;
-  process.exitCode = result.status ?? 1;
 }
 
 if (require.main === module) main();
@@ -128,6 +180,7 @@ if (require.main === module) main();
 module.exports = {
   discoverJavaHome,
   installedJetBrainsHomes,
+  isTransientNetworkFailure,
   javaMajorVersion,
   parseJavaMajor,
   usableJavaHome,

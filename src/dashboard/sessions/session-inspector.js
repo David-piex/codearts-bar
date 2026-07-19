@@ -1,8 +1,23 @@
 function sessionTopModel(session){ const model = session?.usage?.topModel; if(!model) return emptyMetric(); return shortModel(model.model || model.key || TXT.unknown); }
 function findSelectedSession(){ return sessionTableItems.find((x) => sessionKeyFor(x) === selectedSessionId) || sessionTableItems[0] || null; }
-function saveSelectedSessions(){ localStorage.setItem('selectedSessionKeys', [...selectedSessionKeys].join('|')); }
+function rememberSelectedSessions(items = []){
+  for(const item of items || []){
+    const key = sessionKeyFor(item);
+    if(key && selectedSessionKeys.has(key)) selectedSessionRecords.set(key, item);
+  }
+  for(const key of [...selectedSessionRecords.keys()]) if(!selectedSessionKeys.has(key)) selectedSessionRecords.delete(key);
+}
+function saveSelectedSessions(){
+  rememberSelectedSessions(sessionTableItems || []);
+  localStorage.setItem('selectedSessionKeys', [...selectedSessionKeys].join('|'));
+}
+function clearSelectedSessions(){
+  selectedSessionKeys.clear();
+  selectedSessionRecords.clear();
+  localStorage.setItem('selectedSessionKeys', '');
+}
 function savePinnedSessions(){ localStorage.setItem('pinnedSessionKeys', [...pinnedSessionKeys].join('|')); }
-function sessionByKey(key){ return (snapshot?.sessions || []).find((x) => sessionKeyFor(x) === key) || sessionTableItems.find((x) => sessionKeyFor(x) === key) || null; }
+function sessionByKey(key){ return (snapshot?.sessions || []).find((x) => sessionKeyFor(x) === key) || sessionTableItems.find((x) => sessionKeyFor(x) === key) || selectedSessionRecords.get(key) || null; }
 function selectedSessionItems(){
   if(!selectedSessionKeys?.size) return [];
   const out = [];
@@ -16,6 +31,7 @@ function selectedSessionItems(){
   };
   for(const item of sessionTableItems || []) addIfSelected(item);
   if(seen.size < selectedSessionKeys.size) for(const item of snapshot?.sessions || []) addIfSelected(item);
+  if(seen.size < selectedSessionKeys.size) for(const item of selectedSessionRecords.values()) addIfSelected(item);
   return out;
 }
 function isPinnedSession(item){ return pinnedSessionKeys.has(sessionKeyFor(item)); }

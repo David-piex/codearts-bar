@@ -11,6 +11,7 @@ const pkg = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"))
 const mainSource = fs.readFileSync(path.join(root, "src", "main.js"), "utf8");
 const windowSource = fs.readFileSync(path.join(root, "src", "main", "window.js"), "utf8");
 const runtimeBuild = require(path.join(root, "electron-builder.runtime.js"));
+const expectedElectronVersion = String(pkg.devDependencies?.electron || "").match(/\d+\.\d+\.\d+/)?.[0] || "";
 
 function findPackagedResources(dir) {
   if (!fs.existsSync(dir)) return null;
@@ -43,6 +44,7 @@ assert.deepEqual(
 );
 assert.deepEqual(runtimeBuild.files, ["**/*"], "runtime builder should package only the staging project");
 assert.equal(runtimeBuild.npmRebuild, false, "runtime builder must not rebuild dependencies from the repository root");
+assert.equal(runtimeBuild.electronVersion, expectedElectronVersion, "runtime builder Electron version must match package.json");
 assert.equal(runtimeBuild.win?.icon, "assets/codearts-logo.ico", "runtime builder should use the staged application icon");
 assert.equal((pkg.build?.extraResources || []).some((item) => String(item?.from || "").replace(/\\/g, "/") === "node_modules/sql.js/dist"), false, "legacy package config must not copy full sql.js/dist");
 

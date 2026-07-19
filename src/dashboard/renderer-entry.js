@@ -80,6 +80,7 @@ let sessionProjectFilter = localStorage.getItem('sessionProjectFilter') || 'all'
 let analyticsAdvancedOpen = localStorage.getItem('analyticsAdvancedOpen') === '1';
 let selectedSessionId = localStorage.getItem('selectedSessionId') || '';
 let selectedSessionKeys = new Set((localStorage.getItem('selectedSessionKeys') || '').split('|').filter(Boolean));
+let selectedSessionRecords = new Map();
 let pinnedSessionKeys = new Set((localStorage.getItem('pinnedSessionKeys') || '').split('|').filter(Boolean));
 let renameSessionKey = '';
 let renameDraft = '';

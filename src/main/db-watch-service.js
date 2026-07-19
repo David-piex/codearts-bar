@@ -35,7 +35,7 @@ function createDbWatchService({ fs, loadSettings, localProvider, dashboardWindow
     if (dbRefreshDebounce) clearTimeout(dbRefreshDebounce);
     dbRefreshDebounce = setTimeout(() => {
       if (dashboardWindowVisible?.()) refreshLightAndPush?.(reason);
-      else refreshTraySummaryOnly?.();
+      // The hidden-window summary scheduler already owns tray refreshes.
     }, reason === 'poll' ? 450 : 700);
   }
   function handleDatabaseChange(reason) {

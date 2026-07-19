@@ -62,10 +62,21 @@ jobs:
       - uses: actions/setup-java@v4
         with: { distribution: temurin, java-version: "21", cache: gradle }
       - run: npm ci
-      - run: npm run verify:jetbrains
+      - name: Verify JetBrains compile and plugin
+        run: npm run verify:jetbrains
       - run: node tests/quality-jetbrains.js
       - uses: actions/upload-artifact@v4
+        if: always()
         with: { name: jetbrains-plugin, path: jetbrains-plugin/build/distributions/*.zip }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: jetbrains-diagnostics
+          path: |
+            jetbrains-plugin/build/reports/**
+            jetbrains-plugin/build/test-results/**
+            jetbrains-plugin/build/idea-sandbox/**/log/**
+          if-no-files-found: ignore
 
   stress:
     runs-on: windows-latest

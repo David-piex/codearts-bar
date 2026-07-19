@@ -469,17 +469,18 @@ function testRollupSidecarCache() {
 function testUsageRollupStats() {
   dashboardUsageRollup.resetUsageRollupStats();
   const previousDisabled = process.env.CODEARTS_BAR_DISABLE_USAGE_ROLLUP_BUILD;
+  const fixtureDbPath = path.join(os.tmpdir(), 'codearts-bar-usage-rollup', 'opencode.db');
   try {
     process.env.CODEARTS_BAR_DISABLE_USAGE_ROLLUP_BUILD = '1';
-    const disabled = dashboardUsageRollup.scheduleUsageRollupBuild({ id: 'cli', label: 'CLI', dbPath: 'C:\\private\\opencode.db' }, { adapter: 'sql.js' });
+    const disabled = dashboardUsageRollup.scheduleUsageRollupBuild({ id: 'cli', label: 'CLI', dbPath: fixtureDbPath }, { adapter: 'sql.js' });
     assert.equal(disabled.scheduled, false);
     assert.equal(disabled.reason, 'disabled');
     assert.equal(dashboardUsageRollup.usageRollupStats().skippedDisabled, 1);
 
     delete process.env.CODEARTS_BAR_DISABLE_USAGE_ROLLUP_BUILD;
-    const scheduled = dashboardUsageRollup.scheduleUsageRollupBuild({ id: 'cli', label: 'CLI', dbPath: 'C:\\private\\opencode.db' }, { adapter: 'sql.js', delayMs: 60000 });
+    const scheduled = dashboardUsageRollup.scheduleUsageRollupBuild({ id: 'cli', label: 'CLI', dbPath: fixtureDbPath }, { adapter: 'sql.js', delayMs: 60000 });
     assert.equal(scheduled.scheduled, true);
-    const duplicate = dashboardUsageRollup.scheduleUsageRollupBuild({ id: 'cli', label: 'CLI', dbPath: 'C:\\private\\opencode.db' }, { adapter: 'sql.js', delayMs: 60000 });
+    const duplicate = dashboardUsageRollup.scheduleUsageRollupBuild({ id: 'cli', label: 'CLI', dbPath: fixtureDbPath }, { adapter: 'sql.js', delayMs: 60000 });
     assert.equal(duplicate.scheduled, false);
     assert.equal(duplicate.reason, 'pending');
     const stats = dashboardUsageRollup.usageRollupStats();

@@ -63,11 +63,10 @@ function createSettingsWindow({ appDir, appendLog, onClosed }) {
   return win;
 }
 
-function createDashboardWindow({ appDir, isQuitting, hideToTray, appendLog, recordCrash, recordRendererError, clearRendererError, packageSmoke, onClosed }) {
+function createDashboardWindow({ appDir, isQuitting, hideToTray, appendLog, recordCrash, recordRendererError, clearRendererError, rendererCrashDiagnostics, recoverRenderer, packageSmoke, onClosed }) {
   const packageSmokeStableMs = Math.max(1000, Number(packageSmoke?.stableMs || 5000));
   let packageSmokeTimer = null;
   let rendererRecoveryCount = 0;
-  let rendererRecoveryTimer = null;
   const clearPackageSmokeTimer = () => {
     if (!packageSmokeTimer) return;
     clearTimeout(packageSmokeTimer);
@@ -112,7 +111,7 @@ function createDashboardWindow({ appDir, isQuitting, hideToTray, appendLog, reco
       contextIsolation: true,
       sandbox: true,
       webSecurity: true,
-      backgroundThrottling: false,
+      backgroundThrottling: true,
     },
   });
   win.setMenuBarVisibility(false);
@@ -150,9 +149,15 @@ function createDashboardWindow({ appDir, isQuitting, hideToTray, appendLog, reco
   win.webContents.on('render-process-gone', (_event, details) => {
     clearPackageSmokeTimer();
     appendLog?.('error', 'dashboard', 'render-process-gone', details);
-    recordCrash?.('renderer_process_gone', new Error(details?.reason || 'render-process-gone'), details);
+    const diagnostics = rendererCrashDiagnostics?.() || null;
+    let recovery = null;
+    if (details?.reason === 'crashed' && rendererRecoveryCount < 1 && !isQuitting?.()) {
+      try { recovery = recoverRenderer?.(details) || null; }
+      catch (error) { recovery = { accepted: false, reason: error.message }; }
+    }
+    recordCrash?.('renderer_process_gone', new Error(details?.reason || 'render-process-gone'), { ...details, diagnostics, recovery });
     console.error('[dashboard] render-process-gone', details);
-    const canRecover = details?.reason === 'crashed' && rendererRecoveryCount < 1 && !isQuitting?.();
+    const canRecover = recovery?.accepted === true;
     if (packageSmoke?.resultPath) {
       writePackageSmokeResult({ ...packageSmoke, appendLog }, {
         ok: false,
@@ -164,16 +169,7 @@ function createDashboardWindow({ appDir, isQuitting, hideToTray, appendLog, reco
     }
     if (!canRecover) return;
     rendererRecoveryCount += 1;
-    appendLog?.('warn', 'dashboard', 'renderer-recovery-reload', { attempt: rendererRecoveryCount });
-    rendererRecoveryTimer = setTimeout(() => {
-      rendererRecoveryTimer = null;
-      if (!win || win.isDestroyed() || win.webContents.isDestroyed() || isQuitting?.()) return;
-      try { win.webContents.reloadIgnoringCache(); }
-      catch (error) {
-        appendLog?.('error', 'dashboard', 'renderer-recovery-failed', { message: error.message });
-        recordRendererError?.('recovery_failed', error, { attempt: rendererRecoveryCount });
-      }
-    }, 250);
+    appendLog?.('warn', 'dashboard', 'renderer-recovery-recreate', { attempt: rendererRecoveryCount, diagnostics });
   });
   win.webContents.on('unresponsive', () => {
     appendLog?.('warn', 'dashboard', 'unresponsive');
@@ -194,8 +190,6 @@ function createDashboardWindow({ appDir, isQuitting, hideToTray, appendLog, reco
   });
   win.on('closed', () => {
     clearPackageSmokeTimer();
-    if (rendererRecoveryTimer) clearTimeout(rendererRecoveryTimer);
-    rendererRecoveryTimer = null;
     if (typeof onClosed === 'function') onClosed();
   });
   return win;

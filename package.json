@@ -5,7 +5,7 @@
   "main": "src/main.js",
   "type": "commonjs",
   "scripts": {
-    "pretest": "node tests/rollup-recovery-smoke.js",
+    "pretest": "node tests/rollup-recovery-smoke.js && node tests/renderer-recovery-smoke.js && node tests/github-release-workflow-smoke.js",
     "start": "electron .",
     "dev": "electron . --dev",
     "build:renderer": "node src/build-session-xlsx.js && node src/build-dashboard-renderer.js && node src/build-dashboard-css.js",
@@ -46,8 +46,8 @@
     "update:readme-screenshots": "npm run screenshot:vscode && npm run screenshot:electron && node tests/update-readme-screenshots.js",
     "test:jetbrains": "node tests/jetbrains-payload-smoke.js && node tests/jetbrains-plugin-smoke.js",
     "test:libreoffice": "node tests/libreoffice-xlsx-acceptance.js",
-    "build:jetbrains": "node src/run-jetbrains-gradle.js clean test verifyPlugin buildPlugin",
-    "verify:jetbrains": "node src/run-jetbrains-gradle.js clean test verifyPlugin buildPlugin && node tests/jetbrains-plugin-smoke.js && node tests/quality-jetbrains.js",
+    "build:jetbrains": "node src/run-jetbrains-gradle.js --no-daemon --no-configuration-cache clean test buildPlugin --stacktrace --info",
+    "verify:jetbrains": "node src/run-jetbrains-gradle.js --no-daemon --no-configuration-cache clean test buildPlugin --stacktrace --info && node src/run-jetbrains-gradle.js --retry-transient-network=2 --no-daemon --no-configuration-cache verifyPlugin --stacktrace --info && node tests/jetbrains-plugin-smoke.js && node tests/quality-jetbrains.js",
     "metrics": "npm run build:renderer && npm run coverage && node tests/quality-metrics.js",
     "coverage": "npm run coverage:core && npm run coverage:all",
     "coverage:core": "c8 --exclude=src/vendor/** --reporter=text --reporter=json-summary --reports-dir=.cache/coverage node tests/coverage-runner.js",
@@ -70,14 +70,14 @@
     "ajv": "^8.20.0",
     "ajv-formats": "^3.0.1",
     "c8": "^11.0.0",
-    "electron": "^43.1.0",
+    "electron": "^43.1.1",
     "electron-builder": "^26.15.3",
     "esbuild": "^0.28.1",
     "exceljs": "^4.4.0",
     "markdown-it": "^14.3.0",
     "pixelmatch": "^7.2.0",
     "pngjs": "^7.0.0",
-    "puppeteer-core": "^24.16.0"
+    "puppeteer-core": "^24.43.1"
   },
   "dependencies": {
     "sql.js": "^1.14.1"

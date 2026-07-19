@@ -148,6 +148,7 @@ async function applyDateRangeAndPatchView(opts = {}){
   dateRangeScrollState = null;
   resetIncrementalRenderLimits('all');
   resetRequestPaging();
+  clearSelectedSessions();
   resetSessionPaging();
   if(snapshot?.ok && workspaceMode === 'analytics'){
     setPagedTableLoading?.('requests', true, 0);

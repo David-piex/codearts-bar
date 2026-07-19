@@ -1,6 +1,6 @@
 'use strict';
 
-const { app, Tray, shell, clipboard, Notification, BrowserWindow, ipcMain, dialog } = require('electron');
+const { app, Tray, shell, clipboard, Notification, BrowserWindow, ipcMain, dialog, crashReporter: electronCrashReporter } = require('electron');
 const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
@@ -10,8 +10,6 @@ const { spawn } = require('node:child_process');
 // renderer crashes were observed in the portable Windows build (exit code
 // 0x80000003), so keep the desktop surface on Electron's stable software path.
 app.disableHardwareAcceleration();
-app.commandLine.appendSwitch('disable-accelerated-2d-canvas');
-app.commandLine.appendSwitch('use-angle', 'swiftshader');
 const { getSnapshotWithCache, snapshotToText, errorSnapshot, fmtInt } = require('./codeartsData');
 const { loadSettings, saveSettings, watchSettings, closeSettingsStore } = require('./settings');
 const { diagnose } = require('./diagnose');
@@ -24,6 +22,8 @@ const trayUi = require('./main/tray');
 const mainWindow = require('./main/window');
 const { createLogger } = require('./main/logger');
 const { createCrashReporter } = require('./main/crash-reporter');
+const { resolveRuntimeDataDir, migratePersistentUserData } = require('./main/user-data');
+const { clearDisposableRendererCaches, rendererCrashDiagnostics } = require('./main/renderer-recovery');
 const { createDbWatchService } = require('./main/db-watch-service');
 const { createLatestTaskQueue } = require('./main/latest-task-queue');
 const { ScoredCache } = require('./core/scored-cache');
@@ -51,10 +51,14 @@ let tray = null;
 let lastSnapshot = null;
 let lastDashboardSnapshot = null;
 let refreshTimer = null;
+let dashboardRefreshMs = 30000;
 let settingsWindow = null;
 let dashboardWindow = null;
 let isQuitting = false;
 let forcedExitTimer = null;
+let stableRuntimeTimer = null;
+let rendererRecoveryTimer = null;
+let rendererRecoveryTimestamps = [];
 let trayHintShown = false;
 let fullRefreshInFlight = null;
 let lightRefreshInFlight = null;
@@ -73,8 +77,24 @@ if (process.env.CODEARTS_BAR_SMOKE_USER_DATA) {
     fs.mkdirSync(process.env.CODEARTS_BAR_SMOKE_USER_DATA, { recursive: true });
     app.setPath('userData', process.env.CODEARTS_BAR_SMOKE_USER_DATA);
   } catch {}
+} else {
+  try {
+    const previousUserData = app.getPath('userData');
+    const unifiedUserData = resolveRuntimeDataDir();
+    fs.mkdirSync(unifiedUserData, { recursive: true });
+    app.setPath('userData', unifiedUserData);
+    migratePersistentUserData(previousUserData, unifiedUserData);
+  } catch {}
 }
+try { app.setPath('crashDumps', path.join(app.getPath('userData'), 'Crashpad')); } catch {}
 const { logPath, appendLog, openLogFile } = createLogger({ app, shell });
+let crashpadStarted = false;
+try {
+  fs.mkdirSync(app.getPath('crashDumps'), { recursive: true });
+  electronCrashReporter.start({ submitURL: '', uploadToServer: false, compress: false });
+  crashpadStarted = true;
+} catch {}
+appendLog('info', 'crashpad', crashpadStarted ? 'local crash dumps enabled' : 'local crash dumps unavailable', { crashDumps: app.getPath('crashDumps') });
 const crashReporter = createCrashReporter({ app, appendLog });
 crashReporter.install();
 const dbWatchService = createDbWatchService({
@@ -121,7 +141,7 @@ localProvider.setUsageRollupBuildListener?.(handleUsageRollupBuilt);
 localProvider.setUsageRollupStateListener?.((state) => {
   const currentHashes = new Set((localProvider.aggregateRollupState?.(localProvider.listDataSources(loadSettings()))?.sources || []).map((item) => item.sourceHash));
   if (state?.sourceHash && currentHashes.size && !currentHashes.has(state.sourceHash)) return;
-  if (dashboardWindow && !dashboardWindow.isDestroyed()) dashboardWindow.webContents.send('dashboard:rollupState', state);
+  if (dashboardWindowVisible()) dashboardWindow.webContents.send('dashboard:rollupState', state);
 });
 
 function markCanonicalSnapshot(snap) {
@@ -167,12 +187,14 @@ function restoreDashboardWindow() {
   dashboardWindow.show();
   dashboardWindow.focus();
   dbWatchService.reschedulePoll();
+  scheduleRefresh();
 }
 function hideDashboardToTray() {
   if (!dashboardWindow || dashboardWindow.isDestroyed()) return;
   try { dashboardWindow.setSkipTaskbar(true); } catch {}
   dashboardWindow.hide();
   dbWatchService.reschedulePoll();
+  scheduleRefresh();
   refreshTrayMenu();
   if (!trayHintShown && Notification.isSupported()) {
     trayHintShown = true;
@@ -182,11 +204,15 @@ function hideDashboardToTray() {
 
 function cleanupRuntime() {
   if (refreshTimer) {
-    clearInterval(refreshTimer);
+    clearTimeout(refreshTimer);
     refreshTimer = null;
   }
   if (rollupRefreshTimer) clearTimeout(rollupRefreshTimer);
   rollupRefreshTimer = null;
+  if (stableRuntimeTimer) clearTimeout(stableRuntimeTimer);
+  stableRuntimeTimer = null;
+  if (rendererRecoveryTimer) clearTimeout(rendererRecoveryTimer);
+  rendererRecoveryTimer = null;
   localProvider.setUsageRollupBuildListener?.(null);
   localProvider.setUsageRollupStateListener?.(null);
   dbWatchService.cleanup();
@@ -359,8 +385,27 @@ function openCodeArts(targetDir) {
 }
 
 function scheduleRefresh() {
-  if (refreshTimer) clearInterval(refreshTimer);
-  refreshTimer = setInterval(refreshTraySummaryOnly, loadSettings().refreshMs);
+  if (refreshTimer) clearTimeout(refreshTimer);
+  const settings = loadSettings();
+  const visible = dashboardWindowVisible();
+  const delay = visible
+    ? Math.max(5000, Math.min(300000, Number(dashboardRefreshMs) || 30000))
+    : Math.max(60000, Number(settings.dbWatchHiddenPollMs) || 60000);
+  refreshTimer = setTimeout(async () => {
+    refreshTimer = null;
+    try {
+      if (dashboardWindowVisible()) await refreshLightAndPush('timer');
+      else await refreshTraySummaryOnly();
+    } finally {
+      if (!isQuitting) scheduleRefresh();
+    }
+  }, delay);
+  refreshTimer.unref?.();
+}
+function setDashboardRefreshInterval(value) {
+  dashboardRefreshMs = Math.max(5000, Math.min(300000, Number(value) || 30000));
+  scheduleRefresh();
+  return { ok: true, refreshMs: dashboardRefreshMs };
 }
 function triggerRefreshSoon(reason = 'watch') {
   return dbWatchService.triggerRefreshSoon(reason);
@@ -388,7 +433,8 @@ function openSettingsWindow() {
 }
 function openDashboardWindow() {
   if (dashboardWindow && !dashboardWindow.isDestroyed()) { restoreDashboardWindow(); return; }
-  dashboardWindow = mainWindow.createDashboardWindow({
+  let createdWindow = null;
+  createdWindow = mainWindow.createDashboardWindow({
     appDir: __dirname,
     isQuitting: () => isQuitting,
     hideToTray: hideDashboardToTray,
@@ -396,6 +442,29 @@ function openDashboardWindow() {
     recordCrash: crashReporter.recordCrash,
     recordRendererError: crashReporter.recordRendererError,
     clearRendererError: crashReporter.clearRendererError,
+    rendererCrashDiagnostics: () => rendererCrashDiagnostics(app),
+    recoverRenderer: (details) => {
+      const timestamp = Date.now();
+      rendererRecoveryTimestamps = rendererRecoveryTimestamps.filter((value) => timestamp - value < 60000);
+      if (rendererRecoveryTimestamps.length >= 2 || isQuitting) return { accepted: false, reason: 'recovery-budget-exhausted' };
+      rendererRecoveryTimestamps.push(timestamp);
+      scheduleRuntimeStable();
+      if (rendererRecoveryTimer) clearTimeout(rendererRecoveryTimer);
+      rendererRecoveryTimer = setTimeout(() => {
+        rendererRecoveryTimer = null;
+        const userData = app.getPath('userData');
+        if (createdWindow && !createdWindow.isDestroyed()) {
+          try { createdWindow.removeAllListeners('close'); } catch {}
+          try { createdWindow.destroy(); } catch {}
+        }
+        if (dashboardWindow === createdWindow) dashboardWindow = null;
+        const cacheRecovery = clearDisposableRendererCaches(userData);
+        appendLog('warn', 'dashboard', 'renderer-safe-recovery', { details, cacheRecovery });
+        if (!isQuitting) openDashboardWindow();
+      }, 350);
+      rendererRecoveryTimer.unref?.();
+      return { accepted: true, attempt: rendererRecoveryTimestamps.length };
+    },
     packageSmoke: process.env.CODEARTS_BAR_PACKAGE_SMOKE === '1' && packageSmokeResultPath ? {
       resultPath: packageSmokeResultPath,
       startedAt: packageSmokeStartedAt,
@@ -405,8 +474,10 @@ function openDashboardWindow() {
       stableMs: 5000,
       onReady: quitApp,
     } : null,
-    onClosed: () => { dashboardWindow = null; },
+    onClosed: () => { if (dashboardWindow === createdWindow) dashboardWindow = null; },
   });
+  dashboardWindow = createdWindow;
+  scheduleRuntimeStable();
 }
 function setDashboardLayoutMode(mode = 'dashboard') {
   return mainWindow.setDashboardLayoutMode(dashboardWindow, mode);
@@ -415,7 +486,16 @@ function setDashboardPinned(pinned = false) {
   return mainWindow.setDashboardPinned(dashboardWindow, pinned);
 }
 function pushDashboard() {
-  if (dashboardWindow && !dashboardWindow.isDestroyed() && (lastDashboardSnapshot || lastSnapshot)) dashboardWindow.webContents.send('dashboard:snapshot', lastDashboardSnapshot || lastSnapshot);
+  if (dashboardWindowVisible() && (lastDashboardSnapshot || lastSnapshot)) dashboardWindow.webContents.send('dashboard:snapshot', lastDashboardSnapshot || lastSnapshot);
+}
+function scheduleRuntimeStable() {
+  if (stableRuntimeTimer) clearTimeout(stableRuntimeTimer);
+  stableRuntimeTimer = setTimeout(() => {
+    stableRuntimeTimer = null;
+    crashReporter.markStable();
+    rendererRecoveryTimestamps = [];
+  }, 60000);
+  stableRuntimeTimer.unref?.();
 }
 
 function dashboardTaskScopeKey(payload = {}) {
@@ -526,6 +606,7 @@ registerDashboardIpc({
   openSettingsWindow,
   setDashboardLayoutMode,
   setDashboardPinned,
+  setDashboardRefreshInterval,
   dashboardAggregatePayload,
   pageBounds,
   matchesPageFilters,
@@ -547,6 +628,7 @@ if (lifecycle.requestSingleInstance(app, { refreshLight, openDashboardWindow }))
     refreshLight({ summaryOnly: true, reason: 'startup' });
     scheduleRefresh();
     scheduleDbWatch();
+    scheduleRuntimeStable();
     if (process.env.CODEARTS_BAR_PACKAGE_SMOKE === '1' || process.argv.includes('--open-dashboard')) {
       openDashboardWindow();
     }

@@ -21,7 +21,7 @@ function patchSessionTablePageRows(s = snapshot || {}, opts = {}){
   sessionHydrationToken += 1;
   sessionHydrationItems = [];
   const visibleKeys = new Set(list.map(sessionKeyFor));
-  for(const key of [...selectedSessionKeys]) if(dbPage?.paged ? !visibleKeys.has(key) : !filtered.some((x) => sessionKeyFor(x) === key)) selectedSessionKeys.delete(key);
+  if(!dbPage?.paged) for(const key of [...selectedSessionKeys]) if(!filtered.some((x) => sessionKeyFor(x) === key)) selectedSessionKeys.delete(key);
   saveSelectedSessions();
   if(selectedSessionId && (dbPage?.paged ? !visibleKeys.has(selectedSessionId) : !filtered.some((x) => sessionKeyFor(x) === selectedSessionId))) selectedSessionId = '';
   if(!selectedSessionId && list[0]) selectedSessionId = sessionKeyFor(list[0]);

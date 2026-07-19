@@ -450,7 +450,12 @@ function applyCustomDateInputs(){
   dateRangeError = '';
   return true;
 }
-function setupAutoRefresh(){ if(autoRefreshTimer) clearInterval(autoRefreshTimer); const sec = Math.max(5, Number(refreshEvery) || 30); autoRefreshTimer = setInterval(refreshNow, sec * 1000); }
+function setupAutoRefresh(){
+  if(autoRefreshTimer) clearInterval(autoRefreshTimer);
+  autoRefreshTimer = null;
+  const sec = Math.max(5, Math.min(300, Number(refreshEvery) || 30));
+  ipcRenderer.invoke('dashboard:setRefreshInterval', sec * 1000).catch(() => {});
+}
 function initialSkeletonState(){
   return {
     ok: true,

@@ -11,6 +11,27 @@ function registerSessionIpc({
   openLogFile,
   patchSessionInMemory,
 }) {
+  const MAX_BATCH_EXPORT = 500;
+  const normalizeSession = (value, { requireDbPath = false } = {}) => {
+    if (!value || typeof value !== 'object') throw new Error('会话参数无效');
+    const id = String(value.id || '').trim();
+    if (!id || id.length > 256) throw new Error('会话 ID 无效');
+    const dbPath = String(value.dbPath || '').trim();
+    if (requireDbPath && !dbPath) throw new Error('会话数据库路径无效');
+    if (dbPath.length > 4096) throw new Error('会话数据库路径无效');
+    const source = String(value.source || '').trim();
+    if (source.length > 64) throw new Error('会话来源无效');
+    return { ...value, id, dbPath, source };
+  };
+  const assertAllowedDbPath = (dbPath) => {
+    if (!dbPath || typeof localProvider?.listDataSources !== 'function') return;
+    const allowed = localProvider.listDataSources({}).map((item) => String(item.dbPath || '')).filter(Boolean);
+    if (allowed.length && !allowed.some((item) => item.toLowerCase() === dbPath.toLowerCase())) {
+      const error = new Error('会话数据库不是当前已发现的数据源');
+      error.code = 'SESSION_DB_NOT_ALLOWED';
+      throw error;
+    }
+  };
   const exportFailure = (error) => ({
     ok: false,
     code: String(error?.code || 'SESSION_EXPORT_FAILED'),
@@ -21,6 +42,8 @@ function registerSessionIpc({
   ipcMain.handle('dashboard:openCodeArtsSession', (_event, session) => openCodeArts(session && session.directory));
   ipcMain.handle('dashboard:copySession', (_event, session) => clipboard.writeText(`${session.title || ''}\n${session.id || ''}\n${session.directory || ''}`.trim()));
   ipcMain.handle('dashboard:exportSession', async (event, session, format = 'json', exportOptions = {}) => {
+    session = normalizeSession(session);
+    assertAllowedDbPath(session.dbPath);
     const requestedFormat = String(format || 'json').toLowerCase();
     const normalizedFormat = ['json', 'md', 'xlsx'].includes(requestedFormat) ? requestedFormat : 'json';
     const extension = normalizedFormat === 'md' ? 'md' : normalizedFormat === 'xlsx' ? 'xlsx' : 'json';
@@ -51,7 +74,9 @@ function registerSessionIpc({
     } catch (error) { return exportFailure(error); }
   });
   ipcMain.handle('dashboard:exportSessions', async (event, sessions, format = 'json', exportOptions = {}) => {
-    const selected = Array.isArray(sessions) ? sessions.filter((session) => session?.id) : [];
+    if (Array.isArray(sessions) && sessions.length > MAX_BATCH_EXPORT) throw new Error(`批量导出最多支持 ${MAX_BATCH_EXPORT} 个会话`);
+    const selected = Array.isArray(sessions) ? sessions.filter((session) => session?.id).map((session) => normalizeSession(session)) : [];
+    selected.forEach((session) => assertAllowedDbPath(session.dbPath));
     if (!selected.length) throw new Error('请选择至少一个要导出的会话');
     const requestedFormat = String(format || 'json').toLowerCase();
     const normalizedFormat = ['json', 'md', 'xlsx'].includes(requestedFormat) ? requestedFormat : 'json';
@@ -82,13 +107,18 @@ function registerSessionIpc({
   });
   ipcMain.handle('dashboard:openLogs', () => openLogFile());
   ipcMain.handle('dashboard:archiveSession', async (_event, session, archived = true) => {
+    session = normalizeSession(session, { requireDbPath: true });
+    assertAllowedDbPath(session.dbPath);
     const nextArchived = archived !== false;
     const result = await localProvider.archiveSession({ dbPath: session.dbPath, id: session.id, archived: nextArchived });
     patchSessionInMemory(session, { archived: nextArchived, archivedAt: nextArchived ? Date.now() : null });
     return result;
   });
   ipcMain.handle('dashboard:renameSession', async (_event, session, title) => {
+    session = normalizeSession(session, { requireDbPath: true });
+    assertAllowedDbPath(session.dbPath);
     const nextTitle = String(title || '').trim();
+    if (nextTitle.length > 200) throw new Error('会话名称最多 200 个字符');
     const result = await localProvider.renameSession({ dbPath: session.dbPath, id: session.id, title: nextTitle });
     if (nextTitle) patchSessionInMemory(session, { title: nextTitle });
     return result;

@@ -12,9 +12,10 @@ try {
   let visible = true;
   let mtimeMs = 1;
   let changes = 0;
+  let hiddenRefreshes = 0;
   const fakeFs = { existsSync: () => false, statSync: () => ({ mtimeMs, size: 1 }), watch: () => ({ close() {} }) };
   const settings = { dbWatchVisiblePollMs: 4000, dbWatchHiddenPollMs: 15000 };
-  const service = createDbWatchService({ fs: fakeFs, loadSettings: () => settings, localProvider: { watchTargets: () => ['db'] }, dashboardWindowVisible: () => visible, onDatabaseChange: () => { changes += 1; } });
+  const service = createDbWatchService({ fs: fakeFs, loadSettings: () => settings, localProvider: { watchTargets: () => ['db'] }, dashboardWindowVisible: () => visible, refreshTraySummaryOnly: () => { hiddenRefreshes += 1; }, onDatabaseChange: () => { changes += 1; } });
   service.schedule();
   assert.equal(delays.at(-1), 4000);
   mtimeMs = 2;
@@ -23,6 +24,10 @@ try {
   visible = false;
   service.reschedulePoll();
   assert.equal(delays.at(-1), 15000);
+  mtimeMs = 3;
+  callbacks.at(-1).fn();
+  callbacks.at(-2).fn();
+  assert.equal(hiddenRefreshes, 0, 'hidden DB watcher must not duplicate the summary scheduler');
   visible = true;
   service.reschedulePoll();
   assert.equal(delays.at(-1), 4000);

@@ -194,6 +194,7 @@ function registerIpc() {
   ipcMain.handle("dashboard:getSnapshot", (_event, payload) => { ipcCalls.push({ channel: "dashboard:getSnapshot", payload }); return snapshotFor(payload); });
   ipcMain.handle("dashboard:refreshLight", async (_event, payload) => { ipcCalls.push({ channel: "dashboard:refreshLight", payload }); if (refreshDelayMs) await delay(refreshDelayMs); return snapshotFor(payload); });
   ipcMain.handle("dashboard:refreshFull", async (_event, payload) => { ipcCalls.push({ channel: "dashboard:refreshFull", payload }); if (refreshDelayMs) await delay(refreshDelayMs); return snapshotFor(payload); });
+  ipcMain.handle("dashboard:setRefreshInterval", async (_event, refreshMs) => { ipcCalls.push({ channel: "dashboard:setRefreshInterval", refreshMs }); return { ok: true, refreshMs }; });
   ipcMain.handle("dashboard:getAggregates", (_event, payload) => { ipcCalls.push({ channel: "dashboard:getAggregates", payload }); return aggregatesFor(payload); });
   ipcMain.handle("dashboard:getRequestsPage", async (_event, payload) => {
     ipcCalls.push({ channel: "dashboard:getRequestsPage", payload });
@@ -921,6 +922,14 @@ async function main() {
   assert.equal(sessionPinPatch.rowPinned, true, "session pin should update the current row state");
   assert.equal(sessionPinPatch.inspectorPinned, true, "session pin should update inspector state");
   assert.ok(sessionPinPatch.perfLabels.includes("sessions:local-mutation-patch"), "session pin should record local mutation patch perf");
+  const firstPageSelection = await evalIn(win, () => {
+    const checkbox = document.querySelector('.session-scroll tbody [data-session-check]');
+    if(!checkbox) throw new Error('missing first-page session checkbox');
+    checkbox.click();
+    window.__e2eCrossPageFirstKey = checkbox.dataset.sessionCheck;
+    return checkbox.dataset.sessionCheck;
+  });
+  await waitFor(win, () => selectedSessionKeys.has(window.__e2eCrossPageFirstKey));
   await evalIn(win, () => {
     const scroller = document.querySelector(".session-scroll");
     if (scroller) scroller.scrollTop = 9999;
@@ -945,6 +954,29 @@ async function main() {
   assert.equal(sessionPageState.scrollTop, 0, "session page change should reset table scroll");
   assert.ok(sessionPageState.rows <= 20, "session page should render only current page");
   assert.ok(sessionPageMs < 1800, `session page switch should stay responsive, got ${sessionPageMs}ms`);
+  const secondPageSelection = await evalIn(win, () => {
+    const checkbox = document.querySelector('.session-scroll tbody [data-session-check]');
+    if(!checkbox) throw new Error('missing second-page session checkbox');
+    checkbox.click();
+    window.__e2eCrossPageSecondKey = checkbox.dataset.sessionCheck;
+    return checkbox.dataset.sessionCheck;
+  });
+  await waitFor(win, () => selectedSessionKeys.has(window.__e2eCrossPageSecondKey));
+  const crossPageSelection = await evalIn(win, (firstKey) => {
+    const items = selectedSessionItems();
+    return {
+      firstKey,
+      secondKey: window.__e2eCrossPageSecondKey,
+      keys: [...selectedSessionKeys],
+      itemKeys: items.map(sessionKeyFor),
+    };
+  }, firstPageSelection);
+  assert.equal(crossPageSelection.secondKey, secondPageSelection);
+  assert.notEqual(crossPageSelection.firstKey, crossPageSelection.secondKey, "cross-page selection fixture must use different sessions");
+  assert.ok(crossPageSelection.keys.includes(crossPageSelection.firstKey), "page navigation must retain the first-page selection");
+  assert.ok(crossPageSelection.keys.includes(crossPageSelection.secondKey), "second-page selection should be retained");
+  assert.ok(crossPageSelection.itemKeys.includes(crossPageSelection.firstKey), "bulk actions must resolve the first-page session record");
+  assert.ok(crossPageSelection.itemKeys.includes(crossPageSelection.secondKey), "bulk actions must resolve the second-page session record");
   const sessionPaginationGeometry = await evalIn(win, (kind) => {
     const prefix = kind === 'sessions' ? 'session' : 'request';
     const note = document.querySelector(`[data-table-limit="${kind}"]`);

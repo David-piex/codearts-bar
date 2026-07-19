@@ -141,7 +141,7 @@ function createCrashReporter({
   }
 
   function issueForProcessCrash(crash) {
-    if (!crash || !crash.time) return null;
+    if (!crash || !crash.time || crash.resolvedAt) return null;
     const message = crash.error?.message || crash.message || crash.type || 'Unknown error';
     return {
       tone: 'bad',
@@ -153,7 +153,7 @@ function createCrashReporter({
   }
 
   function issueForRendererError(error) {
-    if (!error || !error.time) return null;
+    if (!error || !error.time || error.resolvedAt) return null;
     const message = error.error?.message || error.message || error.type || 'Unknown error';
     return {
       tone: 'warn',
@@ -187,7 +187,7 @@ function createCrashReporter({
   }
 
   function getCrashState() {
-    const current = buildState({ includeStartup: true });
+    const current = buildState({ includeStartup: !installed });
     if (!startupState || !startupState.issues?.length) return current;
     const seen = new Set((current.issues || []).map((issue) => issue.code));
     const merged = [...(current.issues || [])];
@@ -208,6 +208,26 @@ function createCrashReporter({
       startupState.ok = startupState.issues.length === 0;
     }
     return true;
+  }
+
+  function markStable() {
+    const resolvedAt = new Date(now()).toISOString();
+    const p = paths();
+    for (const file of [p.processCrash, p.rendererError]) {
+      const previous = readJson(file);
+      if (previous && !previous.resolvedAt) writeJson(file, { ...previous, resolvedAt, resolution: 'stable-run' });
+    }
+    writeRuntimeMarker({ event: 'stable', cleanExit: false, stableAt: resolvedAt });
+    if (startupState?.issues) {
+      startupState = {
+        ...startupState,
+        issues: startupState.issues.filter((issue) => !['last_crash_detected', 'last_process_crash', 'last_renderer_error'].includes(issue?.code)),
+        processCrash: readJson(p.processCrash),
+        rendererError: readJson(p.rendererError),
+      };
+      startupState.ok = startupState.issues.length === 0;
+    }
+    return getCrashState();
   }
 
   function markCleanExit() {
@@ -274,6 +294,7 @@ function createCrashReporter({
     recordCrash,
     recordRendererError,
     clearRendererError,
+    markStable,
     getCrashState,
   };
 }

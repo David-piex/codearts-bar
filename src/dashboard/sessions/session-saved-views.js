@@ -49,6 +49,7 @@ function currentSessionViewState(){
 }
 function applySavedSessionView(view){
   if(!view?.state) return;
+  clearSelectedSessions();
   sourceFilter = view.state.sourceFilter || 'all';
   sessionQuickFilter = view.state.sessionQuickFilter || 'all';
   sessionProjectFilter = view.state.sessionProjectFilter || 'all';

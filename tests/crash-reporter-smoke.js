@@ -110,6 +110,10 @@ processRef.pid = 4321;
     state = reporter.getCrashState();
     assert.equal(state.issues.some((issue) => issue.code === "last_renderer_error"), false);
 
+    const stableState = reporter.markStable();
+    assert.equal(stableState.issues.some((issue) => issue.code === "last_process_crash"), false);
+    assert.equal(JSON.parse(fs.readFileSync(reporter.paths().processCrash, "utf8")).resolution, "stable-run");
+
     const decorated = decorateWithRuntimeDiagnostics({ ok: true, diagnostics: { issues: [] } }, state);
     assert.ok(decorated.runtimeDiagnostics);
     assert.ok(decorated.diagnostics.issues.some((issue) => issue.code === "last_process_crash"));

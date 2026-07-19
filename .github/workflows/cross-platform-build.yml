@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
   push:
     branches: [master, main]
-    tags: ["v*"]
+    tags: ["CodeArts-Bar-*"]
   pull_request:
 jobs:
   build:
@@ -24,16 +24,21 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: 24, cache: npm }
       - run: npm ci
+      - name: Verify renderer fixtures in UTC and Asia/Shanghai
+        shell: bash
+        run: |
+          TZ=UTC node tests/dashboard-renderer-smoke.js
+          TZ=Asia/Shanghai node tests/dashboard-renderer-smoke.js
       - run: npm test
       - run: npm run build:renderer
       - run: npm run build:cli-resources
       - run: npm run build:app-resources
       - name: Build unsigned application
-        if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
+        if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/CodeArts-Bar-')
         shell: bash
         run: npx electron-builder --projectDir .cache/app-runtime --config ../../electron-builder.runtime.js --${{ matrix.target }} --publish never
       - name: Verify packaged resources
-        if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
+        if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/CodeArts-Bar-')
         shell: bash
         env:
           CODEARTS_BAR_DIST_DIR: dist
@@ -41,7 +46,7 @@ jobs:
           npm run smoke:app-asar
           npm run smoke:package-resources
       - uses: actions/upload-artifact@v4
-        if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
+        if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/CodeArts-Bar-')
         with:
           name: codearts-bar-${{ matrix.target }}-${{ github.sha }}
           path: dist/*

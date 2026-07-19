@@ -52,7 +52,8 @@ function makeStorage(initial = {}) {
   };
 }
 
-const now = Date.UTC(2026, 6, 8, 1, 30, 0);
+// Keep both fixture requests on the same local calendar day in every CI timezone.
+const now = Date.UTC(2026, 6, 8, 12, 0, 0);
 class FixedDate extends Date {
   constructor(...args){ super(...(args.length ? args : [now])); }
   static now(){ return now; }
@@ -60,7 +61,7 @@ class FixedDate extends Date {
 const snapshot = {
   ok: true,
   timestamp: now,
-  updatedAt: "2026/07/08 09:30",
+  updatedAt: "2026/07/08 12:00",
   dbPath: "C:/tmp/opencode.db",
   sources: [
     { id: "desktop", source: "desktop", label: "\u684c\u9762\u7aef" },

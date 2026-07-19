@@ -8,6 +8,7 @@ const { writeJsonAtomic } = require('./core/atomic-file');
 
 function configDir() {
   if (process.env.CODEARTS_BAR_CONFIG_DIR) return path.resolve(process.env.CODEARTS_BAR_CONFIG_DIR);
+  if (process.env.PORTABLE_EXECUTABLE_DIR) return path.resolve(process.env.PORTABLE_EXECUTABLE_DIR, 'CodeArtsBarData');
   const base = process.env.APPDATA || path.join(os.homedir(), '.config');
   return path.join(base, 'CodeArtsBar');
 }

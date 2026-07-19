@@ -32,6 +32,7 @@ async function switchSourceFilter(nextSource, opts = {}){
   resetIncrementalRenderLimits('all');
   resetRequestPaging();
   resetSessionPaging();
+  clearSelectedSessions();
   sourceFilter = nextSource || 'all';
   beginDashboardRequestGeneration();
   localStorage.setItem('statsSource', sourceFilter);
@@ -107,6 +108,7 @@ async function handleDashboardAnalyticsClick(e){
         selectedSessionId = `${sourceKey(item)}:${item.sessionId || ''}`;
         sessionQuery = item.sessionId || '';
         beginDashboardRequestGeneration({ preserveBoundary: true });
+        clearSelectedSessions();
         resetSessionPaging();
         workspaceMode = 'sessions';
         localStorage.setItem('workspaceMode', workspaceMode);
@@ -133,6 +135,7 @@ async function handleDashboardAnalyticsClick(e){
       sessionStatusFilter = 'all';
       beginDashboardRequestGeneration({ preserveBoundary: true });
       tableTab = 'sessions';
+      clearSelectedSessions();
       resetSessionPaging();
       localStorage.setItem('workspaceMode', workspaceMode);
       localStorage.setItem('sessionProjectFilter', sessionProjectFilter);

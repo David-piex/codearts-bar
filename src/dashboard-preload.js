@@ -15,6 +15,7 @@ const invokeChannels = new Set([
   'dashboard:settings',
   'dashboard:setLayoutMode',
   'dashboard:setPinned',
+  'dashboard:setRefreshInterval',
   'dashboard:log',
   'dashboard:rendererError',
   'dashboard:getDiagnostics',
@@ -27,7 +28,7 @@ const invokeChannels = new Set([
   'dashboard:archiveSession',
   'dashboard:renameSession',
 ]);
-const eventChannels = new Set(['dashboard:snapshot']);
+const eventChannels = new Set(['dashboard:snapshot', 'dashboard:rollupState']);
 
 contextBridge.exposeInMainWorld('codeartsApi', Object.freeze({
   invoke(channel, ...args) {

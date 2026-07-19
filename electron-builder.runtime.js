@@ -1,8 +1,11 @@
 'use strict';
+const electronVersion = require('./package.json').devDependencies.electron.match(/\d+\.\d+\.\d+/u)?.[0];
+if (!electronVersion) throw new Error('package.json must declare an exact Electron-compatible semver range');
+
 module.exports = {
   appId: 'local.codearts.bar',
   productName: 'CodeArts Bar',
-  electronVersion: '43.1.0',
+  electronVersion,
   asar: true,
   npmRebuild: false,
   directories: { output: '../../dist' },

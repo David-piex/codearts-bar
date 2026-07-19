@@ -20,7 +20,9 @@ const domainBudgets = {
   'styles/domain-native.css': { important:17, bytes:28 * 1024 },
   'styles/domain-semantic.css': { important:21, bytes:26 * 1024 },
   'styles/domain-workbench.css': { important:0, bytes:14 * 1024 },
-  'styles/domain-taste.css': { important:0, bytes:3 * 1024 },
+  // The final calibration layer owns the software-rendering fallback and
+  // interaction states; keep it bounded separately from product surfaces.
+  'styles/domain-taste.css': { important:0, bytes:5 * 1024 },
 };
 for (const rel of manifest) {
   const domainSource = fs.readFileSync(path.join(src, rel), 'utf8');

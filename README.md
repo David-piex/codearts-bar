@@ -40,7 +40,7 @@ CodeArts Bar 在本机读取 CodeArts Agent 生成的 SQLite 数据，提供 **W
 - Desktop、VS Code 和 JetBrains 统一支持批量导出 Excel、Markdown 和 JSON；批量流程只确认一次隐私选项、只选择一次保存位置。
 - 导出会过滤 CodeArts 内置子任务，不再把内部调度会话写入用户文件；单会话与批量导出共用同一套规范化、脱敏和完整性规则。
 - 三端的会话与请求分页统一为每页 `10 / 20 / 50 / 100` 条，支持指定页码跳转，并显示当前范围、总数、当前页和总页数。
-- 来源、模型和项目筛选支持多选，项目维度已接入分析与会话工作流；切换数据库时会清空旧选择，避免误导出另一数据源中的同 ID 会话。
+- 来源、模型和项目筛选支持多选，项目维度已接入分析与会话工作流；切换数据库时会清空旧选择，避免误导出另一数据源中的同 ID 会话；同一筛选范围内翻页不会丢失已选记录。
 - Desktop 使用分析顶部补齐项目筛选，摘要、趋势、模型/来源统计和请求日志使用同一项目范围。
 - VS Code 会话导出统一收敛到勾选后的顶部工具栏，完整页与侧栏不再重复显示逐行 XLSX/MD/JSON 按钮；插件页头同步压缩为紧凑工具栏层级。
 - Windows 发布目录重命名增加最长 30 秒的 `EPERM`、`EBUSY`、`EACCES` 重试，提高杀毒扫描或文件索引占用时的打包稳定性。
@@ -245,7 +245,7 @@ CodeArts Bar 不估算或反向推测 token。它读取本地 `opencode.db` 中 
 
 Electron 首屏 dashboard 只请求当前界面消费的 token、趋势、模型延迟和会话统计，不扫描未使用的首内容时间与输出速度 `part` 数据。完整 sidecar 缺失时，同一次冷扫描会同时生成可复用 rollup；命中后 native 与 SQL.js 都可在开库前完成 dashboard 聚合。模型筛选仍会按匹配消息限定会话，不会退化成未筛选的会话总数。
 
-数据库监听覆盖主数据库、WAL、SHM、touch 文件与相关目录。Dashboard 可见时默认每 4 秒兜底检查，隐藏到托盘后降为 15 秒，以减少后台占用。
+数据库监听覆盖主数据库、WAL、SHM、touch 文件与相关目录。Dashboard 可见时默认每 4 秒兜底检查；隐藏到托盘后 watcher 只维护变化指纹，主进程摘要调度默认每 60 秒更新一次，renderer 不再后台轮询。
 
 ## 已知限制
 
@@ -272,7 +272,7 @@ npm run pack:npm             # 生成精简 npm 包
 node src/cli.js self-test --fixture-db tests/fixtures/opencode-fixture.db --config-dir .cache/self-test-config --now-ms 1783512000000
 ```
 
-GitHub Actions 在分支、PR 和 `master` 上使用 Node.js 22 执行可跨平台的测试、压力测试、VSIX 与 npm 包构建。Windows 安装包由 Windows CI 构建并执行 ASAR/资源校验。
+GitHub Actions 在分支、PR 和 `master` 上使用 Node.js 24 执行可跨平台的测试、压力测试、VSIX 与 npm 包构建。Windows 安装包由 Windows CI 构建并执行 ASAR/资源校验；只有推送匹配 `CodeArts-Bar-<version>` 的 GitHub tag 且版本与 `package.json` 一致时，GitHub Release 工作流才会发布安装包、扩展、插件、CLI、`latest.json`、`SHA256SUMS.txt` 和 release notes。
 
 更新 README 截图：
 

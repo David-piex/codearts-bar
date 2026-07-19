@@ -99,6 +99,26 @@ function waitForPackageReady({ child, resultFile, timeoutMs = 45000 }) {
   });
 }
 
+function waitForChildExit(child, timeoutMs = 10000) {
+  if (child.exitCode != null || child.signalCode != null) {
+    return Promise.resolve({ code: child.exitCode, signal: child.signalCode });
+  }
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      try { child.kill(); } catch {}
+      reject(new Error(`release package did not exit within ${timeoutMs}ms after reporting stable`));
+    }, timeoutMs);
+    child.once("exit", (code, signal) => {
+      clearTimeout(timeout);
+      resolve({ code, signal });
+    });
+    child.once("error", (error) => {
+      clearTimeout(timeout);
+      reject(error);
+    });
+  });
+}
+
 (async () => {
   const artifact = findPortableArtifact();
   assert.ok(artifact, `No portable package found in ${distDir}. Run npm run release first.`);
@@ -108,42 +128,49 @@ function waitForPackageReady({ child, resultFile, timeoutMs = 45000 }) {
   assert.match(path.basename(installer), new RegExp(`^CodeArts-Bar-Setup-${pkg.version.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}-x64\\.exe$`), "installer artifact should match current package version");
 
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "codearts-bar-release-smoke-"));
-  const resultFile = path.join(tmpDir, "package-ready.json");
   const userData = path.join(tmpDir, "userData");
   const isolatedHome = path.join(tmpDir, "home");
   const fixtureDb = path.join(root, "tests", "fixtures", "opencode-fixture.db");
-  const start = Date.now();
   let child = null;
   try {
-    child = spawn(artifact, [], {
-      cwd: root,
-      windowsHide: true,
-      stdio: ["ignore", "pipe", "pipe"],
-      env: {
-        ...process.env,
-        ELECTRON_DISABLE_SECURITY_WARNINGS: "1",
-        CODEARTS_BAR_PACKAGE_SMOKE: "1",
-        CODEARTS_BAR_PACKAGE_SMOKE_RESULT: resultFile,
-        CODEARTS_BAR_SMOKE_USER_DATA: userData,
-        CODEARTS_BAR_DB: fixtureDb,
-        CODEARTS_BAR_CONFIG_DIR: path.join(tmpDir, "config"),
-        CODEARTS_BAR_NOW_MS: process.env.CODEARTS_BAR_NOW_MS || "1783512000000",
-        HOME: isolatedHome,
-        USERPROFILE: isolatedHome,
-        APPDATA: path.join(isolatedHome, "AppData", "Roaming"),
-        LOCALAPPDATA: path.join(isolatedHome, "AppData", "Local"),
-      },
-    });
-    const { result } = await waitForPackageReady({ child, resultFile });
-    assert.equal(result.app, "CodeArts Bar");
-    assert.equal(result.event, "dashboard-stable");
-    assert.equal(result.version, pkg.version);
-    assert.equal(result.userDataIsolated, true, "release package smoke must use isolated userData");
-    assert.equal(result.userDataName, "userData", "release package smoke should not use the real userData directory");
-    assert.equal(result.readyToShow || result.didFinishLoad, true);
-    assert.ok(result.rendererStableMs >= 5000, "release package renderer should remain alive for at least 5 seconds");
-    const elapsed = Date.now() - start;
-    console.log(`ok - release package smoke artifact=${path.basename(artifact)} elapsed=${elapsed}ms appElapsed=${result.elapsedMs ?? "n/a"}ms`);
+    const runs = [];
+    for (let run = 1; run <= 2; run += 1) {
+      const resultFile = path.join(tmpDir, `package-ready-${run}.json`);
+      const start = Date.now();
+      child = spawn(artifact, [], {
+        cwd: root,
+        windowsHide: true,
+        stdio: ["ignore", "pipe", "pipe"],
+        env: {
+          ...process.env,
+          ELECTRON_DISABLE_SECURITY_WARNINGS: "1",
+          CODEARTS_BAR_PACKAGE_SMOKE: "1",
+          CODEARTS_BAR_PACKAGE_SMOKE_RESULT: resultFile,
+          CODEARTS_BAR_SMOKE_USER_DATA: userData,
+          CODEARTS_BAR_DB: fixtureDb,
+          CODEARTS_BAR_CONFIG_DIR: path.join(tmpDir, "config"),
+          CODEARTS_BAR_NOW_MS: process.env.CODEARTS_BAR_NOW_MS || "1783512000000",
+          HOME: isolatedHome,
+          USERPROFILE: isolatedHome,
+          APPDATA: path.join(isolatedHome, "AppData", "Roaming"),
+          LOCALAPPDATA: path.join(isolatedHome, "AppData", "Local"),
+        },
+      });
+      const { result } = await waitForPackageReady({ child, resultFile });
+      assert.equal(result.app, "CodeArts Bar");
+      assert.equal(result.event, "dashboard-stable");
+      assert.equal(result.version, pkg.version);
+      assert.equal(result.userDataIsolated, true, "release package smoke must use isolated userData");
+      assert.equal(result.userDataName, "userData", "release package smoke should not use the real userData directory");
+      assert.equal(result.readyToShow || result.didFinishLoad, true);
+      assert.ok(result.rendererStableMs >= 5000, "release package renderer should remain alive for at least 5 seconds");
+      const exit = await waitForChildExit(child);
+      assert.equal(exit.code, 0, `release package run ${run} should exit cleanly`);
+      runs.push({ elapsed: Date.now() - start, appElapsed: result.elapsedMs });
+      child = null;
+    }
+    assert.equal(fs.existsSync(userData), true, "second package run must reuse the first run userData directory");
+    console.log(`ok - release package smoke artifact=${path.basename(artifact)} runs=2 elapsed=${runs.map((run) => run.elapsed).join("/")}ms appElapsed=${runs.map((run) => run.appElapsed ?? "n/a").join("/")}ms`);
   } finally {
     if (child && !child.killed) {
       try { child.kill(); } catch {}

@@ -24,6 +24,7 @@ function registerDashboardIpc({
   openSettingsWindow,
   setDashboardLayoutMode,
   setDashboardPinned,
+  setDashboardRefreshInterval,
   dashboardAggregatePayload,
   pageBounds,
   matchesPageFilters,
@@ -199,6 +200,7 @@ function registerDashboardIpc({
   ipcMain.handle('dashboard:settings', () => openSettingsWindow());
   ipcMain.handle('dashboard:setLayoutMode', (_event, mode) => setDashboardLayoutMode(mode));
   ipcMain.handle('dashboard:setPinned', (_event, pinned) => setDashboardPinned(pinned));
+  ipcMain.handle('dashboard:setRefreshInterval', (_event, refreshMs) => setDashboardRefreshInterval(refreshMs));
   ipcMain.handle('dashboard:log', (_event, entry) => { appendLog(entry?.level || 'info', entry?.scope || 'renderer', entry?.message || '', entry?.detail || null); return { ok: true, path: logPath() }; });
   ipcMain.handle('dashboard:rendererError', (_event, entry = {}) => {
     const payload = entry && typeof entry === 'object' ? entry : { message: String(entry || '') };
