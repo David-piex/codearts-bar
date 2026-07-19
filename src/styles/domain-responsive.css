@@ -639,9 +639,6 @@
     .chart-scale-note {
       display:none;
     }
-    .chart-snapshot {
-      display:none;
-    }
     .series-panel {
       gap:5px;
     }
@@ -714,74 +711,6 @@
       padding:6px;
       border-radius:18px;
     }
-    .range-time-filter {
-      min-height:34px;
-      display:grid;
-      grid-template-columns:auto minmax(166px,1fr) minmax(166px,1fr) auto;
-      align-items:center;
-      gap:6px;
-      padding:4px;
-      border:1px solid rgba(203,213,225,.78);
-      border-radius:14px;
-      color:#334155;
-      background:linear-gradient(180deg,rgba(255,255,255,.86),rgba(244,248,253,.70));
-      box-shadow:inset 0 1px 0 rgba(255,255,255,.90), 0 8px 20px rgba(15,23,42,.05);
-      -webkit-backdrop-filter:blur(14px) saturate(1.18);
-      backdrop-filter:blur(14px) saturate(1.18);
-    }
-    .range-time-filter > span {
-      padding:0 4px 0 7px;
-      color:#748093;
-      font-size:11px;
-      font-weight:850;
-      white-space:nowrap;
-    }
-    .range-time-filter label {
-      height:28px;
-      display:grid;
-      grid-template-columns:auto minmax(0,1fr);
-      align-items:center;
-      gap:5px;
-      padding:0 7px;
-      border:1px solid rgba(226,232,240,.80);
-      border-radius:10px;
-      background:rgba(255,255,255,.64);
-      box-shadow:inset 0 1px 0 rgba(255,255,255,.82);
-    }
-    .range-time-filter em {
-      color:#8a94a5;
-      font-size:10px;
-      font-style:normal;
-      font-weight:820;
-    }
-    .range-time-filter input {
-      width:100%;
-      min-width:0;
-      height:24px;
-      border:0;
-      outline:0;
-      color:#1f2937;
-      background:transparent;
-      font:inherit;
-      font-size:11px;
-      font-weight:820;
-    }
-    .range-time-filter label:focus-within {
-      border-color:rgba(10,132,255,.36);
-      box-shadow:0 0 0 3px rgba(10,132,255,.10), inset 0 1px 0 rgba(255,255,255,.92);
-    }
-    .range-time-filter button {
-      height:28px;
-      min-width:46px;
-      padding:0 11px;
-      border:0;
-      border-radius:10px;
-      color:#fff;
-      background:linear-gradient(180deg,#2d9bff,#0a84ff);
-      box-shadow:0 7px 16px rgba(10,132,255,.20), inset 0 1px 0 rgba(255,255,255,.34);
-      font-size:11px;
-      font-weight:900;
-    }
     .analytics-deferred {
       min-height:116px;
       display:grid;
@@ -807,19 +736,7 @@
 @media (max-width:1180px) {
       .page-head { grid-template-columns:1fr; }
       .page-head .filters { justify-content:flex-start; }
-      .range-time-filter { grid-template-columns:auto minmax(150px,1fr) minmax(150px,1fr) auto; }
     }
-    @media (max-width:760px) {
-      .range-time-filter {
-        width:100%;
-        grid-template-columns:1fr;
-        align-items:stretch;
-      }
-      .range-time-filter > span { padding:3px 6px 0; }
-      .range-time-filter button { width:100%; }
-    }
-
-
     /* 1.16.17 CodexBar native-grade date range popover + polish */
     .page-head,
     .page-head .filters {

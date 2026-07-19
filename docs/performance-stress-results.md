@@ -1,6 +1,6 @@
 # CodeArts Bar 性能压测结果
 
-文档更新：2026-07-16
+文档更新：2026-07-19
 
 历史性能基线版本：`1.16.33`
 
@@ -86,9 +86,9 @@ sessionPage=2ms
 ## 1.16.36 增量验证
 
 - Electron E2E 通过，Desktop 会话与请求分页已覆盖 `10 / 20 / 50 / 100`、页码跳转和范围摘要。
-- VS Code 1.129.0 隔离安装与扩展激活通过，会话跨页选择及批量 Excel/Markdown/JSON 导出通过。
+- VS Code 1.129.1 隔离安装与扩展激活通过，会话跨页选择及批量 Excel/Markdown/JSON 导出通过。
 - JetBrains Node 侧 runtime contract 通过，覆盖 native/sql.js 查询、筛选、分页、诊断和单个/批量导出。
-- JetBrains 查询 bundle 为 `126958` 字节，低于 `127000` 字节门禁；runtime JS 总体积约 `1236288` 字节，低于 `1240000` 字节门禁。
+- JetBrains 查询 bundle 为 `135757` 字节，低于 `136000` 字节门禁；runtime JS 总体积为 `1245181` 字节，低于 `1250000` 字节门禁。一次性 CLI 不打包桌面后台 rollup scheduler，显式 `query rollup` 仍保留同步构建；新增共享逻辑用于模型筛选 session 的 scoped sidecar 对账。
 - 使用 `D:\Develop\Java\jdk-21.0.10` 完成 Gradle 单元测试、构建、发布 ZIP smoke 和 Plugin Verifier；IntelliJ IDEA 2024.2、2024.3、2025.1、2025.2 均为 Compatible。
 - 当前发布 ZIP 为 `892415` 字节，低于 `950000` 字节门禁；旧版本 ZIP 不作为本轮验收证据。
 - 会话与请求分页压力测试通过；不同数据源的同名会话使用 `source:id` 区分。
@@ -111,3 +111,35 @@ sessionPage=2ms
 首次 rollup 进度、直接 SQL 回退和跨进程后台恢复加入后，JetBrains 查询 bundle 为 `135187` 字节，三份 runtime JS 合计 `1244611` 字节。对应门禁调整为 `136000` / `1250000` 字节；ZIP `950000` 字节总门禁不变。新增体积用于排队/扫描/写入阶段状态、脱敏状态文件、失败退避和独立后台恢复任务，不用于界面装饰。
 
 后续重新采样必须同时记录环境、版本、冷热状态和正确性断言；不能只比较一个更快但统计口径不同的数字。
+
+## 2026-07-19 最终聚合重采样
+
+以下数据来自本轮最终实现后的同一条 `npm run stress:aggregation:full`，不混用中间版本结果：
+
+| 数据量 | native 冷路径最大值 | SQL.js 冷路径最大值 | dashboard 首次 native / SQL.js | sidecar build | native 热路径最大值 | SQL.js 热路径最大值 |
+|---:|---:|---:|---:|---:|---:|---:|
+| 10k | 847.5ms | 2309.7ms | 427.8ms / 940.7ms | 380.6ms | 24.7ms | 26.6ms |
+| 50k | 3183.2ms | 8928.9ms | 2140.0ms / 4448.4ms | 1831.8ms | 40.7ms | 59.8ms |
+| 100k | 7036.6ms | 18473.4ms | 5380.0ms / 7808.9ms | 3539.4ms | 69.1ms | 90.4ms |
+
+Electron 主 dashboard 传入 `includeExtendedPerformance=false`，保留 token、趋势、模型 latency P95 和 session 统计，但跳过当前首屏未消费的首内容时间与输出速度 `part` enrichment。rollup miss 时直接构建并复用本次扫描，避免同一冷请求重复解析；完整 rollup 与 session sidecar 命中时，在打开 native/SQL.js 数据库前返回。`includeExtendedPerformance` 已进入 aggregate cache key，不会与完整性能结果互相污染。
+
+## 模型与项目筛选快路径
+
+模型筛选除了使用 compact model bucket，还必须让 session summary 只统计包含所选模型消息的会话。本轮用完整 token sidecar 先得到匹配模型、时间和项目的 session ID，再与 session sidecar 合并；没有把会话汇总退化成未筛选总数。
+
+| 数据量 | native 模型筛选最大值 / dashboard | SQL.js 模型筛选最大值 / dashboard | native 项目 dashboard | SQL.js 项目 dashboard |
+|---:|---:|---:|---:|---:|
+| 10k | 14.0ms / 14.0ms | 31.7ms / 13.2ms | 19.1ms | 11.5ms |
+| 50k | 35.3ms / 35.3ms | 126.1ms / 57.7ms | 35.1ms | 35.8ms |
+| 100k | 51.4ms / 51.4ms | 254.8ms / 48.6ms | 55.0ms | 34.3ms |
+
+SQL.js 模型筛选最大值出现在首次解析完整 token sidecar 的独立 session summary；随后 dashboard 复用已解析数据。三档数据的 native、SQL.js、rollup 与直接 SQL 总量、趋势、模型和 session 总数逐项对账通过，全部低于 50k/100k 的 `500ms` 热路径门禁。
+
+## 前端与质量门禁
+
+Desktop 前端按本地开发者分析工作台校准，参考 CC Switch 的浅色原生工具感和紧凑分组，同时保留分析产品所需的信息密度。最终使用冷灰画布、单一电蓝选中态、低动效和统一克制的圆角层级；补齐 keyboard focus、placeholder 与 disabled 对比度。样式 manifest 为 11 个域，生成 renderer `297561B`、CSS `201098B`，分别低于 `330000B / 206848B` 门禁。
+
+最终质量采样：冷聚合 `58.2ms`、热聚合中位数 `8.9ms`；core coverage lines/functions/branches 为 `84.20% / 81.64% / 68.57%`，全仓为 `29.83% / 69.04% / 64.98%`。Electron E2E 为 resize `78ms`、来源切换 `3ms`、请求分页 `3ms`、会话分页 `1ms`；VS Code 1.129.1 扩展宿主激活 `472ms`、刷新 `2ms`。
+
+标准、窄屏、宽屏、会话管理、日期弹层、VS Code tooltip 和空态共 7 个视觉基线已更新，重跑像素回归差异为 0。`npm test`、`metrics:check -- --skip-jetbrains`、全量聚合压力、Electron E2E、VS Code E2E 和视觉回归均通过。

@@ -1,6 +1,6 @@
 # CodeArts Bar 优化路线图
 
-最后更新：2026-07-16
+最后更新：2026-07-19
 
 适用版本：`1.16.36`
 
@@ -15,9 +15,9 @@
 下一阶段不优先增加图表或管理功能，重点是：
 
 1. 用真实数据库持续对账统计口径。
-2. 改善大数据库首次 rollup 构建体验。
+2. 继续降低大数据库无 sidecar 时的首次聚合成本。
 3. 守住跨端筛选、刷新稳定性和隐私边界。
-4. 让跨平台构建从“配置可用”走向“持续绿灯”。
+4. 用视觉基线守住开发者工作台的密度、对比度和多视口稳定性。
 
 ## 当前已落地基线
 
@@ -34,9 +34,12 @@
 | 跨端会话导出 | 已完成 | Desktop、VS Code 和 JetBrains 支持跨页多选与批量 Excel/Markdown/JSON，并统一过滤内置子任务 |
 | Snapshot 语义 | 已完成 | 截断列表显式携带 complete/sampled、历史总数和 scope，不能冒充完整历史 |
 | 隐私与只读 | 已完成 | SQL.js 只读、诊断脱敏、协议不暴露数据库路径或原始异常 |
-| JetBrains runtime | 已完成 | native/sql.js 查询契约一致，bundle 由 `<127000` 字节门禁约束 |
+| JetBrains runtime | 已完成 | native/sql.js 查询契约一致，query bundle 受 `136000` 字节、runtime JS 受 `1250000` 字节门禁约束 |
 | 跨平台 CI | 已配置 | macOS/Linux 执行测试、无签名构建、资源 smoke 和 artifact 上传；仍需持续获得真实绿灯 |
-| 100k 热路径 | 已完成 | sidecar 解析与规范化进程内复用，native/sql.js 热路径最大值分别为 140.2ms/165.2ms |
+| 100k 热路径 | 已完成 | sidecar 解析与规范化进程内复用，2026-07-19 native/sql.js 热路径最大值分别为 `69.1ms / 90.4ms` |
+| Electron lean dashboard | 已完成 | 首屏跳过未消费的 `part` 扩展性能；rollup miss 构建一次并复用，完整命中在开库前返回 |
+| 模型筛选 session rollup | 已完成 | token sidecar 先限定匹配 session，再与 session sidecar 合并，不以未筛选总数换性能 |
+| Desktop 视觉工作台 | 已完成 | 参考 CC Switch 的原生工具感，以冷灰、单一电蓝、紧凑控件和低动效完成校准；七场景视觉回归受 CI 保护 |
 
 ## 数据边界
 
@@ -71,9 +74,9 @@ Electron / VS Code / JetBrains / CLI
 
 ### P1：首次聚合体验
 
-- 为首次 rollup 构建提供明确状态、耗时阶段和失败原因。
-- 保证冷路径不会阻塞窗口交互；失败后可退回直接 SQL 并后台重建。
-- 继续缩短 50k/100k 首次聚合；当前合成数据基线已记录，脱敏多版本真实样本仍需扩充。
+- 已提供首次 rollup 的排队、扫描、写入、失败退避和跨进程恢复状态；继续补充真实失败样本。
+- 保证冷路径不阻塞窗口交互；失败后可退回直接 SQL 并后台重建。
+- 继续缩短 50k/100k 首次 SQL.js JSON 提取；当前 Electron lean dashboard 已避免未使用的 `part` enrichment，脱敏多版本真实样本仍需扩充。
 
 验收：热路径继续受门禁保护；冷路径有进度、有诊断、可恢复。
 
@@ -88,6 +91,7 @@ Electron / VS Code / JetBrains / CLI
 - 避免在 snapshot、聚合、分页和客户端各自复制统计规则。
 - 将 scope、完整性和 canonical/filtered 区别保留在协议中。
 - 删除已完成的旧任务，不以继续拆文件代替真实复杂度下降。
+- 前端新增样式必须进入显式 CSS source manifest 和预算 smoke；不在构建产物中手改。
 
 ## 每轮验证
 
@@ -96,7 +100,9 @@ npm test
 npm run e2e:electron
 npm run e2e:vscode
 npm run stress:pagination
-npm run stress:aggregation
+npm run stress:aggregation:full
+npm run metrics:check -- --skip-jetbrains
+npm run test:visual
 git diff --check
 ```
 

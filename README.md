@@ -6,7 +6,7 @@ CodeArts Bar 在本机读取 CodeArts Agent 生成的 SQLite 数据，提供 **W
 
 当前版本：**1.16.36**。
 
-[下载 Windows 版本](https://gitee.com/dtse01/codearts-bar/releases) · [安装 VS Code 扩展](#vs-code--codearts-扩展) · [使用 CLI](#cli) · [从源码运行](#从源码运行)
+[下载 Windows 版本](https://github.com/David-piex/codearts-bar/releases) · [安装 VS Code 扩展](#vs-code--codearts-扩展) · [使用 CLI](#cli) · [从源码运行](#从源码运行)
 
 ![CodeArts Bar 使用分析宽屏](docs/screenshots/dashboard-wide.png)
 
@@ -32,6 +32,7 @@ CodeArts Bar 在本机读取 CodeArts Agent 生成的 SQLite 数据，提供 **W
 - **会话导出**：Desktop、VS Code 和 JetBrains 支持跨页多选及批量 JSON、Markdown、真实 XLSX；CLI 支持单会话导出。
 - **导出隐私**：默认脱敏凭据、用户名和本机路径，不包含推理及工具输入输出；可在导出前调整内容范围。
 - **平滑冷启动**：先显示 Summary Skeleton 和核心指标，再在后台补趋势、模型及会话聚合。
+- **开发者工作台界面**：参考 CC Switch 的原生桌面工具感，使用冷灰画布、单一电蓝强调、紧凑分段控件和低动效信息层级；标准、窄屏、宽屏、会话与日期弹层均有视觉回归。
 
 ## 1.16.36 更新
 
@@ -43,7 +44,10 @@ CodeArts Bar 在本机读取 CodeArts Agent 生成的 SQLite 数据，提供 **W
 - Desktop 使用分析顶部补齐项目筛选，摘要、趋势、模型/来源统计和请求日志使用同一项目范围。
 - VS Code 会话导出统一收敛到勾选后的顶部工具栏，完整页与侧栏不再重复显示逐行 XLSX/MD/JSON 按钮；插件页头同步压缩为紧凑工具栏层级。
 - Windows 发布目录重命名增加最长 30 秒的 `EPERM`、`EBUSY`、`EACCES` 重试，提高杀毒扫描或文件索引占用时的打包稳定性。
-- 完整发布已通过 Electron E2E、VS Code 1.129.0 隔离安装、JetBrains 2024.2 至 2025.2 兼容验证和 LibreOffice XLSX 往返测试。
+- Electron 主 dashboard 使用 lean 聚合，跳过首屏未消费的 `part` 扩展性能查询；rollup 全命中时在打开 SQLite 前直接返回，冷 miss 则构建一次 sidecar 并复用扫描结果。
+- 模型筛选的会话汇总由完整 token sidecar 限定 session ID，再与 session sidecar 合并，保留模型与时间范围语义；10 万消息下 native / SQL.js dashboard 热路径分别为 `60.2ms / 52.6ms`，模型筛选 dashboard 为 `51.4ms / 48.6ms`。
+- Desktop 前端按开发者分析工作台重新校准，参考 CC Switch 的紧凑原生控件与清晰分组，统一电蓝选中态、焦点环、placeholder 和 disabled 对比度，并更新七场景视觉基线与 README 截图。
+- 完整发布已通过 Electron E2E、VS Code 1.129.1 隔离安装、JetBrains 2024.2 至 2025.2 兼容验证和 LibreOffice XLSX 往返测试。
 
 ## 界面预览
 
@@ -73,7 +77,7 @@ CodeArts Bar 在本机读取 CodeArts Agent 生成的 SQLite 数据，提供 **W
 
 ### Windows 安装版与便携版
 
-打开 [Gitee Releases](https://gitee.com/dtse01/codearts-bar/releases)，按需要下载：
+打开 [GitHub Releases](https://github.com/David-piex/codearts-bar/releases)，按需要下载：
 
 - `CodeArts-Bar-Setup-<version>-x64.exe`：带安装向导、开始菜单与卸载入口。
 - `CodeArts-Bar-Portable-<version>-x64.exe`：免安装，适合 U 盘或临时使用。
@@ -149,7 +153,7 @@ codearts-bar config set --db "D:\path\to\opencode.db"
 - Windows 10/11（构建 Windows 安装包时）
 
 ```powershell
-git clone https://gitee.com/dtse01/codearts-bar.git
+git clone https://github.com/David-piex/codearts-bar.git
 cd codearts-bar
 npm ci
 npm start
@@ -239,6 +243,8 @@ CodeArts Bar 不估算或反向推测 token。它读取本地 `opencode.db` 中 
 3. 趋势、模型、来源和会话统计在后台补齐。
 4. `sql.js + wasm` 冷路径超过 300ms 时显示“正在建立缓存...”。
 
+Electron 首屏 dashboard 只请求当前界面消费的 token、趋势、模型延迟和会话统计，不扫描未使用的首内容时间与输出速度 `part` 数据。完整 sidecar 缺失时，同一次冷扫描会同时生成可复用 rollup；命中后 native 与 SQL.js 都可在开库前完成 dashboard 聚合。模型筛选仍会按匹配消息限定会话，不会退化成未筛选的会话总数。
+
 数据库监听覆盖主数据库、WAL、SHM、touch 文件与相关目录。Dashboard 可见时默认每 4 秒兜底检查，隐藏到托盘后降为 15 秒，以减少后台占用。
 
 ## 已知限制
@@ -257,6 +263,8 @@ npm test                     # 单元、Smoke、跨平台 CLI 和流水线契约
 npm run verify               # 完整本地验证，包含 Electron 与 VS Code E2E
 npm run verify:ci            # Windows CI：验证、压力测试和视觉回归
 npm run test:visual          # 七场景像素回归
+npm run stress:aggregation:full # 10k / 50k / 100k 完整聚合与 sidecar 压力测试
+npm run metrics:check -- --skip-jetbrains # 体积、覆盖率和质量趋势门禁
 npm run build:extension      # 生成 release/codearts-bar-status.vsix
 npm run build:jetbrains      # 生成 JetBrains 插件 ZIP（需要 JDK 21+ 或带 javac 的 IDEA JBR 21+）
 npm run build:app            # 生成 Windows 安装版与便携版
@@ -264,7 +272,7 @@ npm run pack:npm             # 生成精简 npm 包
 node src/cli.js self-test --fixture-db tests/fixtures/opencode-fixture.db --config-dir .cache/self-test-config --now-ms 1783512000000
 ```
 
-Gitee Go 在分支、PR 和 `master` 上使用 Node.js 22 执行可跨平台的测试、压力测试、VSIX 与 npm 包构建。Windows 安装包由 Windows CI 构建并执行 ASAR/资源校验。
+GitHub Actions 在分支、PR 和 `master` 上使用 Node.js 22 执行可跨平台的测试、压力测试、VSIX 与 npm 包构建。Windows 安装包由 Windows CI 构建并执行 ASAR/资源校验。
 
 更新 README 截图：
 
@@ -279,8 +287,7 @@ src/                 Electron、CLI、聚合与共享业务源码
 extension/           VS Code / CodeArts 扩展运行时和 Webview
 jetbrains-plugin/    IntelliJ Platform 插件、工具窗口和状态栏组件
 tests/               单测、E2E、压力测试与视觉回归
-.workflow/           Gitee Go 流水线
-.github/workflows/   Windows CI
+.github/workflows/   GitHub Actions 与 Windows CI
 docs/screenshots/    README 与视觉回归截图
 ```
 

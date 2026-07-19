@@ -49,7 +49,9 @@
     "build:jetbrains": "node src/run-jetbrains-gradle.js clean test verifyPlugin buildPlugin",
     "verify:jetbrains": "node src/run-jetbrains-gradle.js clean test verifyPlugin buildPlugin && node tests/jetbrains-plugin-smoke.js && node tests/quality-jetbrains.js",
     "metrics": "npm run build:renderer && npm run coverage && node tests/quality-metrics.js",
-    "coverage": "c8 --exclude=src/vendor/** --reporter=text --reporter=json-summary --reports-dir=.cache/coverage node tests/coverage-runner.js",
+    "coverage": "npm run coverage:core && npm run coverage:all",
+    "coverage:core": "c8 --exclude=src/vendor/** --reporter=text --reporter=json-summary --reports-dir=.cache/coverage node tests/coverage-runner.js",
+    "coverage:all": "c8 --all --include=src/**/*.js --include=extension/**/*.js --exclude=src/vendor/** --exclude=src/dashboard-renderer.js --exclude=src/build-*.js --exclude=src/prepare-extension.js --exclude=src/release*.js --reporter=text-summary --reporter=json-summary --reports-dir=.cache/coverage-all node tests/coverage-runner.js",
     "metrics:check": "npm run metrics && node tests/quality-trend.js"
   },
   "keywords": [
@@ -169,6 +171,6 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://gitee.com/dtse01/codearts-bar.git"
+    "url": "https://github.com/David-piex/codearts-bar.git"
   }
 }

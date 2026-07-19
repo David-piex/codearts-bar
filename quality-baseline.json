@@ -13,6 +13,9 @@
     },
     "coverageLinesMin": 75,
     "coverageFunctionsMin": 73,
-    "coverageBranchesMin": 55
+    "coverageBranchesMin": 55,
+    "coverageAllLinesMin": 28,
+    "coverageAllFunctionsMin": 67,
+    "coverageAllBranchesMin": 60
   }
 }

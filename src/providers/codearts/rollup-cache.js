@@ -7,7 +7,7 @@ const { rollupCacheDir, rollupCachePath } = require('../../settings');
 const { sqliteFileFingerprint } = require('./sqlite');
 const { writeJsonAtomic } = require('../../core/atomic-file');
 
-const ROLLUP_CACHE_SCHEMA_VERSION = 1;
+const ROLLUP_CACHE_SCHEMA_VERSION = 2;
 const DEFAULT_KIND = 'usage-rollup';
 const PARSED_CACHE_LIMIT = 8;
 const parsedEnvelopes = new Map();

@@ -15,6 +15,10 @@ function size(file) { try { return fs.statSync(path.join(root, file)).size; } ca
 function sha256(file) { return crypto.createHash('sha256').update(fs.readFileSync(path.join(root, file))).digest('hex'); }
 function count(dir, ext) { let n = 0; for (const e of fs.readdirSync(path.join(root, dir), { withFileTypes: true })) { const p = path.join(dir, e.name); if (e.isDirectory()) n += count(p, ext); else if (e.name.endsWith(ext)) n++; } return n; }
 function median(values) { const sorted = [...values].sort((a, b) => a - b); return sorted[Math.floor(sorted.length / 2)]; }
+function readCoverage(relativePath) {
+  try { return JSON.parse(fs.readFileSync(path.join(root, relativePath), 'utf8')).total; }
+  catch { return null; }
+}
 function currentCommit() {
   if (process.env.GITHUB_SHA) return process.env.GITHUB_SHA;
   try { return execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim(); }
@@ -27,8 +31,8 @@ async function main() {
   const warmSamples = [];
   let snapshot = cold.snapshot;
   for (let i = 0; i < 3; i += 1) { const sample = await timedSnapshot(getSnapshotWithCache); warmSamples.push(sample.ms); snapshot = sample.snapshot; }
-  let coverage = null;
-  try { coverage = JSON.parse(fs.readFileSync(path.join(root, '.cache/coverage/coverage-summary.json'), 'utf8')).total; } catch {}
+  const coverage = readCoverage('.cache/coverage/coverage-summary.json');
+  const coverageAll = readCoverage('.cache/coverage-all/coverage-summary.json');
   const metrics = {
     schemaVersion: 2,
     generatedAt: new Date(fixtureNow).toISOString(),
@@ -43,6 +47,7 @@ async function main() {
     runtime: { snapshotMs: median(warmSamples), coldSnapshotMs: cold.ms, warmSamplesMs: warmSamples, adapter: snapshot.adapter || '', messages: snapshot.usage?.all?.messages || 0 },
     source: { jsFiles: count('src', '.js'), testFiles: count('tests', '.js') },
     coverage,
+    coverageAll,
   };
   const out = path.join(root, '.cache', 'quality-metrics.json');
   fs.mkdirSync(path.dirname(out), { recursive: true });

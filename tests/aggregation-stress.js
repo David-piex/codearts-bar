@@ -135,6 +135,7 @@ async function measure(label, fn) {
 
 async function runRuntime(runtime, dbPath, payload, options = {}) {
   const expectRollup = options.expectRollup === true;
+  const expectSessionRollup = options.expectSessionRollup ?? expectRollup;
   const api = runtime === "native" ? {
     summary: aggregation.getSummaryNative,
     trend: aggregation.getTrendBucketsNative,
@@ -171,6 +172,8 @@ async function runRuntime(runtime, dbPath, payload, options = {}) {
     assert.ok(summary.perf?.usageRollup?.hits >= 1, `${runtime} summary should use sidecar rollup hot path`);
     assert.ok(trend.perf?.usageRollup?.hits >= 1, `${runtime} trend should use sidecar rollup hot path`);
     assert.ok(modelStats.perf?.usageRollup?.hits >= 1, `${runtime} model stats should use sidecar rollup hot path`);
+  }
+  if (expectSessionRollup) {
     assert.ok(sessionSummary.perf?.usageRollup?.sessionHits >= 1, `${runtime} session summary should use sidecar rollup hot path`);
   }
   assert.equal(dashboard.usage?.all?.messages, summary.usage?.all?.messages, `${runtime} bundle summary should match standalone summary`);
@@ -229,6 +232,26 @@ async function runSize(messageCount) {
       : qualityBaseline.limits.aggregationHotPathMsMax.small;
     assert.ok(nativeHot.maxMs < hotBudgetMs, `native sidecar hot path should stay below ${hotBudgetMs}ms for ${messageCount}, got ${nativeHot.maxMs}ms`);
     assert.ok(sqljsHot.maxMs < hotBudgetMs, `sql.js sidecar hot path should stay below ${hotBudgetMs}ms for ${messageCount}, got ${sqljsHot.maxMs}ms`);
+    const modelPayload = { ...payload, model: [MODELS[0], MODELS[1]] };
+    aggregateCache.clearAggregateCache();
+    usageRollup.resetUsageRollupStats();
+    const nativeModelHot = await runRuntime("native", dbPath, modelPayload, { expectRollup: true, expectSessionRollup: false });
+    aggregateCache.clearAggregateCache();
+    usageRollup.resetUsageRollupStats();
+    await aggregation.clearSqlJsWorkerCaches();
+    const sqljsModelHot = await runRuntime("sql.js", dbPath, modelPayload, { expectRollup: true, expectSessionRollup: false });
+    assert.ok(nativeModelHot.maxMs < hotBudgetMs, `native filtered rollup hot path should stay below ${hotBudgetMs}ms for ${messageCount}, got ${nativeModelHot.maxMs}ms`);
+    assert.ok(sqljsModelHot.maxMs < hotBudgetMs, `sql.js filtered rollup hot path should stay below ${hotBudgetMs}ms for ${messageCount}, got ${sqljsModelHot.maxMs}ms`);
+    const projectPayload = { ...payload, project: [`C:/stress/project-${messageCount % 64}`, `C:/stress/project-${(messageCount + 1) % 64}`] };
+    aggregateCache.clearAggregateCache();
+    usageRollup.resetUsageRollupStats();
+    const nativeProjectHot = await runRuntime("native", dbPath, projectPayload, { expectRollup: true, expectSessionRollup: false });
+    aggregateCache.clearAggregateCache();
+    usageRollup.resetUsageRollupStats();
+    await aggregation.clearSqlJsWorkerCaches();
+    const sqljsProjectHot = await runRuntime("sql.js", dbPath, projectPayload, { expectRollup: true, expectSessionRollup: false });
+    assert.ok(nativeProjectHot.maxMs < hotBudgetMs, `native project-filtered rollup hot path should stay below ${hotBudgetMs}ms for ${messageCount}, got ${nativeProjectHot.maxMs}ms`);
+    assert.ok(sqljsProjectHot.maxMs < hotBudgetMs, `sql.js project-filtered rollup hot path should stay below ${hotBudgetMs}ms for ${messageCount}, got ${sqljsProjectHot.maxMs}ms`);
     const slowStats = aggregation.slowAggregateStats();
     if (Math.max(native.maxMs, sqljs.maxMs) >= payload.slowAggregateMs) {
       assert.ok(slowStats.count > 0, "slow aggregate stats should capture cold-path slow queries");
@@ -240,6 +263,8 @@ async function runSize(messageCount) {
     console.log(`ok - aggregation stress messages=${messageCount} sessions=${sessions} nativeMax=${native.maxMs}ms sqljsMax=${sqljs.maxMs}ms`);
     console.log(`     native ${JSON.stringify(native.timings)} sql.js ${JSON.stringify(sqljs.timings)}`);
     console.log(`     sidecar build=${Number(built.ms.toFixed(1))}ms nativeHot ${JSON.stringify(nativeHot.timings)} sqljsHot ${JSON.stringify(sqljsHot.timings)}`);
+    console.log(`     filtered nativeHot ${JSON.stringify(nativeModelHot.timings)} sqljsHot ${JSON.stringify(sqljsModelHot.timings)}`);
+    console.log(`     project-filtered nativeHot ${JSON.stringify(nativeProjectHot.timings)} sqljsHot ${JSON.stringify(sqljsProjectHot.timings)}`);
     console.log(`     slowAggregates count=${slowStats.count} max=${Number(slowStats.maxMs || 0).toFixed(1)}ms labels=${Object.keys(slowStats.byLabel || {}).join(",")}`);
   } finally {
     if (previousConfigDir == null) delete process.env.CODEARTS_BAR_CONFIG_DIR;

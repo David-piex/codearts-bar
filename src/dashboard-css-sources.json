@@ -8,5 +8,6 @@
   "styles/domain-responsive.css",
   "styles/domain-native.css",
   "styles/domain-semantic.css",
-  "styles/domain-workbench.css"
+  "styles/domain-workbench.css",
+  "styles/domain-taste.css"
 ]

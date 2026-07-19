@@ -327,7 +327,7 @@ function makeLightSnapshotFromAggregates(aggregates = {}, payload = {}, options 
 
 async function buildInitialSummarySnapshot(payload = {}, canonicalSnapshot = null) {
   const timestamp = Number(payload.timestamp || Date.now());
-  const basePayload = dashboardAggregatePayload({ ...payload, timestamp });
+  const basePayload = dashboardAggregatePayload({ ...payload, timestamp, includeExtendedPerformance: false });
   const summary = await localProvider.getSummary(basePayload);
   if (!summary?.ok || !summary.usage) throw new Error(summary?.error || '\u65e0\u6cd5\u8bfb\u53d6 CodeArts \u4f7f\u7528\u6458\u8981');
   const snap = makeLightSnapshotFromAggregates({
@@ -348,7 +348,7 @@ async function buildInitialSummarySnapshot(payload = {}, canonicalSnapshot = nul
 
 async function buildInitialLightSnapshot(payload = {}, canonicalSnapshot = null) {
   const timestamp = Number(payload.timestamp || Date.now());
-  const basePayload = dashboardAggregatePayload({ ...payload, timestamp });
+  const basePayload = dashboardAggregatePayload({ ...payload, timestamp, includeExtendedPerformance: false });
   const bucketMs = Number(basePayload.bucketMs || 3600000);
   const requestPayload = defaultRequestPagePayload(payload);
   const sessionPayload = defaultSessionPagePayload(payload);
@@ -370,7 +370,7 @@ async function buildInitialLightSnapshot(payload = {}, canonicalSnapshot = null)
 
 async function buildDashboardLightPair(fullBase, payload = {}, canonicalSnapshot = null) {
   const timestamp = Number(payload.timestamp || Date.now());
-  const basePayload = dashboardAggregatePayload({ ...payload, timestamp });
+  const basePayload = dashboardAggregatePayload({ ...payload, timestamp, includeExtendedPerformance: false });
   const dayMode = Number(basePayload.bucketMs || 3600000) >= 86400000;
   const requestPayload = defaultRequestPagePayload(payload);
   const sessionPayload = defaultSessionPagePayload(payload);

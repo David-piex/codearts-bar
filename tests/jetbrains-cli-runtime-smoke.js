@@ -77,6 +77,7 @@ try {
   const entrySource = fs.readFileSync(entry, 'utf8');
   assert.match(entrySource, /require\(["']sql\.js["']\)/, 'bundled CLI must load the packaged sql.js runtime as an external dependency');
   assert.equal(entrySource.includes('sql.js is a port of SQLite'), false, 'bundled CLI must not embed the sql.js implementation');
+  assert.equal(entrySource.includes('usage-rollup-worker-pool.js'), false, 'one-shot JetBrains CLI must not package the desktop rollup scheduler');
   assert.ok(
     fs.statSync(entry).size <= qualityBaseline.limits.jetbrainsQueryBundleBytesMax,
     `bundled CLI must stay within ${qualityBaseline.limits.jetbrainsQueryBundleBytesMax} bytes`,

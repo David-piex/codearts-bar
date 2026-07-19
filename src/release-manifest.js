@@ -63,13 +63,17 @@ function sha256SumsText(artifacts = []) {
   return artifacts.map((item) => `${item.sha256}  ${item.name}`).join('\n') + (artifacts.length ? '\n' : '');
 }
 
-function releaseNotesText({ version, generatedAt, artifacts = [] }) {
+function releaseNotesText({ version, generatedAt, artifacts = [], source = null }) {
   const rows = artifacts.length
     ? artifacts.map((item) => `| \`${item.name}\` | ${item.size} | \`${item.sha256}\` |`).join('\n')
     : '| \u6682\u65e0 | - | - |';
+  const sourceText = source
+    ? `\nSource commit: \`${source.commit}\`  \nSource tree SHA256: \`${source.treeSha256}\`  \nTracked worktree: ${source.dirty ? 'dirty' : 'clean'}\n`
+    : '';
   return `# CodeArts Bar ${version}
 
 \u751f\u6210\u65f6\u95f4\uff1a${generatedAt}
+${sourceText}
 
 ## \u5f00\u6e90\u7248\u53d1\u5e03\u8bf4\u660e
 
@@ -97,10 +101,11 @@ function writeReleaseManifest(options = {}) {
   const artifactNames = options.artifactNames || [];
   if (!artifactNames.length) throw new Error('writeReleaseManifest requires artifactNames');
   const artifacts = requireArtifacts(releaseDir, artifactNames);
-  const latest = { version, generatedAt, artifacts };
+  const source = options.source || null;
+  const latest = { version, generatedAt, ...(source ? { source } : {}), artifacts };
   fs.writeFileSync(path.join(releaseDir, 'latest.json'), JSON.stringify(latest, null, 2), 'utf8');
   fs.writeFileSync(path.join(releaseDir, 'SHA256SUMS.txt'), sha256SumsText(artifacts), 'utf8');
-  fs.writeFileSync(path.join(releaseDir, 'RELEASE_NOTES.md'), releaseNotesText({ version, generatedAt, artifacts }), 'utf8');
+  fs.writeFileSync(path.join(releaseDir, 'RELEASE_NOTES.md'), releaseNotesText({ version, generatedAt, artifacts, source }), 'utf8');
   return latest;
 }
 
@@ -125,6 +130,11 @@ function verifyReleaseManifest(options = {}) {
   if (!fs.existsSync(latestFile) || !fs.existsSync(sumsFile)) throw new Error('Release manifest files are missing');
   const latest = JSON.parse(fs.readFileSync(latestFile, 'utf8').replace(/^\uFEFF/, ''));
   if (expectedVersion && latest.version !== expectedVersion) throw new Error(`latest.json version mismatch: expected ${expectedVersion}, got ${latest.version || '<missing>'}`);
+  if (options.source) {
+    for (const key of ['commit', 'treeSha256', 'dirty', 'trackedFiles']) {
+      if (latest.source?.[key] !== options.source[key]) throw new Error(`latest.json source identity mismatch for ${key}`);
+    }
+  }
   const sums = parseSha256Sums(fs.readFileSync(sumsFile, 'utf8'));
   const listed = (latest.artifacts || []).map((item) => item.name).sort((a, b) => a.localeCompare(b));
   if (JSON.stringify(listed) !== JSON.stringify(artifactNames)) throw new Error('latest.json artifact set does not match required release artifacts');

@@ -145,7 +145,9 @@ function testAggregator() {
   assert.equal(sourceQueries.sourceMatchesPayload({ id:'cli' }, { source:['desktop', 'cli'] }), true);
   assert.equal(sourceQueries.sourceMatchesPayload({ id:'custom' }, { source:['desktop', 'cli'] }), false);
   assert.equal(dashboardUsageRollup.canUseSessionSummaryRollup({ model:'m' }), false, 'model-filtered session summaries must bypass unscoped rollups');
-  assert.equal(dashboardUsageRollup.canUseUsageRollup({ project:'C:/one' }), false, 'project-filtered token analytics must bypass unscoped rollups');
+  assert.equal(dashboardUsageRollup.canUseScopedSessionSummaryRollup({ model:'m' }), true, 'model-filtered session summaries should use token-scoped rollups');
+  assert.equal(dashboardUsageRollup.canUseScopedSessionSummaryRollup({ model:'m', query:'needle' }), false, 'session search must bypass token-scoped rollups');
+  assert.equal(dashboardUsageRollup.canUseUsageRollup({ project:'C:/one' }), true, 'project-filtered token analytics should reuse scoped token rollups');
   assert.equal(dashboardUsageRollup.canUseSessionSummaryRollup({ project:['C:/one', 'C:/two'] }), false, 'multi-project session summaries must bypass single-project rollups');
   assert.equal(agg.percentile([10, 20, 30, 40], 95), 40);
   const largeSummary = agg.summarize(Array.from({ length: 150000 }, (_, index) => index));
@@ -389,6 +391,26 @@ function testRollupExclusiveEndBoundaries() {
     ],
   }, { project: '__none', timestamp: endExclusive });
   assert.equal(unassigned.total, 2, 'session rollups must map blank directories to the __none project filter');
+  const modelScoped = usageRollupCalc.sessionSummaryPartFromScopedRollups({
+    source: { id: 'unit', label: 'Unit' },
+    sessions: [
+      { id: 's1', directory: 'C:/one', timeUpdated: endExclusive - 2 },
+      { id: 's2', directory: 'C:/two', timeUpdated: endExclusive - 1 },
+      { id: 's3', directory: 'C:/one', timeUpdated: endExclusive - 1 },
+    ],
+  }, {
+    rows: [
+      { sessionId: 's1', model: 'm1', directory: 'C:/one', timeCreated: endExclusive - 2 },
+      { sessionId: 's2', model: 'm2', directory: 'C:/two', timeCreated: endExclusive - 1 },
+      { sessionId: 's3', model: 'm2', directory: 'C:/one', timeCreated: endExclusive - 1 },
+    ],
+  }, {
+    model: ['m2'],
+    project: ['C:/one', 'C:/two'],
+    range: { start: endExclusive - hour, endExclusive },
+    timestamp: endExclusive,
+  });
+  assert.equal(modelScoped.total, 2, 'scoped session rollups must retain only sessions matching token model and range filters');
   const compactRows = [
     { start: endExclusive - hour, end: endExclusive, total: 7, messages: 1 },
     { start: endExclusive, end: endExclusive + hour, total: 101, messages: 1 },
@@ -698,6 +720,21 @@ async function testProviderDbAggregates() {
     assert.equal(dashboard.modelStats[0].performance.latency.p95, models.items[0].performance.latency.p95);
     assert.equal(JSON.stringify(dashboard).includes('_latencyValues'), false, 'single-source dashboard payload must not expose internal percentile samples');
 
+    const leanDashboard = await localProvider.getDashboardAggregates({
+      dbPath,
+      timestamp,
+      range: { start: 0, end: Date.UTC(2030, 0, 1) },
+      bucketMs: 86400000,
+      disableAggregateCache: true,
+      disableUsageRollup: true,
+      includeExtendedPerformance: false,
+    });
+    assert.equal(leanDashboard.ok, true);
+    assert.equal(leanDashboard.usage.all.total, dashboard.usage.all.total, 'lean dashboard must preserve token totals');
+    assert.equal(leanDashboard.buckets[0].latencyP95, dashboard.buckets[0].latencyP95, 'lean dashboard must preserve latency percentiles');
+    assert.equal(leanDashboard.modelStats[0].performance.firstContentApprox.count, 0, 'lean dashboard should skip part enrichment');
+    assert.equal(leanDashboard.modelStats[0].performance.outputTokensPerSec.count, 0, 'lean dashboard should skip derived speed enrichment');
+
     const health = await localProvider.getDatabaseHealth({ dbPath });
     assert.equal(health.items[0].quickCheck, 'ok');
     assert.equal(health.items[0].messageCount, 5);
@@ -924,6 +961,7 @@ async function testDashboardUsageRollupCache() {
   process.env.CODEARTS_BAR_FORCE_SQLJS = '1';
   process.env.CODEARTS_BAR_CONFIG_DIR = path.join(tmpDir, 'config');
   process.env.CODEARTS_BAR_DISABLE_USAGE_ROLLUP_BUILD = '1';
+  dashboardUsageRollup.resetUsageRollupStats();
   try {
     const payload = {
       dbPath,
@@ -967,6 +1005,66 @@ async function testDashboardUsageRollupCache() {
     assert.equal(second.perf.usageRollup.statuses[0].sessionStatus, 'session-hit');
     assert.equal(second.sessionSummary.total, first.sessionSummary.total);
     assert.ok(second.perf.usageRollup.statuses[0].compactBuckets >= 1);
+
+    const selectedModels = [...new Set(built.rows.map((row) => row.model))].slice(0, 2);
+    const modelPayload = { ...payload, model: selectedModels };
+    assert.equal(
+      usageRollupCalc.compactRollupIsSafeForDashboard(compact, {
+        payload: modelPayload,
+        windows,
+        trendRange: aggregationRuntime.normalizeTrendRange(modelPayload),
+      }),
+      true,
+    );
+    const modelDirect = await localProvider.getDashboardAggregates({
+      ...modelPayload,
+      disableUsageRollup: true,
+    });
+    const modelFilteredFast = await localProvider.getDashboardAggregates(modelPayload);
+    assert.equal(modelFilteredFast.usage.all.total, modelDirect.usage.all.total);
+    assert.deepEqual(modelFilteredFast.buckets.map((row) => row.total), modelDirect.buckets.map((row) => row.total));
+    assert.deepEqual(modelFilteredFast.modelStats.map((row) => row.total), modelDirect.modelStats.map((row) => row.total));
+    assert.equal(modelFilteredFast.sessionSummary.total, modelDirect.sessionSummary.total);
+    assert.equal(modelFilteredFast.perf.usageRollup.compactHits, 1);
+    assert.equal(modelFilteredFast.perf.usageRollup.statuses[0].status, 'compact-hit');
+    assert.ok(modelFilteredFast.modelStats.every((row) => selectedModels.includes(row.model)));
+
+    const selectedProjects = [...new Set(built.rows.map((row) => row.directory).filter((directory) => directory))].slice(0, 2);
+    assert.ok(selectedProjects.length >= 1, 'fixture rollup should retain session project directories');
+    const projectPayload = { ...payload, project: selectedProjects };
+    assert.equal(
+      usageRollupCalc.compactRollupIsSafeForDashboard(compact, {
+        payload: projectPayload,
+        windows,
+        trendRange: aggregationRuntime.normalizeTrendRange(projectPayload),
+      }),
+      false,
+    );
+    const projectDirect = await localProvider.getDashboardAggregates({
+      ...projectPayload,
+      disableUsageRollup: true,
+    });
+    const projectFast = await localProvider.getDashboardAggregates(projectPayload);
+    assert.equal(projectFast.usage.all.total, projectDirect.usage.all.total);
+    assert.deepEqual(projectFast.buckets.map((row) => row.total), projectDirect.buckets.map((row) => row.total));
+    assert.deepEqual(projectFast.modelStats.map((row) => row.total), projectDirect.modelStats.map((row) => row.total));
+    assert.equal(projectFast.sessionSummary.total, projectDirect.sessionSummary.total);
+    assert.equal(projectFast.perf.usageRollup.hits, 1);
+    assert.equal(projectFast.perf.usageRollup.compactHits, 0);
+    assert.equal(projectFast.perf.usageRollup.statuses[0].status, 'hit');
+
+    const movedSessionId = built.rows.find((row) => row.directory)?.sessionId;
+    const movedRow = built.rows.find((row) => row.sessionId === movedSessionId);
+    const movedDirectory = `${movedRow.directory}-moved`;
+    const movedDb = new DatabaseSync(dbPath);
+    try {
+      movedDb.prepare('update session set directory = ? where id = ?').run(movedDirectory, movedSessionId);
+    } finally {
+      movedDb.close();
+    }
+    const afterSessionMove = await dashboardUsageRollup.buildAndWriteUsageRollupForSource({ id: 'custom', label: 'Custom', dbPath }, { adapter: 'sql.js' });
+    assert.equal(afterSessionMove.usageRollup.status, 'incremental-rebuilt');
+    assert.equal(afterSessionMove.rows.find((row) => row.sessionId === movedSessionId)?.directory, movedDirectory);
 
     const independentSessionSearch = await localProvider.getDashboardAggregates({
       ...payload,

@@ -263,6 +263,7 @@ function aggregatePayloadForView(s, extra = {}){
     generation: dashboardRequestGeneration,
     windowHours: Number(s?.config?.windowHours || 24),
     bucketMs: typeof isDayRange === 'function' && isDayRange() ? 86400000 : 3600000,
+    includeExtendedPerformance: false,
     ...extra,
   };
 }

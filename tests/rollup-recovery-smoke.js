@@ -47,6 +47,36 @@ function waitFor(predicate, timeoutMs = 5000) {
     assert.ok(['queued', 'running'].includes(direct.rollupState?.status));
     rollup.resetUsageRollupStats();
 
+    let finishOldBuild;
+    let oldBuildStarted = false;
+    rollup.scheduleUsageRollupBuild(source, {
+      delayMs: 0,
+      buildTask: () => new Promise((resolve) => {
+        oldBuildStarted = true;
+        finishOldBuild = resolve;
+      }),
+    });
+    await waitFor(() => oldBuildStarted);
+    rollup.resetUsageRollupStats();
+
+    let finishCurrentBuild;
+    let currentBuildStarted = false;
+    rollup.scheduleUsageRollupBuild(source, {
+      delayMs: 0,
+      buildTask: () => new Promise((resolve) => {
+        currentBuildStarted = true;
+        finishCurrentBuild = resolve;
+      }),
+    });
+    await waitFor(() => currentBuildStarted);
+    finishOldBuild({ usageRollup: { status: 'rebuilt', rowCount: 1 } });
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    assert.equal(rollup.usageRollupStats().pendingCount, 1, 'a stale completion must not remove the current generation pending build');
+    finishCurrentBuild({ usageRollup: { status: 'rebuilt', rowCount: 1 } });
+    await waitFor(() => rollup.usageRollupStats().pendingCount === 0);
+    assert.equal(rollup.usageRollupStats().buildCompleted, 1, 'only the current generation completion should update stats');
+    rollup.resetUsageRollupStats();
+
     let calls = 0;
     const observed = [];
     rollup.setUsageRollupStateListener((state) => observed.push(state));

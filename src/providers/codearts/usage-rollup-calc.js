@@ -1,9 +1,10 @@
 'use strict';
 
 const agg = require('../../core/aggregator');
-const { normalizeRange } = require('./sources');
+const { filterValues, normalizeRange } = require('./sources');
 
 const HOUR_MS = 60 * 60 * 1000;
+const sessionSummaryParts = new WeakMap();
 
 function toNumber(value, fallback = 0) {
   const n = Number(value);
@@ -39,6 +40,7 @@ function normalizeTokenRows(rows = []) {
   return (rows || []).map((row) => ({
     id: row.id,
     sessionId: row.sessionId,
+    directory: row.directory || '',
     timeCreated: toNumber(row.timeCreated),
     timeUpdated: toNumber(row.timeUpdated),
     provider: row.provider || 'unknown',
@@ -172,10 +174,18 @@ function buildCompactUsageRollup(source, rows = [], bucketMs = HOUR_MS) {
 }
 function filterRowsForPayload(rows = [], payload = {}) {
   const range = normalizeRange(payload.range || {});
+  const models = filterValues(payload.model);
+  const projects = filterValues(payload.project);
   return rows.filter((row) => {
     const time = toNumber(row.timeCreated);
     if (range.start && time < range.start) return false;
     if (range.end && time >= range.end) return false;
+    if (models.length && !models.includes(String(row.model || 'unknown'))) return false;
+    if (projects.length) {
+      const directory = String(row.directory || '');
+      const matchesUnassigned = projects.includes('__none') && !directory.trim();
+      if (!matchesUnassigned && !projects.includes(directory)) return false;
+    }
     return true;
   });
 }
@@ -212,6 +222,8 @@ function bucketBoundarySafe(boundary, minTime, maxTime, mode = 'start', bucketMs
 function compactRollupIsSafeForDashboard(compact, { payload = {}, windows = {}, trendRange = {} } = {}) {
   if (trendRange.calendarRebucket) return false;
   if (!compact || !Array.isArray(compact.hourly) || !compact.hourly.length) return false;
+  if (filterValues(payload.project).length) return false;
+  if (filterValues(payload.model).length && (!Array.isArray(compact.hourlyModels) || !compact.hourlyModels.length)) return false;
   const bucketMs = Math.max(60000, toNumber(compact.bucketMs, HOUR_MS));
   if (bucketMs !== HOUR_MS) return false;
   const trendBucketMs = Math.max(60000, toNumber(trendRange.bucketMs, HOUR_MS));
@@ -224,6 +236,13 @@ function compactRollupIsSafeForDashboard(compact, { payload = {}, windows = {}, 
   const ends = [range.end, trendRange.endExclusive ?? trendRange.end];
   return starts.every((value) => bucketBoundarySafe(value, minTime, maxTime, 'start', bucketMs))
     && ends.every((value) => bucketBoundarySafe(value, minTime, maxTime, 'end', bucketMs));
+}
+function compactRowsForPayload(compact, payload = {}) {
+  const models = filterValues(payload.model);
+  const rows = models.length ? compact.hourlyModels : compact.hourly;
+  return models.length
+    ? (rows || []).filter((row) => models.includes(String(row.model || 'unknown')))
+    : (rows || []);
 }
 function compactRowsInRange(rows = [], start = 0, end = 0) {
   const s = toNumber(start);
@@ -266,8 +285,10 @@ function trendBucketsFromCompact(compact, trendRange = {}) {
 }
 function modelStatsFromCompact(compact, payload = {}) {
   const range = normalizeRange(payload.range || {});
+  const models = filterValues(payload.model);
   const map = new Map();
   for (const row of compactRowsInRange(compact.hourlyModels || [], range.start, range.end)) {
+    if (models.length && !models.includes(String(row.model || 'unknown'))) continue;
     const provider = row.provider || 'unknown';
     const model = row.model || 'unknown';
     const key = `${provider} / ${model}`;
@@ -304,19 +325,25 @@ function modelStatsFromCompact(compact, payload = {}) {
     }, item.latencyValues);
   }).sort((a, b) => b.total - a.total);
 }
-function sessionSummaryPartFromRollup(rollup, payload = {}) {
-  const source = rollup.source || {};
+function scopedSessionRows(rows = [], payload = {}, sessionIds = null) {
   const range = normalizeRange(payload.range || {});
-  const project = payload.project && payload.project !== 'all' ? String(payload.project) : '';
-  const timestamp = Number(payload.timestamp || Date.now());
-  const weekAgo = timestamp - 7 * 86400000;
-  const sessions = normalizeSessionRows(rollup.sessions || []).filter((row) => {
+  const projects = filterValues(payload.project);
+  return normalizeSessionRows(rows).filter((row) => {
+    if (sessionIds && !sessionIds.has(String(row.id || ''))) return false;
     const updated = toNumber(row.timeUpdated);
     if (range.start && updated < range.start) return false;
     if (range.end && updated >= range.end) return false;
-    if (project === '__none' ? row.directory.trim() : project && row.directory !== project) return false;
+    if (projects.length) {
+      const directory = String(row.directory || '');
+      const matchesUnassigned = projects.includes('__none') && !directory.trim();
+      if (!matchesUnassigned && !projects.includes(directory)) return false;
+    }
     return true;
   });
+}
+function summarizeSessionRows(source = {}, sessions = [], payload = {}, usageRollup = null) {
+  const timestamp = Number(payload.timestamp || Date.now());
+  const weekAgo = timestamp - 7 * 86400000;
   const projects = new Map();
   let active = 0;
   let archived = 0;
@@ -332,7 +359,7 @@ function sessionSummaryPartFromRollup(rollup, payload = {}) {
     prev.updatedAt = Math.max(prev.updatedAt || 0, toNumber(row.timeUpdated));
     projects.set(key, prev);
   }
-  return {
+  const result = {
     source: source.id,
     sourceLabel: source.label,
     total: sessions.length,
@@ -340,8 +367,47 @@ function sessionSummaryPartFromRollup(rollup, payload = {}) {
     archived,
     recent7d,
     projects: [...projects.values()].sort((a, b) => b.count - a.count || b.updatedAt - a.updatedAt).slice(0, 20),
-    usageRollup: rollup.usageRollup || { status: 'session-hit', rowCount: sessions.length },
+    usageRollup: usageRollup || { status: 'session-hit', rowCount: sessions.length },
   };
+  return result;
+}
+function sessionSummaryPartFromRollup(rollup, payload = {}) {
+  const source = rollup.source || {};
+  const range = normalizeRange(payload.range || {});
+  const project = payload.project && payload.project !== 'all' ? String(payload.project) : '';
+  const timestamp = Number(payload.timestamp || Date.now());
+  const sessions = rollup.sessions || [];
+  const cacheKey = `${range.start}|${range.end}|${project}|${timestamp}`;
+  let cachedParts = sessionSummaryParts.get(sessions);
+  if (!cachedParts) {
+    cachedParts = new Map();
+    sessionSummaryParts.set(sessions, cachedParts);
+  }
+  const cached = cachedParts.get(cacheKey);
+  if (cached) return cached;
+  const result = summarizeSessionRows(
+    source,
+    scopedSessionRows(sessions, payload),
+    payload,
+    rollup.usageRollup,
+  );
+  cachedParts.set(cacheKey, result);
+  return result;
+}
+function sessionSummaryPartFromScopedRollups(sessionRollup, tokenRollup, payload = {}) {
+  const sessionIds = new Set(filterRowsForPayload(tokenRollup.rows || [], payload)
+    .map((row) => String(row.sessionId || ''))
+    .filter(Boolean));
+  return summarizeSessionRows(
+    sessionRollup.source || tokenRollup.source || {},
+    scopedSessionRows(sessionRollup.sessions || [], payload, sessionIds),
+    payload,
+    {
+      ...(sessionRollup.usageRollup || {}),
+      status: 'session-scoped-hit',
+      tokenRows: tokenRollup.usageRollup?.rowCount ?? tokenRollup.rows?.length ?? null,
+    },
+  );
 }
 function trendBucketsFromRows(rows = [], trendRange = {}) {
   const bucketMs = Math.max(60000, toNumber(trendRange.bucketMs, 3600000));
@@ -435,7 +501,8 @@ function modelStatsFromRows(rows = [], source = {}) {
 function dashboardPartFromCompactRollup(compact, { payload = {}, windows = {}, trendRange = {} } = {}) {
   const source = compact.source || {};
   const range = normalizeRange(payload.range || {});
-  const scoped = compactRowsInRange(compact.hourly || [], range.start, range.end);
+  const analyticsRows = compactRowsForPayload(compact, payload);
+  const scoped = compactRowsInRange(analyticsRows, range.start, range.end);
   // Summary and source totals never expose latency percentiles. Avoid copying
   // and sorting every latency sample four times before trend/model aggregation.
   const usageOnly = (predicate = null) => sumCompactRows(scoped, predicate, { includeLatency: false });
@@ -459,7 +526,10 @@ function dashboardPartFromCompactRollup(compact, { payload = {}, windows = {}, t
       ...all,
     },
     modelStats: modelStatsFromCompact(compact, payload),
-    trendBuckets: trendBucketsFromCompact(compact, trendRange),
+    trendBuckets: trendBucketsFromCompact(
+      analyticsRows === compact.hourly ? compact : { ...compact, hourly: analyticsRows },
+      trendRange,
+    ),
     sessionSummary: compact.sessionSummary || null,
     usageRollup: compact.usageRollup || { status: 'compact-hit', rowCount: compact.rowCount, compactBuckets: (compact.hourly || []).length },
   };
@@ -512,10 +582,12 @@ module.exports = {
   bucketBoundarySafe,
   compactRollupIsSafeForDashboard,
   compactRowsInRange,
+  compactRowsForPayload,
   sumCompactRows,
   trendBucketsFromCompact,
   modelStatsFromCompact,
   sessionSummaryPartFromRollup,
+  sessionSummaryPartFromScopedRollups,
   trendBucketsFromRows,
   modelStatsFromRows,
   dashboardPartFromCompactRollup,

@@ -6,9 +6,12 @@ const os = require('node:os');
 const path = require('node:path');
 const {
   artifactNames,
+  assertReleaseSource,
   releasePaths,
+  releaseSourceIdentity,
   sanitizedReleaseEnv,
   selfTestArguments,
+  trackedSourceHash,
   validateRequired,
 } = require('../src/release');
 
@@ -29,6 +32,14 @@ assert.deepEqual(artifactNames(version), [
   'codearts-bar-status.vsix',
   `codearts-bar-jetbrains-${version}.zip`,
 ]);
+const dirtySource = { commit: 'a'.repeat(40), treeSha256: 'b'.repeat(64), dirty: true, trackedFiles: 1 };
+assert.throws(() => assertReleaseSource({ sourceIdentity: dirtySource }), /clean tracked worktree/);
+assert.deepEqual(assertReleaseSource({ sourceIdentity: dirtySource, allowDirty: true }), dirtySource);
+const actualSource = releaseSourceIdentity();
+assert.match(actualSource.commit, /^[0-9a-f]{40}$/i);
+assert.match(actualSource.treeSha256, /^[0-9a-f]{64}$/i);
+assert.ok(actualSource.trackedFiles > 0);
+assert.equal(trackedSourceHash([]).trackedFiles, 0);
 
 const parent = fs.mkdtempSync(path.join(os.tmpdir(), 'codearts-bar-release-orchestration-'));
 try {

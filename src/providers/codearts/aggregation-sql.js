@@ -1,7 +1,7 @@
 'use strict';
 
 const agg = require('../../core/aggregator');
-const { assistantWhere, sessionWhere, resolveTimestamp } = require('./sources');
+const { assistantWhere, sessionWhere, resolveTimestamp, jsonExtractExpr } = require('./sources');
 
 const {
   safeNumber,
@@ -394,6 +394,7 @@ function aggregateBundleForSourceSql(args) {
   // token rows once keeps the exact SQL filtering/part-token semantics while
   // doing summaries, models, buckets, and percentiles in one JS pass.
   const { source, db, tables, queryAll, payload, sessionPayload = { ...payload, query: payload.sessionQuery || '' }, windows, trendRange } = args;
+  const includeExtendedPerformance = payload.includeExtendedPerformance !== false;
   const tokenRows = messageTokenRowsForSourceSql({ db, tables, queryAll, payload });
   const bucketMs = Math.max(60000, safeNumber(trendRange.bucketMs, 3600000));
   const bucketOffsetMs = safeNumber(trendRange.bucketOffsetMs, 0);
@@ -440,8 +441,8 @@ function aggregateBundleForSourceSql(args) {
     const usage = usageFor(modelRows.rows);
     const latencyValues = modelRows.latencyValues;
     const latency = agg.summarize(latencyValues);
-    const firstContent = agg.summarize(modelRows.rows.map((row) => row.firstContentMs));
-    const outputTokensPerSec = agg.summarize(modelRows.rows.map((row) => row.outputTokensPerSec));
+    const firstContent = includeExtendedPerformance ? agg.summarize(modelRows.rows.map((row) => row.firstContentMs)) : agg.summarize([]);
+    const outputTokensPerSec = includeExtendedPerformance ? agg.summarize(modelRows.rows.map((row) => row.outputTokensPerSec)) : agg.summarize([]);
     return {
       name: `${provider} / ${model}`,
       provider,
@@ -507,6 +508,7 @@ function aggregateBundleForSourceSql(args) {
 }
 
 function messageTokenRowsForSourceSql({ db, tables, queryAll, payload = {}, onProgress = null, estimatedRows = 0 }) {
+  const includeExtendedPerformance = payload.includeExtendedPerformance !== false;
   const { where, params } = assistantWhere(payload);
   const sql = `${assistantTokenCtes(tables, where, { materialized: true, excludePlaceholders: true })}
     select
@@ -514,6 +516,7 @@ function messageTokenRowsForSourceSql({ db, tables, queryAll, payload = {}, onPr
       session_id as sessionId,
       time_created as timeCreated,
       time_updated as timeUpdated,
+      coalesce((select directory from session rollup_session where rollup_session.id = assistant_tokens.session_id), '') as directory,
       provider,
       model,
       total,
@@ -534,31 +537,32 @@ function messageTokenRowsForSourceSql({ db, tables, queryAll, payload = {}, onPr
     totalRows: Math.max(rows.length, Number(estimatedRows || 0)),
   });
   const partTimes = new Map();
-  if (tables.includes('part') && rows.length) {
-    const ids = rows.map((row) => row.id);
-    const chunkSize = 400;
-    for (let offset = 0; offset < ids.length; offset += chunkSize) {
-      const chunk = ids.slice(offset, offset + chunkSize);
-      const placeholders = chunk.map(() => '?').join(',');
-      const parts = queryAll(db, `select message_id, time_created, data from part where message_id in (${placeholders}) order by time_created asc, id asc`, chunk);
-      for (const part of parts) {
-        const type = (() => { try { return JSON.parse(part.data || '{}').type || ''; } catch { return ''; } })();
-        if (type === 'step-start' || type === 'step-finish') continue;
-        if (!partTimes.has(part.message_id)) partTimes.set(part.message_id, Number(part.time_created || 0));
-      }
-      if (typeof onProgress === 'function') onProgress({
-        phase: 'enriching',
-        percent: 58 + Math.round((Math.min(ids.length, offset + chunk.length) / ids.length) * 14),
-        scannedRows: Math.min(ids.length, offset + chunk.length),
-        totalRows: Math.max(ids.length, Number(estimatedRows || 0)),
-      });
-    }
+  if (includeExtendedPerformance && tables.includes('part') && rows.length) {
+    // Resolve first-content timestamps in one indexed join. The old chunked
+    // IN queries multiplied SQL.js round trips by the message count.
+    const filtered = assistantWhere(payload, { outerAlias: 'm' });
+    const parts = queryAll(db, `with filtered_messages as (
+      select m.id
+      from message m
+      where ${filtered.where}
+    )
+    select p.message_id as messageId, min(p.time_created) as timeCreated
+    from part p
+    join filtered_messages fm on fm.id = p.message_id
+    where coalesce(${jsonExtractExpr('p.data', '$.type')}, '') not in ('step-start', 'step-finish')
+    group by p.message_id`, filtered.params);
+    for (const part of parts) partTimes.set(String(part.messageId || ''), Number(part.timeCreated || 0));
+    if (typeof onProgress === 'function') onProgress({
+      phase: 'enriching', percent: 72,
+      scannedRows: rows.length, totalRows: Math.max(rows.length, Number(estimatedRows || 0)),
+    });
   }
   return rows.map((row) => ({
     id: row.id,
     sessionId: row.sessionId,
     timeCreated: sqlNumber(row.timeCreated),
     timeUpdated: sqlNumber(row.timeUpdated),
+    directory: row.directory || '',
     provider: row.provider || 'unknown',
     model: row.model || 'unknown',
     total: sqlNumber(row.total),
@@ -570,9 +574,9 @@ function messageTokenRowsForSourceSql({ db, tables, queryAll, payload = {}, onPr
     messages: 1,
     errors: sqlNumber(row.error),
     latencyMs: row.latencyMs == null ? null : Number(row.latencyMs),
-    firstContentMs: partTimes.has(row.id) && Number(row.timeCreated || 0) > 0
+    firstContentMs: includeExtendedPerformance && partTimes.has(row.id) && Number(row.timeCreated || 0) > 0
       ? Math.max(0, partTimes.get(row.id) - Number(row.timeCreated || 0)) : null,
-    outputTokensPerSec: row.latencyMs != null && Number(row.latencyMs) > 0
+    outputTokensPerSec: includeExtendedPerformance && row.latencyMs != null && Number(row.latencyMs) > 0
       ? sqlNumber(row.output) / (Number(row.latencyMs) / 1000) : null,
   }));
 }

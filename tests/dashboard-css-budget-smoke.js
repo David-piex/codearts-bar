@@ -6,7 +6,7 @@ const root = path.resolve(__dirname, '..');
 const src = path.join(root, 'src');
 const baseline = require('../quality-baseline.json');
 const manifest = JSON.parse(fs.readFileSync(path.join(src, 'dashboard-css-sources.json'), 'utf8'));
-assert.equal(manifest.length, 10, 'dashboard CSS domain source count must not grow without an intentional budget update');
+assert.equal(manifest.length, 11, 'dashboard CSS domain source count must not grow without an intentional budget update');
 for (const owner of ['styles/domain-controls.css','styles/domain-sessions.css','styles/domain-chart.css','styles/domain-semantic.css','styles/domain-workbench.css']) assert.equal(manifest.includes(owner), true, `semantic owner missing from CSS manifest: ${owner}`);
 const source = manifest.map((rel) => fs.readFileSync(path.join(src, rel), 'utf8')).join('\n');
 const domainBudgets = {
@@ -20,6 +20,7 @@ const domainBudgets = {
   'styles/domain-native.css': { important:17, bytes:28 * 1024 },
   'styles/domain-semantic.css': { important:21, bytes:26 * 1024 },
   'styles/domain-workbench.css': { important:0, bytes:14 * 1024 },
+  'styles/domain-taste.css': { important:0, bytes:3 * 1024 },
 };
 for (const rel of manifest) {
   const domainSource = fs.readFileSync(path.join(src, rel), 'utf8');

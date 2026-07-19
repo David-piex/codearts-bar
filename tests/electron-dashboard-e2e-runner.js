@@ -480,6 +480,8 @@ async function main() {
   await waitFor(win, () => !document.body.classList.contains("is-refreshing"));
   const refreshedState = await evalIn(win, async () => {
     const content = document.querySelector(".content");
+    const maxScrollTop = Math.max(0, Number(content?.scrollHeight || 0) - Number(content?.clientHeight || 0));
+    const expectedScrollTop = Math.min(Number(window.__refreshStable.scrollTop || 0), maxScrollTop);
     const state = {
       appStable: document.querySelector("#app") === window.__refreshStable.app,
       filtersStable: document.querySelector("#analyticsFiltersSlot") === window.__refreshStable.filters,
@@ -487,7 +489,7 @@ async function main() {
       chartStable: document.querySelector("#usageChart") === window.__refreshStable.chart,
       tableStable: document.querySelector("#analyticsTableSlot") === window.__refreshStable.table,
       popoverStable: document.querySelector(".date-range-popover") === window.__refreshStable.popover,
-      scrollStable: Number(content?.scrollTop || 0) === window.__refreshStable.scrollTop,
+      scrollStable: Math.abs(Number(content?.scrollTop || 0) - expectedScrollTop) <= 1,
       summaryText: document.querySelector(".usage-total-value")?.textContent || "",
     };
     document.querySelector("[data-date-range-toggle]")?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, view: window }));
@@ -522,23 +524,26 @@ async function main() {
   await delay(120);
   const realtimeState = await evalIn(win, () => {
     const content = document.querySelector('.content');
+    const maxScrollTop = Math.max(0, Number(content?.scrollHeight || 0) - Number(content?.clientHeight || 0));
+    const expectedScrollTop = Math.min(Number(window.__realtimeStable.scrollTop || 0), maxScrollTop);
     return {
       appStable: document.querySelector('#app') === window.__realtimeStable.app,
       filtersStable: document.querySelector('#analyticsFiltersSlot') === window.__realtimeStable.filters,
       tableStable: document.querySelector('#analyticsTableSlot') === window.__realtimeStable.table,
       advancedStable: document.querySelector('#analyticsAdvancedSlot') === window.__realtimeStable.advanced,
-      scrollStable: Number(content?.scrollTop || 0) === window.__realtimeStable.scrollTop,
+      scrollStable: Math.abs(Number(content?.scrollTop || 0) - expectedScrollTop) <= 1,
+      scrollTop: Number(content?.scrollTop || 0),
+      expectedScrollTop,
+      maxScrollTop,
       summaryVisible: Boolean(document.querySelector('#analyticsSummarySlot .summary-card')),
     };
   });
-  assert.deepEqual(realtimeState, {
-    appStable: true,
-    filtersStable: true,
-    tableStable: true,
-    advancedStable: true,
-    scrollStable: true,
-    summaryVisible: true,
-  }, `realtime snapshot should not move or rebuild the active interface: ${JSON.stringify(realtimeState)} (before=${realtimeBefore})`);
+  assert.equal(realtimeState.appStable, true, `realtime snapshot should preserve app shell: ${JSON.stringify(realtimeState)}`);
+  assert.equal(realtimeState.filtersStable, true, `realtime snapshot should preserve filter shell: ${JSON.stringify(realtimeState)}`);
+  assert.equal(realtimeState.tableStable, true, `realtime snapshot should preserve table shell: ${JSON.stringify(realtimeState)}`);
+  assert.equal(realtimeState.advancedStable, true, `realtime snapshot should preserve advanced shell: ${JSON.stringify(realtimeState)}`);
+  assert.equal(realtimeState.summaryVisible, true, `realtime snapshot should keep summary visible: ${JSON.stringify(realtimeState)}`);
+  assert.equal(realtimeState.scrollStable, true, `realtime snapshot should preserve reachable scroll position: ${JSON.stringify(realtimeState)} (before=${realtimeBefore})`);
 
   const requestPaginationGeometry = await evalIn(win, (kind) => {
     const prefix = kind === 'sessions' ? 'session' : 'request';
@@ -671,6 +676,13 @@ async function main() {
   assert.ok(stages.includes("resizeStart"), "resize perf should include resizeStart");
   assert.ok(stages.includes("domPatch"), "resize perf should include domPatch");
   await setWindowSize(win, 1600, 900);
+  await waitFor(win, () => {
+    const canvas = document.querySelector("#usageChart");
+    return Boolean(canvas?.dataset?.sizeKey)
+      && !document.body.classList.contains("is-resizing")
+      && !document.getElementById("app")?.classList.contains("is-resizing");
+  });
+  await delay(80);
   await captureScenario(win, "desktop-wide-layout");
   assert.ok(stages.includes("chartRedraw") || stages.includes("sameSizeSkip"), "resize perf should include chart redraw or an explicit same-size skip");
   assert.ok(stages.includes("resizeEnd"), "resize perf should include resizeEnd");
@@ -680,7 +692,10 @@ async function main() {
     window.dispatchEvent(new Event("resize"));
     return { before: window.__e2eResizePerfStart, sizeKey: document.querySelector("#usageChart")?.dataset?.sizeKey || "" };
   });
-  await waitFor(win, () => (window.__dashboardResizePerf || []).length > (window.__e2eResizePerfStart || 0));
+  await waitFor(win, () => {
+    const entry = (window.__dashboardResizePerf || [])[window.__e2eResizePerfStart || 0];
+    return Boolean(entry?.marks?.some((mark) => mark.stage === "sameSizeSkip"));
+  });
   const sameSizeResizeState = await evalIn(win, () => {
     const entry = (window.__dashboardResizePerf || [])[window.__e2eResizePerfStart || 0] || {};
     return {
@@ -1034,6 +1049,12 @@ async function main() {
   await click(win, "[data-date-range-toggle]");
   await waitFor(win, () => Boolean(document.querySelector(".date-range-popover")));
   await click(win, '[data-date-range-quick="30d"]');
+  await waitFor(win, () => {
+    const content = document.querySelector('.content');
+    const maxScrollTop = Math.max(0, Number(content?.scrollHeight || 0) - Number(content?.clientHeight || 0));
+    const expectedScrollTop = Math.min(Number(window.__dateRangeScrollBefore?.content || 0), maxScrollTop);
+    return Math.abs(Number(content?.scrollTop || 0) - expectedScrollTop) <= 1;
+  });
   const quick30dDraft = await evalIn(win, () => ({
     start: Number(dateRangeDraftStart || 0),
     end: Number(dateRangeDraftEnd || 0),
@@ -1049,6 +1070,7 @@ async function main() {
     timeInputs: document.querySelectorAll('[data-date-range-time]').length,
     viewport: { width: window.innerWidth, height: window.innerHeight },
     scrollTop: Number(document.querySelector('.content')?.scrollTop || 0),
+    maxScrollTop: Math.max(0, Number(document.querySelector('.content')?.scrollHeight || 0) - Number(document.querySelector('.content')?.clientHeight || 0)),
     popoverRect: (() => {
       const rect = document.querySelector(".date-range-popover")?.getBoundingClientRect();
       return rect ? { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom, width: rect.width, height: rect.height } : null;
@@ -1060,7 +1082,7 @@ async function main() {
   assert.ok(dateOpen.popoverRect.left >= 8, `date range popover should not overflow left after maximize: ${JSON.stringify(dateOpen.popoverRect)}`);
   assert.ok(dateOpen.popoverRect.right <= dateOpen.viewport.width - 8, `date range popover should not overflow right after maximize: ${JSON.stringify(dateOpen.popoverRect)}`);
   assert.ok(dateOpen.popoverRect.bottom <= dateOpen.viewport.height - 8, `date range popover should fit vertically after maximize: ${JSON.stringify(dateOpen.popoverRect)}`);
-  assert.equal(dateOpen.scrollTop, dateScrollBefore, `opening date range should preserve outer scroll position: before=${dateScrollBefore} after=${dateOpen.scrollTop}`);
+  assert.ok(Math.abs(dateOpen.scrollTop - Math.min(dateScrollBefore, dateOpen.maxScrollTop)) <= 1, `opening date range should preserve reachable outer scroll position: before=${dateScrollBefore} after=${dateOpen.scrollTop} max=${dateOpen.maxScrollTop}`);
   const invalidDateState = await evalIn(win, () => {
     const beforeStart = localStorage.getItem("customDateStart");
     const beforeEnd = localStorage.getItem("customDateEnd");
@@ -1146,16 +1168,21 @@ async function main() {
       content: Number(content?.scrollTop || 0),
       table: Number(table?.scrollTop || 0),
       height: Number(content?.scrollHeight || 0),
+      maxScrollTop: Math.max(0, Number(content?.scrollHeight || 0) - Number(content?.clientHeight || 0)),
     };
   });
-  assert.equal(dateScrollAfter.content, dateScrollBefore, `date range apply should preserve outer scroll position: before=${dateScrollBefore} after=${dateScrollAfter.content}`);
+  assert.ok(Math.abs(dateScrollAfter.content - Math.min(dateScrollBefore, dateScrollAfter.maxScrollTop)) <= 1, `date range apply should preserve reachable outer scroll position: before=${dateScrollBefore} after=${dateScrollAfter.content} max=${dateScrollAfter.maxScrollTop}`);
   assert.equal(dateScrollAfter.table, 0, `date range apply should keep request table at page 1: after=${dateScrollAfter.table}`);
   await delay(650);
-  const dateScrollSettled = await evalIn(win, () => ({
-    content: Number(document.querySelector('.content')?.scrollTop || 0),
-    table: Number(document.querySelector('.request-main .table-scroll')?.scrollTop || 0),
-  }));
-  assert.equal(dateScrollSettled.content, dateScrollBefore, `date range async patches should not move outer scroll: before=${dateScrollBefore} after=${dateScrollSettled.content}`);
+  const dateScrollSettled = await evalIn(win, () => {
+    const content = document.querySelector('.content');
+    return {
+      content: Number(content?.scrollTop || 0),
+      table: Number(document.querySelector('.request-main .table-scroll')?.scrollTop || 0),
+      maxScrollTop: Math.max(0, Number(content?.scrollHeight || 0) - Number(content?.clientHeight || 0)),
+    };
+  });
+  assert.ok(Math.abs(dateScrollSettled.content - Math.min(dateScrollBefore, dateScrollSettled.maxScrollTop)) <= 1, `date range async patches should preserve reachable outer scroll position: before=${dateScrollBefore} after=${dateScrollSettled.content} max=${dateScrollSettled.maxScrollTop}`);
 
   await evalIn(win, () => {
     window.__copiedPerfReport = "";

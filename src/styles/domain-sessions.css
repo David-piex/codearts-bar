@@ -734,7 +734,7 @@
       font-variant-numeric:tabular-nums;
       font-feature-settings:"kern" 1,"tnum" 1,"cv01" 1;
     }
-    :where(code, kbd, .source-icon, .source-mark, .metric-icon) {
+    :where(code, kbd, .source-icon, .source-mark) {
       font-family:var(--native-font-mono);
       font-variant-numeric:tabular-nums;
     }

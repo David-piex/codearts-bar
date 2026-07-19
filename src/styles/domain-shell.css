@@ -65,11 +65,6 @@
     .summary-card, .chart-card, .table-card { border:1px solid var(--line); border-radius:var(--radius); background:rgba(255,255,255,.96); box-shadow:var(--shadow); }
     .summary-card { padding:26px; margin-bottom:24px; overflow:hidden; }
     .summary-top { display:flex; justify-content:space-between; align-items:flex-start; gap:18px; margin-bottom:20px; }
-    .big-metric { display:flex; align-items:center; gap:17px; min-width:0; }
-    .metric-icon { width:50px; height:50px; border-radius:16px; display:grid; place-items:center; color:var(--blue); background:var(--blue2); font-size:23px; font-weight:950; box-shadow:inset 0 0 0 1px rgba(22,135,245,.08); }
-    .metric-label { color:#6e7480; font-weight:800; font-size:13px; }
-    .metric-value { font-size:36px; font-weight:900; letter-spacing:-1.2px; margin-top:3px; line-height:1.12; }
-    .metric-approx { color:#858b96; background:#f4f6fa; padding:4px 8px; border-radius:9px; margin-left:10px; font-size:14px; font-weight:800; white-space:nowrap; }
     .filter-note { border:1px solid var(--line); background:#fbfcff; border-radius:13px; padding:10px 12px; min-width:220px; color:#697386; display:grid; gap:3px; box-shadow:var(--soft); }
     .filter-note b { color:#111827; font-size:12px; }
     .period-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:12px; margin-bottom:14px; }
@@ -176,7 +171,7 @@
     .source-card:active, .mini:active, .period-card:active, .table-tabs button:active, .footer button:active, .icon-chip:active, .range button:active, .series-chip:active, .actions button:active, .inspector-actions button:active {
       transform:scale(.985);
     }
-    .page-title, .head-title h2, .metric-value, .period-value, .mini .value, td b, .source-card strong { font-variant-numeric:tabular-nums; }
+    .page-title, .head-title h2, .period-value, .mini .value, td b, .source-card strong { font-variant-numeric:tabular-nums; }
     .select { position:relative; padding-right:8px; }
     .select select { appearance:none; -webkit-appearance:none; padding-right:22px; }
     .select::after {
@@ -195,10 +190,6 @@
       color:#1e5fae;
     }
     .icon-chip.active:hover, .range button.active:hover, .series-chip.active:hover, .table-tabs button.active:hover { color:#fff; background:var(--blue); }
-    .metric-icon {
-      background:linear-gradient(145deg,#eef7ff,#dceeff);
-      box-shadow:inset 0 1px 0 rgba(255,255,255,.85), 0 10px 24px rgba(22,135,245,.14);
-    }
     .period-card, .mini {
       background:linear-gradient(180deg,#fff,#fbfcff);
       box-shadow:inset 0 1px 0 rgba(255,255,255,.9), 0 7px 16px rgba(28,37,54,.045);
@@ -245,42 +236,6 @@
     }
     .session-sort { min-height:36px; box-shadow:none; background:#f7f9fc; }
     .session-sort span { color:#7b8190; font-weight:900; white-space:nowrap; }
-    .request-list { display:grid; gap:8px; }
-    .request-item {
-      display:flex;
-      align-items:flex-start;
-      justify-content:space-between;
-      gap:10px;
-      border:1px solid #e8edf4;
-      background:#fff;
-      border-radius:12px;
-      padding:9px 10px;
-      box-shadow:0 4px 10px rgba(28,37,54,.03);
-    }
-    button.request-item {
-      width:100%;
-      font:inherit;
-      cursor:pointer;
-      text-align:left;
-    }
-    button.request-item:focus-visible {
-      outline:0;
-      border-color:rgba(10,132,255,.48);
-      box-shadow:0 0 0 3px rgba(10,132,255,.11), 0 4px 10px rgba(28,37,54,.03);
-    }
-    .request-item div { min-width:0; display:grid; gap:2px; }
-    .request-item div:last-child { text-align:right; }
-    .request-item b, .request-item strong { color:#111827; font-size:12px; font-weight:950; }
-    .request-item span { color:#7d8491; font-size:11px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:180px; }
-    .request-empty {
-      border:1px dashed #d7dde7;
-      background:#fbfcff;
-      color:#98a1af;
-      border-radius:12px;
-      padding:14px;
-      text-align:center;
-      font-weight:850;
-    }
 
     .session-filter {
       display:flex;

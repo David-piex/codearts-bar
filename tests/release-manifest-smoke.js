@@ -38,11 +38,19 @@ try {
     version: "9.9.9",
     generatedAt: "2026-07-09T00:00:00.000Z",
     artifactNames: Object.keys(files),
+    source: {
+      commit: "a".repeat(40),
+      treeSha256: "b".repeat(64),
+      dirty: false,
+      trackedFiles: 123,
+    },
   });
 
   assert.equal(latest.version, "9.9.9");
   assert.equal(latest.generatedAt, "2026-07-09T00:00:00.000Z");
   assert.equal(latest.artifacts.length, 5);
+  assert.equal(latest.source.commit, "a".repeat(40));
+  assert.equal(latest.source.treeSha256, "b".repeat(64));
   assert.deepEqual(latest.artifacts.map((item) => item.name), Object.keys(files).sort((a, b) => a.localeCompare(b)));
 
   const latestJson = JSON.parse(fs.readFileSync(path.join(tmpDir, "latest.json"), "utf8"));
@@ -59,8 +67,11 @@ try {
   assert.match(notes, /SHA256SUMS\.txt/);
   assert.match(notes, /codearts-bar-status\.vsix/);
   assert.match(notes, /codearts-bar-jetbrains-9\.9\.9\.zip/);
+  assert.match(notes, /Source commit/);
 
-  verifyReleaseManifest({ releaseDir: tmpDir, version: "9.9.9", artifactNames: Object.keys(files) });
+  const source = { commit: "a".repeat(40), treeSha256: "b".repeat(64), dirty: false, trackedFiles: 123 };
+  verifyReleaseManifest({ releaseDir: tmpDir, version: "9.9.9", artifactNames: Object.keys(files), source });
+  assert.throws(() => verifyReleaseManifest({ releaseDir: tmpDir, version: "9.9.9", artifactNames: Object.keys(files), source: { ...source, commit: "c".repeat(40) } }), /source identity mismatch/);
   assert.throws(() => verifyReleaseManifest({ releaseDir: tmpDir, version: "9.9.8", artifactNames: Object.keys(files) }), /version mismatch/);
   fs.appendFileSync(path.join(tmpDir, "SHA256SUMS.txt"), `${hash("cli-fixture")}  codearts-bar-cli.zip\n`);
   assert.throws(() => verifyReleaseManifest({ releaseDir: tmpDir, version: "9.9.9", artifactNames: Object.keys(files) }), /Duplicate SHA256SUMS entry/);

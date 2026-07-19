@@ -64,6 +64,7 @@ function aggregateCacheKey(label, adapter, payload = {}, sources = []) {
     bucket: payload.bucket || '',
     bucketMs: payload.bucketMs || 0,
     bucketOffsetMs: effectiveBucketOffsetMs(payload),
+    includeExtendedPerformance: payload.includeExtendedPerformance !== false,
     windowHours: payload.windowHours || 24,
     range: payload.range || {},
     start: payload.start || 0,

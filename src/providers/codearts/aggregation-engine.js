@@ -283,7 +283,9 @@ function mergeDashboardAggregateBundle(items = [], payload = {}, errors = []) {
   return out;
 }
 function sessionSummaryFromUsageRollups(payload = {}, adapter = 'node:sqlite', sources = null) {
-  if (!usageRollup.canUseSessionSummaryRollup(payload)) return null;
+  const useUnscopedRollup = usageRollup.canUseSessionSummaryRollup(payload);
+  const useScopedRollup = usageRollup.canUseScopedSessionSummaryRollup(payload);
+  if (!useUnscopedRollup && !useScopedRollup) return null;
   const selectedSources = sources || sourceList(payload);
   if (!selectedSources.length) return null;
   const items = [];
@@ -294,9 +296,20 @@ function sessionSummaryFromUsageRollups(payload = {}, adapter = 'node:sqlite', s
       usageRollup.scheduleUsageRollupBuild(source, { adapter, delayMs: 500, fallback: 'direct-sql' });
       return null;
     }
-    items.push(usageRollup.sessionSummaryPartFromRollup(rollup, payload));
+    let item;
+    if (useScopedRollup) {
+      const tokenRollup = usageRollup.readUsageRollupForSource(source);
+      if (!tokenRollup.ok) {
+        usageRollup.scheduleUsageRollupBuild(source, { adapter, delayMs: 500, fallback: 'direct-sql' });
+        return null;
+      }
+      item = usageRollup.sessionSummaryPartFromScopedRollups(rollup, tokenRollup, payload);
+    } else {
+      item = usageRollup.sessionSummaryPartFromRollup(rollup, payload);
+    }
+    items.push(item);
     statuses.push({
-      status: rollup.usageRollup?.status || 'session-hit',
+      status: item.usageRollup?.status || rollup.usageRollup?.status || 'session-hit',
       rowCount: rollup.usageRollup?.rowCount ?? rollup.sessions?.length ?? null,
     });
   }
@@ -338,10 +351,41 @@ function attachSessionSummaryFromRollupOrSql(part, args, payload = {}, adapter =
   }
   return part;
 }
-function dashboardBundleFromUsageRollups(payload = {}, adapter = 'node:sqlite', sources = null) {
+
+function attachSessionSummaryFromSidecars(part, source, payload = {}, adapter = 'node:sqlite') {
+  const sessionRollup = usageRollup.readSessionSummaryRollupForSource(source);
+  if (!sessionRollup.ok) {
+    usageRollup.scheduleUsageRollupBuild(source, { adapter, delayMs: 500, fallback: 'direct-sql' });
+    return false;
+  }
+  let summary;
+  if (usageRollup.canUseSessionSummaryRollup(payload)) {
+    summary = usageRollup.sessionSummaryPartFromRollup(sessionRollup, payload);
+  } else if (usageRollup.canUseScopedSessionSummaryRollup(payload)) {
+    const tokenRollup = usageRollup.readUsageRollupForSource(source);
+    if (!tokenRollup.ok) {
+      usageRollup.scheduleUsageRollupBuild(source, { adapter, delayMs: 500, fallback: 'direct-sql' });
+      return false;
+    }
+    summary = usageRollup.sessionSummaryPartFromScopedRollups(sessionRollup, tokenRollup, payload);
+  } else {
+    return false;
+  }
+  part.sessionSummary = summary;
+  part.usageRollup = {
+    ...(part.usageRollup || {}),
+    session: {
+      status: summary.usageRollup?.status || sessionRollup.usageRollup?.status || 'session-hit',
+      rowCount: sessionRollup.usageRollup?.rowCount ?? sessionRollup.sessions?.length ?? null,
+    },
+  };
+  return true;
+}
+function dashboardBundleFromUsageRollups(payload = {}, adapter = 'node:sqlite', sources = null, options = {}) {
   if (!usageRollup.canUseUsageRollup(payload)) return null;
   const selectedSources = sources || sourceList(payload);
   if (!selectedSources.length) return null;
+  const sessionPayload = options.sessionPayload || payload;
   const windows = timeWindows(payload);
   const trendRange = normalizeTrendRange(payload);
   if (trendRange.calendarRebucket) return null;
@@ -351,14 +395,22 @@ function dashboardBundleFromUsageRollups(payload = {}, adapter = 'node:sqlite', 
     const compact = usageRollup.readCompactUsageRollupForSource(source);
     if (compact.ok && usageRollup.compactRollupIsSafeForDashboard(compact, { payload, windows, trendRange })) {
       const part = usageRollup.dashboardPartFromCompactRollup(compact, { payload, windows, trendRange });
-      attachSessionSummaryFromRollupOrSql(part, { source, db: null, tables: [], queryAll: null }, payload, adapter);
+      if (options.requireSessionRollup) {
+        if (!attachSessionSummaryFromSidecars(part, source, sessionPayload, adapter)) return null;
+      } else {
+        attachSessionSummaryFromRollupOrSql(part, { source, db: null, tables: [], queryAll: null }, sessionPayload, adapter);
+      }
       items.push(part);
       continue;
     }
     const rollup = usageRollup.readUsageRollupForSource(source);
     if (rollup.ok) {
       const part = usageRollup.dashboardPartFromUsageRollup(rollup, { payload, windows, trendRange });
-      attachSessionSummaryFromRollupOrSql(part, { source, db: null, tables: [], queryAll: null }, payload, adapter);
+      if (options.requireSessionRollup) {
+        if (!attachSessionSummaryFromSidecars(part, source, sessionPayload, adapter)) return null;
+      } else {
+        attachSessionSummaryFromRollupOrSql(part, { source, db: null, tables: [], queryAll: null }, sessionPayload, adapter);
+      }
       items.push(part);
       continue;
     }
@@ -370,8 +422,20 @@ function dashboardBundleFromUsageRollups(payload = {}, adapter = 'node:sqlite', 
   bundle.rollupFastPath = true;
   return bundle;
 }
+
+function coldDashboardPartFromRollup(args, payload, sessionPayload, windows, trendRange, adapter) {
+  const built = usageRollup.readOrBuildUsageRollup(args, { adapter });
+  const part = usageRollup.dashboardPartFromUsageRollup(built, { payload, windows, trendRange });
+  return attachSessionSummaryFromRollupOrSql(part, args, sessionPayload, adapter);
+}
+
 function getDashboardAggregatesNative(payload = {}) {
   return attachCurrentRollupState(timeAggregateSync('dashboardAggregates', 'node:sqlite', payload, () => {
+    const rollupBundle = dashboardBundleFromUsageRollups(payload, 'node:sqlite', null, {
+      requireSessionRollup: true,
+      sessionPayload: dashboardSessionSummaryPayload(payload),
+    });
+    if (rollupBundle) return rollupBundle;
     const windows = timeWindows(payload);
     const trendRange = normalizeTrendRange(payload);
     const queryTrendRange = { ...trendRange, bucketMs: trendRange.queryBucketMs, bucketOffsetMs: trendRange.queryBucketOffsetMs };
@@ -388,6 +452,9 @@ function getDashboardAggregatesNative(payload = {}) {
           const part = usageRollup.dashboardPartFromUsageRollup(rollup, { payload, windows, trendRange });
           return attachSessionSummaryFromRollupOrSql(part, args, sessionPayload, 'node:sqlite');
         }
+        if (payload.includeExtendedPerformance === false) {
+          return coldDashboardPartFromRollup(args, payload, sessionPayload, windows, trendRange, 'node:sqlite');
+        }
         const part = nativeSql.aggregateBundleForSourceSql({ ...args, payload, sessionPayload, windows, trendRange: queryTrendRange });
         usageRollup.scheduleUsageRollupBuild(args.source, { adapter: 'node:sqlite', delayMs: 500, fallback: 'direct-sql' });
         part.usageRollup = { status: 'miss-pass-through', previousReason: rollup.reason || null, rowCount: null };
@@ -400,6 +467,11 @@ function getDashboardAggregatesNative(payload = {}) {
 }
 async function getDashboardAggregatesSqlJs(payload = {}) {
   return attachCurrentRollupState(await timeAggregateAsync('dashboardAggregates', 'sql.js', payload, async () => {
+    const rollupBundle = dashboardBundleFromUsageRollups(payload, 'sql.js', null, {
+      requireSessionRollup: true,
+      sessionPayload: dashboardSessionSummaryPayload(payload),
+    });
+    if (rollupBundle) return rollupBundle;
     const windows = timeWindows(payload);
     const trendRange = normalizeTrendRange(payload);
     const queryTrendRange = { ...trendRange, bucketMs: trendRange.queryBucketMs, bucketOffsetMs: trendRange.queryBucketOffsetMs };
@@ -415,6 +487,9 @@ async function getDashboardAggregatesSqlJs(payload = {}) {
         if (rollup.ok) {
           const part = usageRollup.dashboardPartFromUsageRollup(rollup, { payload, windows, trendRange });
           return attachSessionSummaryFromRollupOrSql(part, args, sessionPayload, 'sql.js');
+        }
+        if (payload.includeExtendedPerformance === false) {
+          return coldDashboardPartFromRollup(args, payload, sessionPayload, windows, trendRange, 'sql.js');
         }
         const part = nativeSql.aggregateBundleForSourceSql({ ...args, payload, sessionPayload, windows, trendRange: queryTrendRange });
         usageRollup.scheduleUsageRollupBuild(args.source, { adapter: 'sql.js', delayMs: 500, fallback: 'direct-sql' });

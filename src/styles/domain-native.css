@@ -23,12 +23,12 @@
   border-color:var(--hairline);
   box-shadow:var(--shadow-card);
 }
-:where(.summary-card,.source-card,.chart-snapshot-card,.session-row-actions button,.icon-chip,.series-chip,.range button):hover {
+:where(.summary-card,.source-card,.session-row-actions button,.icon-chip,.series-chip,.range button):hover {
   transform:translateY(-.5px);
   box-shadow:var(--shadow-card-hover);
 }
 @media (prefers-reduced-motion: reduce) {
-  :where(.summary-card,.source-card,.chart-snapshot-card,.session-row-actions button,.icon-chip,.series-chip,.range button):hover { transform:none; }
+  :where(.summary-card,.source-card,.session-row-actions button,.icon-chip,.series-chip,.range button):hover { transform:none; }
 }
 
 

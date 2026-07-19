@@ -3,6 +3,7 @@
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const crypto = require('node:crypto');
 const { execFileSync } = require('node:child_process');
 const { writeReleaseManifest, verifyReleaseManifest } = require('./release-manifest');
 const { atomicReplaceReleaseDir } = require('./release-artifacts');
@@ -19,6 +20,53 @@ function sourceDateEpoch() {
     if (/^\d+$/.test(value)) return value;
   } catch {}
   return String(Math.trunc(FIXTURE_NOW_MS / 1000));
+}
+
+function trackedSourceHash(files = null) {
+  const tracked = files || execFileSync('git', ['ls-files', '-z'], {
+    cwd: root,
+    encoding: 'utf8',
+    windowsHide: true,
+  }).split('\0').filter(Boolean);
+  const digest = crypto.createHash('sha256');
+  for (const relative of tracked) {
+    digest.update(relative.replace(/\\/g, '/'), 'utf8');
+    digest.update('\0');
+    const target = path.join(root, relative);
+    if (fs.existsSync(target)) digest.update(fs.readFileSync(target));
+    else digest.update('<missing>', 'utf8');
+    digest.update('\0');
+  }
+  return { sha256: digest.digest('hex'), trackedFiles: tracked.length };
+}
+
+function releaseSourceIdentity() {
+  const commit = execFileSync('git', ['rev-parse', 'HEAD'], {
+    cwd: root,
+    encoding: 'utf8',
+    windowsHide: true,
+  }).trim();
+  const status = execFileSync('git', ['status', '--porcelain=v1', '--untracked-files=no'], {
+    cwd: root,
+    encoding: 'utf8',
+    windowsHide: true,
+  }).trim();
+  const tree = trackedSourceHash();
+  return {
+    commit,
+    dirty: Boolean(status),
+    treeSha256: tree.sha256,
+    trackedFiles: tree.trackedFiles,
+  };
+}
+
+function assertReleaseSource(options = {}) {
+  const source = options.sourceIdentity || releaseSourceIdentity();
+  const allowDirty = options.allowDirty === true || process.env.CODEARTS_BAR_ALLOW_DIRTY_RELEASE === '1';
+  if (source.dirty && !allowDirty) {
+    throw new Error('Release requires a clean tracked worktree; commit or stash changes, or set CODEARTS_BAR_ALLOW_DIRTY_RELEASE=1 for a local development build');
+  }
+  return source;
 }
 
 function sanitizedReleaseEnv(overrides = {}) {
@@ -159,6 +207,7 @@ function validateArchiveEntries(file, requiredEntries) {
 }
 
 function buildRelease(options = {}) {
+  const sourceIdentity = assertReleaseSource(options);
   const paths = releasePaths(options);
   const names = artifactNames(pkg.version);
   const jetbrainsName = `codearts-bar-jetbrains-${pkg.version}.zip`;
@@ -258,8 +307,8 @@ function buildRelease(options = {}) {
     validateArchiveEntries(path.join(paths.stagingDir, jetbrainsName), [`codearts-bar-jetbrains/lib/codearts-bar-jetbrains-${pkg.version}.jar`]);
     validateArchiveEntries(path.join(paths.stagingDir, `codearts-bar-${pkg.version}.tgz`), ['package/package.json', 'package/src/bin.js']);
 
-    writeReleaseManifest({ releaseDir: paths.stagingDir, version: pkg.version, artifactNames: names, env: releaseEnv });
-    verifyReleaseManifest({ releaseDir: paths.stagingDir, version: pkg.version, artifactNames: names });
+    writeReleaseManifest({ releaseDir: paths.stagingDir, version: pkg.version, artifactNames: names, env: releaseEnv, source: sourceIdentity });
+    verifyReleaseManifest({ releaseDir: paths.stagingDir, version: pkg.version, artifactNames: names, source: sourceIdentity });
     atomicReplaceReleaseDir(paths.stagingDir, paths.releaseDir);
     replaced = true;
     console.log(`Release ${pkg.version} verified and published locally to ${paths.releaseDir}`);
@@ -281,13 +330,16 @@ if (require.main === module) {
 
 module.exports = {
   FIXTURE_NOW_MS,
+  assertReleaseSource,
   artifactNames,
   buildRelease,
   copyRequired,
   releasePaths,
+  releaseSourceIdentity,
   sanitizedReleaseEnv,
   selfTestArguments,
   sourceDateEpoch,
+  trackedSourceHash,
   validateArchiveEntries,
   validateRequired,
 };

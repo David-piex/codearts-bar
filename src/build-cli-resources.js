@@ -147,6 +147,7 @@ function build() {
         target: 'node18',
         format: 'cjs',
         external: ['sql.js', ...(jetbrainsEntry ? ['../../protocol/query-results'] : [])],
+        define: jetbrainsEntry ? { CODEARTS_BAR_ONE_SHOT_RUNTIME: 'true' } : {},
         minify: true,
         charset: 'utf8',
         legalComments: 'none',

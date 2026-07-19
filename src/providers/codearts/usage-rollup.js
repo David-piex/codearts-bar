@@ -7,7 +7,7 @@ const { isMainThread } = require('node:worker_threads');
 const nativeSql = require('./aggregation-sql');
 const { readRollupCache, writeRollupCache } = require('./rollup-cache');
 const { recordBestEffortFailure } = require('../../core/best-effort');
-const { assistantWhere, validateTables, tableColumnNames } = require('./sources');
+const { assistantWhere, validateTables, tableColumnNames, filterValues } = require('./sources');
 const { safeDbError } = require('./diagnostics');
 const {
   aggregateRollupState,
@@ -31,6 +31,7 @@ const {
   buildCompactUsageRollup,
   compactRollupIsSafeForDashboard,
   sessionSummaryPartFromRollup,
+  sessionSummaryPartFromScopedRollups,
   dashboardPartFromCompactRollup,
   dashboardPartFromUsageRollup,
 } = require('./usage-rollup-calc');
@@ -44,6 +45,7 @@ const HOUR_MS = 60 * 60 * 1000;
 const pendingBuilds = new Map();
 let buildListener = null;
 let stateListener = null;
+let rollupStatsGeneration = 0;
 const normalizedPayloads = new WeakMap();
 const rollupStats = {
   compactHits: 0,
@@ -114,19 +116,22 @@ function publishRollupState(source, patch = {}) {
 
 function progressReporter(source, options = {}) {
   const startedAt = Number(options.startedAt || Date.now());
-  return (progress = {}) => publishRollupState(source, {
-    adapter: options.adapter || 'node:sqlite',
-    status: 'running',
-    phase: progress.phase || 'running',
-    percent: progress.percent || 0,
-    scannedRows: progress.scannedRows || 0,
-    totalRows: progress.totalRows || 0,
-    attempt: options.attempt || 1,
-    fallback: options.fallback,
-    startedAt,
-    nextRetryAt: 0,
-    error: '',
-  });
+  return (progress = {}) => {
+    if (!isCurrentStatsGeneration(options)) return null;
+    return publishRollupState(source, {
+      adapter: options.adapter || 'node:sqlite',
+      status: 'running',
+      phase: progress.phase || 'running',
+      percent: progress.percent || 0,
+      scannedRows: progress.scannedRows || 0,
+      totalRows: progress.totalRows || 0,
+      attempt: options.attempt || 1,
+      fallback: options.fallback,
+      startedAt,
+      nextRetryAt: 0,
+      error: '',
+    });
+  };
 }
 
 function nowMs() {
@@ -135,7 +140,12 @@ function nowMs() {
   return Date.now();
 }
 
+function isCurrentStatsGeneration(options = {}) {
+  return options.statsGeneration == null || Number(options.statsGeneration) === rollupStatsGeneration;
+}
+
 function recordRollupBuild(source = {}, options = {}, result = null, durationMs = 0, error = null) {
+  if (!isCurrentStatsGeneration(options)) return null;
   const dbPath = source.dbPath || '';
   const status = error ? 'failed' : (result?.usageRollup?.status || 'completed');
   const entry = {
@@ -171,8 +181,6 @@ function canUseUsageRollup(payload = {}) {
   if (process.env.CODEARTS_BAR_DISABLE_USAGE_ROLLUP === '1') return false;
   if (payload.disableUsageRollup || payload.noUsageRollup) return false;
   if (payload.query || payload.sessionId) return false;
-  if (payload.model && payload.model !== 'all') return false;
-  if (payload.project && payload.project !== 'all') return false;
   if (payload.error !== undefined || payload.hasError !== undefined || payload.errorsOnly !== undefined) return false;
   return true;
 }
@@ -184,6 +192,10 @@ function canUseSessionSummaryRollup(payload = {}) {
   if (payload.model && payload.model !== 'all') return false;
   if (Array.isArray(payload.project)) return false;
   return true;
+}
+
+function canUseScopedSessionSummaryRollup(payload = {}) {
+  return canUseUsageRollup(payload) && filterValues(payload.model).length > 0;
 }
 
 function buildUsageRollupForSource(args, payload = {}) {
@@ -390,7 +402,11 @@ function readOrBuildUsageRollup(args, options = {}) {
     const updatedSince = Math.max(0, maxUpdatedTime - HOUR_MS);
     const changed = buildUsageRollupForSource(args, { updatedSince, onProgress: options.onProgress, estimatedRows: options.totalRows }).rows;
     const currentIds = currentUsageMessageIds(args);
-    const retained = stale.rows.filter((row) => currentIds.has(String(row.id || '')));
+    const sessionDirectories = new Map(args.queryAll(args.db, 'select id, directory from session', [])
+      .map((row) => [String(row.id || ''), String(row.directory || '')]));
+    const retained = stale.rows
+      .filter((row) => currentIds.has(String(row.id || '')))
+      .map((row) => ({ ...row, directory: sessionDirectories.get(String(row.sessionId || '')) || '' }));
     const merged = new Map(retained.map((row) => [row.id, row]));
     for (const row of changed) merged.set(row.id, row);
     built = { source: stale.source, rows: [...merged.values()].sort((a, b) => Number(a.timeCreated || 0) - Number(b.timeCreated || 0)) };
@@ -482,13 +498,17 @@ async function buildAndWriteUsageRollupForSource(source, options = {}) {
   }
 }
 
-function scheduleUsageRollupBuild(source, options = {}) {
+const scheduleUsageRollupBuild = typeof CODEARTS_BAR_ONE_SHOT_RUNTIME !== 'undefined'
+  && CODEARTS_BAR_ONE_SHOT_RUNTIME === true
+  ? () => ({ scheduled: false, reason: 'one-shot-runtime' })
+  : function scheduleUsageRollupBuildRuntime(source, options = {}) {
   if (!isMainThread) return { scheduled: false, reason: 'main-thread-required' };
   if (process.env.CODEARTS_BAR_DISABLE_USAGE_ROLLUP_BUILD === '1') {
     rollupStats.skippedDisabled += 1;
     return { scheduled: false, reason: 'disabled' };
   }
   const adapter = options.adapter || 'node:sqlite';
+  const statsGeneration = rollupStatsGeneration;
   const key = `${adapter}:${source.dbPath}:${options.kind || MESSAGE_TOKEN_CACHE_KIND}`;
   if (pendingBuilds.has(key)) {
     rollupStats.skippedPending += 1;
@@ -497,24 +517,32 @@ function scheduleUsageRollupBuild(source, options = {}) {
   const attempt = Math.max(1, Number(options.attempt || 1));
   const maxAttempts = Math.max(1, Number(options.maxAttempts || 3));
   const entry = pendingBuildEntry(source, { ...options, adapter, attempt });
+  const clearPending = () => {
+    if (pendingBuilds.get(key)?.statsGeneration === statsGeneration) pendingBuilds.delete(key);
+  };
   const runBuild = () => {
+    if (!isCurrentStatsGeneration({ statsGeneration })) {
+      clearPending();
+      return;
+    }
     const started = nowMs();
     const startedAt = Date.now();
-    const reportProgress = progressReporter(source, { ...options, adapter, attempt, startedAt });
+    const reportProgress = progressReporter(source, { ...options, adapter, attempt, statsGeneration, startedAt });
     reportProgress({ phase: 'opening', percent: 3 });
     const workerFile = path.join(__dirname, 'usage-rollup-worker-pool.js');
     const workerPool = isMainThread && fs.existsSync(workerFile) ? module.require(workerFile) : null;
     const injectedBuild = typeof options.buildTask === 'function' ? options.buildTask : null;
     const useWorker = Boolean(!injectedBuild && isMainThread && workerPool?.usageRollupWorkerAvailable());
     const build = injectedBuild
-      ? injectedBuild(source, { adapter, attempt, onProgress: reportProgress })
+      ? injectedBuild(source, { adapter, attempt, statsGeneration, onProgress: reportProgress })
       : useWorker
-      ? workerPool.runUsageRollupWorker(source, { ...options, adapter, attempt }, 'build', reportProgress)
-      : buildAndWriteUsageRollupForSource(source, { ...options, adapter, attempt, onProgress: reportProgress });
+      ? workerPool.runUsageRollupWorker(source, { ...options, adapter, attempt, statsGeneration }, 'build', reportProgress)
+      : buildAndWriteUsageRollupForSource(source, { ...options, adapter, attempt, statsGeneration, onProgress: reportProgress });
     let retry = null;
     Promise.resolve(build)
       .then((result) => {
-        if (useWorker) recordRollupBuild(source, { ...options, adapter }, result, nowMs() - started, null);
+        if (!isCurrentStatsGeneration({ statsGeneration })) return;
+        if (useWorker) recordRollupBuild(source, { ...options, adapter, statsGeneration }, result, nowMs() - started, null);
         rollupStats.buildCompleted += 1;
         if (attempt > 1) rollupStats.buildRecovered += 1;
         publishRollupState(source, {
@@ -529,7 +557,8 @@ function scheduleUsageRollupBuild(source, options = {}) {
         }
       })
       .catch((error) => {
-        if (useWorker) recordRollupBuild(source, { ...options, adapter }, null, nowMs() - started, error);
+        if (!isCurrentStatsGeneration({ statsGeneration })) return;
+        if (useWorker) recordRollupBuild(source, { ...options, adapter, statsGeneration }, null, nowMs() - started, error);
         rollupStats.buildFailed += 1;
         const safeError = safeDbError(error);
         if (attempt < maxAttempts && process.env.CODEARTS_BAR_DISABLE_USAGE_ROLLUP_RETRY !== '1') {
@@ -552,7 +581,7 @@ function scheduleUsageRollupBuild(source, options = {}) {
         }
       })
       .finally(() => {
-        pendingBuilds.delete(key);
+        clearPending();
         if (retry) scheduleUsageRollupBuild(source, {
           ...options,
           adapter,
@@ -576,10 +605,10 @@ function scheduleUsageRollupBuild(source, options = {}) {
   });
   const timer = setTimeout(runBuild, Math.max(0, Number(options.delayMs || 0)));
   timer.unref?.();
-  pendingBuilds.set(key, { ...entry, timer });
+  pendingBuilds.set(key, { ...entry, statsGeneration, timer });
   rollupStats.scheduled += 1;
   return { scheduled: true };
-}
+};
 
 function setUsageRollupBuildListener(listener) {
   buildListener = typeof listener === 'function' ? listener : null;
@@ -614,6 +643,7 @@ function usageRollupStats() {
 }
 
 function resetUsageRollupStats() {
+  rollupStatsGeneration += 1;
   for (const entry of pendingBuilds.values()) {
     if (entry?.timer) clearTimeout(entry.timer);
   }
@@ -628,6 +658,7 @@ module.exports = {
   SESSION_SUMMARY_ROLLUP_KIND,
   canUseUsageRollup,
   canUseSessionSummaryRollup,
+  canUseScopedSessionSummaryRollup,
   compactRollupIsSafeForDashboard,
   readCompactUsageRollupForSource,
   readUsageRollupForSource,
@@ -642,6 +673,7 @@ module.exports = {
   setUsageRollupBuildListener,
   setUsageRollupStateListener,
   sessionSummaryPartFromRollup,
+  sessionSummaryPartFromScopedRollups,
   dashboardPartFromCompactRollup,
   dashboardPartFromUsageRollup,
 };

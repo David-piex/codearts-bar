@@ -27,6 +27,9 @@ const checks = [
   ['coverage.lines', metrics.coverage?.lines?.pct, '>=', l.coverageLinesMin],
   ['coverage.functions', metrics.coverage?.functions?.pct, '>=', l.coverageFunctionsMin],
   ['coverage.branches', metrics.coverage?.branches?.pct, '>=', l.coverageBranchesMin],
+  ['coverageAll.lines', metrics.coverageAll?.lines?.pct, '>=', l.coverageAllLinesMin],
+  ['coverageAll.functions', metrics.coverageAll?.functions?.pct, '>=', l.coverageAllFunctionsMin],
+  ['coverageAll.branches', metrics.coverageAll?.branches?.pct, '>=', l.coverageAllBranchesMin],
 ];
 const results = checks.map(([name, actual, operator, expected]) => ({ name, actual: Number(actual), operator, expected, ok: operator === '<=' ? Number(actual) <= expected : operator === '>' ? Number(actual) > expected : Number(actual) >= expected }));
 const trend = { schemaVersion: 2, generatedAt, version: metrics.version, commit: metrics.commit, baseline: l, results, ok: results.every((item) => item.ok) };
