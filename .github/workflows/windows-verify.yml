@@ -107,6 +107,8 @@ jobs:
       - run: npm run screenshot:vscode:prepared
       - run: npm run screenshot:electron:built
       - run: node tests/visual-regression.js
+        env:
+          CODEARTS_BAR_CI_DISPLAY_LIMITED: "1"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
