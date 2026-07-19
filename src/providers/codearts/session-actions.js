@@ -76,6 +76,49 @@ async function archiveSession({ dbPath, id, archived = true, ...options }) {
   return { ok: true, id, archived, dbPath: source.dbPath, time: now, attempts };
 }
 
+async function archiveSessions({ sessions, archived = true, ...options }) {
+  const items = Array.isArray(sessions) ? sessions : [];
+  if (!items.length) throw new Error('缺少会话');
+  if (items.length > 500) throw new Error('批量归档最多支持 500 个会话');
+  const nextArchived = archived !== false;
+
+  const unresolvedGroups = new Map();
+  for (const item of items) {
+    const id = String(item?.id || '').trim();
+    if (!id) throw new Error('缺少会话 ID');
+    const dbPath = String(item?.dbPath || '').trim();
+    const key = dbPath.toLowerCase() || '<auto>';
+    const group = unresolvedGroups.get(key) || { dbPath, ids: new Set() };
+    group.ids.add(id);
+    unresolvedGroups.set(key, group);
+  }
+  const groups = [...unresolvedGroups.values()].map((group) => ({ source: selectedSource(group.dbPath), ids: group.ids }));
+
+  const now = resolveTimestamp(options);
+  let count = 0;
+  let attempts = 0;
+  for (const { source, ids } of groups) {
+    const result = await runNativeWrite(source, (db) => {
+      const statement = db.prepare('update session set time_archived = ?, time_updated = ? where id = ?');
+      let changes = 0;
+      for (const id of ids) {
+        const row = statement.run(nextArchived ? now : null, now, id);
+        if (Number(row?.changes || 0) < 1) {
+          const error = new Error(`会话不存在：${id}`);
+          error.code = 'SESSION_NOT_FOUND';
+          throw error;
+        }
+        changes += Number(row.changes || 0);
+      }
+      return changes;
+    }, options);
+    writeTouchFile(source.dbPath);
+    count += Number(result.result || 0);
+    attempts += Number(result.attempts || 0);
+  }
+  return { ok: true, archived: nextArchived, count, time: now, attempts, sources: groups.length };
+}
+
 async function renameSession({ dbPath, id, title, ...options }) {
   if (!id) throw new Error('缺少会话 ID');
   const nextTitle = String(title || '').trim().slice(0, 200);
@@ -92,6 +135,7 @@ async function renameSession({ dbPath, id, title, ...options }) {
 
 module.exports = {
   archiveSession,
+  archiveSessions,
   renameSession,
   isBusyError,
   runNativeWrite,

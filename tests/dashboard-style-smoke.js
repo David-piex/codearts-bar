@@ -64,6 +64,12 @@ const sourceSwitchPending = analyticsEventsSource.slice(
   analyticsEventsSource.indexOf("async function switchSourceFilter"),
 );
 const analyticsSlotsSource = fs.readFileSync(path.join(__dirname, "..", "src", "dashboard", "slots", "analytics-slots.js"), "utf8");
+const dashboardBootstrapSource = fs.readFileSync(path.join(__dirname, "..", "src", "dashboard", "dashboard-bootstrap.js"), "utf8");
+const chartHoverSource = fs.readFileSync(path.join(__dirname, "..", "src", "dashboard", "chart", "chart-hover.js"), "utf8");
+const pinnedHoverSource = chartHoverSource.slice(
+  chartHoverSource.indexOf("function animatePinnedHover"),
+  chartHoverSource.indexOf("function bindChart"),
+);
 const aggregateSlotPatch = analyticsSlotsSource.slice(
   analyticsSlotsSource.indexOf("function patchDashboardAggregateSlots"),
 );
@@ -261,6 +267,12 @@ assert.match(html, /1\.18\.13 commercial chart hover aperture/);
 assert.match(renderer, /drawHoverAperture/);
 assert.match(renderer, /createRadialGradient/);
 assert.match(renderer, /animatePinnedHover/);
+assert.doesNotMatch(pinnedHoverSource, /requestAnimationFrame|pulseFrame/, "a pinned chart point must not run an unbounded redraw loop");
+assert.match(pinnedHoverSource, /chartHover\.pulse = 0/);
+assert.match(analyticsSlotsSource, /function cancelAnalyticsDeferredPatches/);
+assert.match(analyticsSlotsSource, /function cancelScheduledChartBind/);
+assert.match(dashboardBootstrapSource, /beginDashboardRequestGeneration[\s\S]*cancelAnalyticsDeferredPatches/);
+assert.match(dashboardBootstrapSource, /beginDashboardRequestGeneration[\s\S]*cancelScheduledChartBind/);
 assert.match(html, /chartPinnedScrub/);
 assert.match(html, /scrubber-focus/);
 

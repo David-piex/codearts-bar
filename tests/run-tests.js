@@ -822,6 +822,46 @@ async function testSessionWritesNeverFallBackToSqlJs() {
   }
 }
 
+async function testBatchSessionWritesUseOneCoherentMutation() {
+  const sourceDb = path.join(__dirname, 'fixtures', 'opencode-fixture.db');
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'codearts-bar-batch-write-'));
+  const dbPath = path.join(tmpDir, 'opencode-fixture.db');
+  fs.copyFileSync(sourceDb, dbPath);
+  try {
+    const archived = await localProvider.archiveSessions({
+      sessions: [{ id: 'ses_fixture', dbPath }, { id: 'ses_multi', dbPath }],
+      archived: true,
+      timestamp: FIXTURE_NOW_MS,
+    });
+    assert.deepEqual(archived, { ok: true, archived: true, count: 2, time: FIXTURE_NOW_MS, attempts: 1, sources: 1 });
+    const db = new DatabaseSync(dbPath);
+    try {
+      const rows = db.prepare('select id, time_archived from session where id in (?, ?) order by id').all('ses_fixture', 'ses_multi');
+      assert.deepEqual(rows.map((row) => [row.id, row.time_archived]), [['ses_fixture', FIXTURE_NOW_MS], ['ses_multi', FIXTURE_NOW_MS]]);
+    } finally { db.close(); }
+    const restored = await localProvider.archiveSessions({
+      sessions: [{ id: 'ses_fixture', dbPath }, { id: 'ses_multi', dbPath }],
+      archived: false,
+      timestamp: FIXTURE_NOW_MS + 1,
+    });
+    assert.equal(restored.archived, false);
+    assert.equal(restored.count, 2);
+    await assert.rejects(
+      () => localProvider.archiveSessions({
+        sessions: [{ id: 'ses_fixture', dbPath }, { id: 'missing-session', dbPath }],
+        archived: true,
+        timestamp: FIXTURE_NOW_MS + 2,
+      }),
+      (error) => error?.cause?.code === 'SESSION_NOT_FOUND' || /会话不存在/.test(String(error?.message || error)),
+    );
+    const rollbackDb = new DatabaseSync(dbPath);
+    try {
+      const row = rollbackDb.prepare('select time_archived from session where id = ?').get('ses_fixture');
+      assert.equal(row.time_archived, null, 'a failed same-database batch must roll back every row');
+    } finally { rollbackDb.close(); }
+  } finally { fs.rmSync(tmpDir, { recursive: true, force: true }); }
+}
+
 async function testSqlJsReadsCommittedWal() {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'codearts-bar-wal-snapshot-'));
   const dbPath = path.join(tmpDir, 'wal-fixture.db');
@@ -1146,6 +1186,7 @@ async function main() {
   await testSqliteFixtureSqlJsFallback();
   await testSqlJsReadsCommittedWal();
   await testSessionWritesNeverFallBackToSqlJs();
+  await testBatchSessionWritesUseOneCoherentMutation();
   await testExactJsonFiltersAndExclusiveRange();
   await testSnapshotClockAndFixtureIsolation();
   await testProviderDbPagination();

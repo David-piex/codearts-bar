@@ -256,7 +256,7 @@ function registerIpc() {
   });
   ipcMain.handle("dashboard:log", (_event, payload) => { ipcCalls.push({ channel: "dashboard:log", payload }); if (payload?.scope === "renderer-resize-perf") resizeLogs.push(payload); return { ok: true }; });
   ipcMain.handle("dashboard:rendererError", (_event, payload) => { ipcCalls.push({ channel: "dashboard:rendererError", payload }); return { ok: true }; });
-  for (const channel of ["dashboard:settings", "dashboard:openLogs", "dashboard:copySession", "dashboard:openSession", "dashboard:openCodeArtsSession", "dashboard:archiveSession", "dashboard:renameSession", "dashboard:setPinned", "dashboard:setLayoutMode"]) {
+  for (const channel of ["dashboard:settings", "dashboard:openLogs", "dashboard:copySession", "dashboard:openSession", "dashboard:openCodeArtsSession", "dashboard:archiveSessions", "dashboard:archiveSession", "dashboard:renameSession", "dashboard:setPinned", "dashboard:setLayoutMode"]) {
     ipcMain.handle(channel, (_event, payload) => { ipcCalls.push({ channel, payload }); return { ok: true }; });
   }
 }
@@ -851,7 +851,11 @@ async function main() {
   await click(win, '[data-workspace="sessions"]');
   await waitFor(win, () => localStorage.getItem("workspaceMode") === "sessions" && Boolean(document.querySelector(".session-manager")));
   await changeValue(win, "[data-session-page-size]", "20");
-  await waitFor(win, () => localStorage.getItem("sessionPageSize") === "20" && document.querySelector('[data-table-limit="sessions"]')?.dataset?.pageSize === "20");
+  await waitFor(win, () => localStorage.getItem("sessionPageSize") === "20"
+    && document.querySelector('[data-table-limit="sessions"]')?.dataset?.pageSize === "20"
+    && document.querySelector('.session-scroll')?.getAttribute('aria-busy') === 'false'
+    && !document.querySelector('.session-row-loading')
+    && document.querySelectorAll('.session-scroll tbody tr.session-row').length === 20);
   const sessionPagerOptions = await evalIn(win, () => [...document.querySelectorAll("[data-session-page-size] option")].map((x) => Number(x.value)));
   assert.deepEqual(sessionPagerOptions, [10, 20, 50, 100], "session page size options should be 10/20/50/100");
   await waitFor(win, () => document.querySelectorAll(".session-scroll tbody tr.session-row").length >= 2);

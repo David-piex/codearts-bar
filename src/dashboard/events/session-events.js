@@ -214,12 +214,25 @@ async function handleDashboardSessionClick(e){
       if(action === 'archive' || action === 'restore'){
         setRefreshState(TXT.refresh);
         const nextArchived = action === 'archive';
+        const previousSelection = new Set(selectedSessionKeys);
+        const previousState = items.map((item) => ({ item, archived: item.archived, archivedAt: item.archivedAt }));
         for(const item of items){ item.archived = nextArchived; item.archivedAt = nextArchived ? Date.now() : null; }
         selectedSessionKeys.clear();
         saveSelectedSessions();
         if(workspaceMode === 'sessions') patchSessionView(snapshot, { table: true, toolbar: false, inspector: true });
-        await Promise.all(items.map((item) => ipcRenderer.invoke('dashboard:archiveSession', item, nextArchived)));
-        await refreshNow({ windowLayout: false, instantChart: true, partial: true });
+        try {
+          const archivePayload = items.map((item) => ({ id: item.id, source: item.source, dbPath: item.dbPath }));
+          await ipcRenderer.invoke('dashboard:archiveSessions', archivePayload, nextArchived);
+          await refreshNow({ windowLayout: false, instantChart: true, partial: true });
+        } catch(error) {
+          for(const previous of previousState){ previous.item.archived = previous.archived; previous.item.archivedAt = previous.archivedAt; }
+          selectedSessionKeys.clear();
+          previousSelection.forEach((key) => selectedSessionKeys.add(key));
+          saveSelectedSessions();
+          if(workspaceMode === 'sessions') patchSessionView(snapshot, { table: true, toolbar: false, inspector: true });
+          toast(error?.message || TXT.failed || '操作失败', 1800);
+          await refreshNow({ windowLayout: false, instantChart: true, partial: true });
+        }
         throw DASHBOARD_EVENT_HANDLED;
       }
       setRefreshState(TXT.actionDone);

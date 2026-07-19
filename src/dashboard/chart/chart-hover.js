@@ -24,15 +24,11 @@ function animatePinnedHover(rows, s){
     cancelAnimationFrame(chartHoverFrame);
     chartHoverFrame = null;
   }
-  if(prefersReducedMotion || chartPinnedIndex < 0 || !chartPoints[chartPinnedIndex]) return;
-  const started = performance.now();
-  const pulseFrame = (now) => {
-    if(chartPinnedIndex < 0 || !chartPoints[chartPinnedIndex]){ chartHoverFrame = null; return; }
-    chartHover.pulse = ((now - started) % 1400) / 1400;
-    drawChart(rows, s, chartPinnedIndex, 1);
-    chartHoverFrame = requestAnimationFrame(pulseFrame);
-  };
-  chartHoverFrame = requestAnimationFrame(pulseFrame);
+  // The pinned point is already painted by the click/keyboard handler. Keep
+  // that highlight static instead of running an unbounded canvas redraw loop.
+  // A dashboard may stay open for hours, so a decorative pulse must not cost a
+  // frame of CPU/GPU time for the whole lifetime of the window.
+  chartHover.pulse = 0;
 }
 
 function bindChart(rows, s, opts = {}){

@@ -57,6 +57,9 @@ function beginDashboardRequestGeneration(opts = {}){
   if(opts.preserveBoundary !== true) dashboardScopeTimestamp = rendererNow();
   aggregateRefreshToken += 1;
   if(aggregateRefreshTimer){ clearTimeout(aggregateRefreshTimer); aggregateRefreshTimer = null; }
+  analyticsDeferredToken += 1;
+  if(typeof cancelAnalyticsDeferredPatches === 'function') cancelAnalyticsDeferredPatches();
+  if(typeof cancelScheduledChartBind === 'function') cancelScheduledChartBind();
   requestPageLoadToken += 1;
   sessionPageLoadToken += 1;
   requestPageLoading = false;
@@ -158,6 +161,7 @@ function applyRealtimeSnapshot(incoming){
   const protectedRealtime = protectRealtimeSnapshotScope(snapshot, incoming, currentPayload, expectedAggregateScope);
   const next = mergeLightSnapshotPayload(snapshot, protectedRealtime.incoming);
   if(!next?.ok) return false;
+  if(typeof cancelPendingAppScrollRestore === 'function') cancelPendingAppScrollRestore();
   if(!snapshot?.ok){
     render(next, { instantChart: true, windowLayout: false, partial: true, immediate: true });
     return true;
@@ -177,6 +181,7 @@ function applyRealtimeSnapshot(incoming){
     };
     snapshot = next;
     analyticsDeferredToken += 1;
+    if(typeof cancelAnalyticsDeferredPatches === 'function') cancelAnalyticsDeferredPatches();
     if(layoutMode === 'dashboard' && workspaceMode === 'analytics'){
       scheduleDashboardAggregates(next, { forceAggregates: true, aggregateDelayMs: 0 });
     }
@@ -216,10 +221,10 @@ function applyRealtimeSnapshot(incoming){
     }
   };
 
-  // Invalidate deferred work scheduled for the previous snapshot. Those
-  // callbacks intentionally check snapshot identity and will now no-op.
+  // Invalidate deferred work scheduled for the previous snapshot.
   snapshot = next;
   analyticsDeferredToken += 1;
+  if(typeof cancelAnalyticsDeferredPatches === 'function') cancelAnalyticsDeferredPatches();
   sessionTableItems = sessionTableItems || [];
 
   if(layoutMode === 'compact'){

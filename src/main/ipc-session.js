@@ -12,6 +12,7 @@ function registerSessionIpc({
   patchSessionInMemory,
 }) {
   const MAX_BATCH_EXPORT = 500;
+  const MAX_BATCH_ARCHIVE = 500;
   const normalizeSession = (value, { requireDbPath = false } = {}) => {
     if (!value || typeof value !== 'object') throw new Error('会话参数无效');
     const id = String(value.id || '').trim();
@@ -23,10 +24,16 @@ function registerSessionIpc({
     if (source.length > 64) throw new Error('会话来源无效');
     return { ...value, id, dbPath, source };
   };
-  const assertAllowedDbPath = (dbPath) => {
+  const allowedDbPaths = () => {
+    if (typeof localProvider?.listDataSources !== 'function') return null;
+    return new Set(localProvider.listDataSources({})
+      .map((item) => String(item.dbPath || '').trim().toLowerCase())
+      .filter(Boolean));
+  };
+  const assertAllowedDbPath = (dbPath, allowed = null) => {
     if (!dbPath || typeof localProvider?.listDataSources !== 'function') return;
-    const allowed = localProvider.listDataSources({}).map((item) => String(item.dbPath || '')).filter(Boolean);
-    if (allowed.length && !allowed.some((item) => item.toLowerCase() === dbPath.toLowerCase())) {
+    const known = allowed || allowedDbPaths();
+    if (known?.size && !known.has(dbPath.toLowerCase())) {
       const error = new Error('会话数据库不是当前已发现的数据源');
       error.code = 'SESSION_DB_NOT_ALLOWED';
       throw error;
@@ -106,6 +113,24 @@ function registerSessionIpc({
     } catch (error) { return exportFailure(error); }
   });
   ipcMain.handle('dashboard:openLogs', () => openLogFile());
+  ipcMain.handle('dashboard:archiveSessions', async (_event, sessions, archived = true) => {
+    if (Array.isArray(sessions) && sessions.length > MAX_BATCH_ARCHIVE) throw new Error(`批量归档最多支持 ${MAX_BATCH_ARCHIVE} 个会话`);
+    const selected = Array.isArray(sessions)
+      ? sessions.filter((session) => session?.id).map((session) => normalizeSession(session, { requireDbPath: true }))
+      : [];
+    if (!selected.length) throw new Error('请选择至少一个会话');
+    const allowed = allowedDbPaths();
+    selected.forEach((session) => assertAllowedDbPath(session.dbPath, allowed));
+    const nextArchived = archived !== false;
+    const result = await localProvider.archiveSessions({
+      sessions: selected.map((session) => ({ id: session.id, source: session.source, dbPath: session.dbPath })),
+      archived: nextArchived,
+    });
+    for (const session of selected) {
+      patchSessionInMemory(session, { archived: nextArchived, archivedAt: nextArchived ? result.time || Date.now() : null });
+    }
+    return result;
+  });
   ipcMain.handle('dashboard:archiveSession', async (_event, session, archived = true) => {
     session = normalizeSession(session, { requireDbPath: true });
     assertAllowedDbPath(session.dbPath);

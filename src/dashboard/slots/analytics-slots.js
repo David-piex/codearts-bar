@@ -3,21 +3,31 @@ function analyticsAdvancedHtml(rows, s){ const t = perfNow(); const html = rende
 function analyticsDeferredHtml(label = TXT.updatingDetails || '正在更新明细...'){
   return `<div class="analytics-deferred"><span>${esc(label)}</span></div>`;
 }
+function cancelAnalyticsDeferredPatches(){
+  for(const task of analyticsDeferredTasks || []) if(task?.timer != null) clearTimeout(task.timer);
+  try { analyticsDeferredTasks?.clear?.(); } catch {}
+}
 function scheduleAnalyticsDeferredPatches(token, rows, s, opts = {}){
+  cancelAnalyticsDeferredPatches();
   const stillValid = () => token === analyticsDeferredToken && snapshot === s && layoutMode === 'dashboard' && workspaceMode === 'analytics';
-  const defer = (delay, fn) => setTimeout(() => {
-    if(!stillValid()) return;
-    fn();
-  }, delay);
-  if(opts.skipAgent !== true) defer(16, () => patchHtmlSlot('analyticsAgentSlot', renderAgentRhythm(s)));
+  const schedule = (delay, fn) => {
+    const task = { timer: null };
+    analyticsDeferredTasks?.add?.(task);
+    task.timer = setTimeout(() => {
+      analyticsDeferredTasks?.delete?.(task);
+      if(!stillValid()) return;
+      fn();
+    }, delay);
+  };
+  if(opts.skipAgent !== true) schedule(16, () => patchHtmlSlot('analyticsAgentSlot', renderAgentRhythm(s)));
   if(opts.skipTable !== true){
-    defer(72, () => {
+    schedule(72, () => {
       patchHtmlSlot('analyticsTableSlot', analyticsTableHtml(rows, s));
       bindIncrementalTables();
     });
   }
   if(opts.skipAdvanced !== true){
-    defer(180, () => {
+    schedule(180, () => {
       patchHtmlSlot('analyticsAdvancedSlot', analyticsAdvancedHtml(rows, s));
       bindIncrementalTables();
     });
@@ -67,6 +77,7 @@ function patchAnalyticsView(s, rows, opts = {}){
   patchHtmlSlot('analyticsEmptySlot', analyticsEmptyState(rows));
   patchChartChrome(rows, s);
   const token = ++analyticsDeferredToken;
+  cancelAnalyticsDeferredPatches();
   if(opts.deferHeavy === true){
     patchHtmlSlot('analyticsAgentSlot', analyticsDeferredHtml(TXT.updatingAgentIdle || '正在更新 Agent idle...'));
     if(opts.sourceSwitch === true){
@@ -90,10 +101,20 @@ function patchAnalyticsView(s, rows, opts = {}){
 function currentAnalyticsRows(s = snapshot || {}){
   return getFilteredRowsForView(s);
 }
-function scheduleChartBind(rows, s, opts = {}, delay = 42, after = null){
-  const token = ++chartBindToken;
+function cancelScheduledChartBind(invalidate = true){
+  if(invalidate) chartBindToken += 1;
   if(chartBindTimer) clearTimeout(chartBindTimer);
   if(chartBindFrame) cancelAnimationFrame(chartBindFrame);
+  if(chartBindIdle != null && typeof cancelIdleCallback === 'function') cancelIdleCallback(chartBindIdle);
+  if(chartBindFallbackTimer) clearTimeout(chartBindFallbackTimer);
+  chartBindTimer = null;
+  chartBindFrame = null;
+  chartBindIdle = null;
+  chartBindFallbackTimer = null;
+}
+function scheduleChartBind(rows, s, opts = {}, delay = 42, after = null){
+  cancelScheduledChartBind(false);
+  const token = ++chartBindToken;
   chartBindTimer = setTimeout(() => {
     chartBindTimer = null;
     const commit = () => {
@@ -108,11 +129,17 @@ function scheduleChartBind(rows, s, opts = {}, delay = 42, after = null){
     };
     const preferIdleBind = opts.settled === true ? false : (opts.resize === true || delay > 80);
     if(preferIdleBind && typeof requestIdleCallback === 'function'){
-      requestIdleCallback(commit, { timeout: opts.resize === true ? 900 : 700 });
+      chartBindIdle = requestIdleCallback(() => {
+        chartBindIdle = null;
+        commit();
+      }, { timeout: opts.resize === true ? 900 : 700 });
       return;
     }
     if(preferIdleBind){
-      setTimeout(commit, opts.resize === true ? 120 : 80);
+      chartBindFallbackTimer = setTimeout(() => {
+        chartBindFallbackTimer = null;
+        commit();
+      }, opts.resize === true ? 120 : 80);
       return;
     }
     let bound = false;
@@ -120,14 +147,16 @@ function scheduleChartBind(rows, s, opts = {}, delay = 42, after = null){
       if(bound) return;
       bound = true;
       if(chartBindFrame){ try { cancelAnimationFrame(chartBindFrame); } catch {} }
+      if(chartBindFallbackTimer) clearTimeout(chartBindFallbackTimer);
       chartBindFrame = null;
+      chartBindFallbackTimer = null;
       if(token !== chartBindToken || snapshot !== s || layoutMode !== 'dashboard' || workspaceMode !== 'analytics') return;
       bindChart(rows, s, opts);
       if(typeof ensureChartResizeObserver === 'function') ensureChartResizeObserver();
       if(typeof after === 'function') after();
     };
     chartBindFrame = requestAnimationFrame(bindNow);
-    setTimeout(bindNow, 48);
+    chartBindFallbackTimer = setTimeout(bindNow, 48);
     try { Promise.resolve().then(bindNow); } catch {}
   }, Math.max(0, Number(delay || 0)));
 }

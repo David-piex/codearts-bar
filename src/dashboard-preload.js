@@ -25,6 +25,7 @@ const invokeChannels = new Set([
   'dashboard:exportSession',
   'dashboard:exportSessions',
   'dashboard:openLogs',
+  'dashboard:archiveSessions',
   'dashboard:archiveSession',
   'dashboard:renameSession',
 ]);

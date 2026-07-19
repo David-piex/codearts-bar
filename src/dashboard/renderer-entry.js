@@ -169,6 +169,10 @@ let renderScheduleTimer = null;
 let renderScheduled = false;
 let pendingRenderState = null;
 let pendingRenderOptions = null;
+let renderCommitToken = 0;
+let appScrollRestoreToken = 0;
+let appScrollRestoreFrame = null;
+let appScrollRestoreTimer = null;
 let lastFilteredRows = [];
 let lastFilteredSnapshot = null;
 let lastFilteredModeKey = '';
@@ -181,6 +185,8 @@ let chartCanvasBoxCache = { width: 0, height: 0, dpr: 0, key: '', timestamp: 0, 
 let chartGeometryDirty = false;
 let chartBindTimer = null;
 let chartBindFrame = null;
+let chartBindIdle = null;
+let chartBindFallbackTimer = null;
 let chartBindToken = 0;
 let chartZoomSettleTimer = null;
 let chartResizeSettleTimer = null;
@@ -192,6 +198,7 @@ let sessionHydrationToken = 0;
 let sessionBulkPatchFrame = null;
 let sessionInspectorPatchToken = 0;
 let sessionInspectorPatchTimer = null;
+let analyticsDeferredTasks = new Set();
 let lastSessionSelectedRowKey = '';
 let storedChartSeries = localStorage.getItem('chartSeries') || '';
 if(localStorage.getItem('chartSeriesLeanMigrated') !== '1'){
@@ -295,14 +302,32 @@ function render(s, opts = {}){
   renderScheduleFrame = requestAnimationFrame(flush);
   renderScheduleTimer = setTimeout(flush, 48);
 }
+function cancelPendingAppScrollRestore(){
+  appScrollRestoreToken += 1;
+  if(appScrollRestoreFrame){ try { cancelAnimationFrame(appScrollRestoreFrame); } catch {} }
+  if(appScrollRestoreTimer) clearTimeout(appScrollRestoreTimer);
+  appScrollRestoreFrame = null;
+  appScrollRestoreTimer = null;
+}
 function preserveAppScroll(app, scrollTop){
   if(!app || !Number.isFinite(scrollTop)) return;
+  cancelPendingAppScrollRestore();
+  const token = appScrollRestoreToken;
   const restore = () => {
+    if(token !== appScrollRestoreToken) return;
     if(Math.abs(Number(app.scrollTop || 0) - scrollTop) > 0.5) app.scrollTop = scrollTop;
   };
   restore();
-  try { requestAnimationFrame(restore); } catch {}
-  setTimeout(restore, 0);
+  try {
+    appScrollRestoreFrame = requestAnimationFrame(() => {
+      appScrollRestoreFrame = null;
+      restore();
+    });
+  } catch {}
+  appScrollRestoreTimer = setTimeout(() => {
+    appScrollRestoreTimer = null;
+    restore();
+  }, 0);
 }
 function schedulePostCommit(fn, timeout = 48){
   let done = false;
@@ -314,8 +339,18 @@ function schedulePostCommit(fn, timeout = 48){
   try { requestAnimationFrame(run); } catch {}
   setTimeout(run, timeout);
 }
+function scheduleRenderPostCommit(token, fn, timeout = 48){
+  schedulePostCommit(() => {
+    if(token !== renderCommitToken) return;
+    fn();
+  }, timeout);
+}
 function renderImmediate(s, opts = {}){
   const renderStartedAt = perfNow();
+  const commitToken = ++renderCommitToken;
+  analyticsDeferredToken += 1;
+  if(typeof cancelAnalyticsDeferredPatches === 'function') cancelAnalyticsDeferredPatches();
+  if(typeof cancelScheduledChartBind === 'function') cancelScheduledChartBind();
   perfBucket(viewModeKey());
   rangeFilter = normalizeRangeFilter(rangeFilter);
   snapshot = s;
@@ -357,7 +392,7 @@ function renderImmediate(s, opts = {}){
     preserveAppScroll(app, previousScrollTop);
     if(opts.windowLayout !== false) applyWindowLayout();
     markRenderCost(renderStartedAt, 'compact', rows.length);
-    schedulePostCommit(() => {
+    scheduleRenderPostCommit(commitToken, () => {
       app?.classList.remove('view-switching');
       document.body?.classList?.remove?.('view-switching');
     });
@@ -374,7 +409,7 @@ function renderImmediate(s, opts = {}){
     preserveAppScroll(app, previousScrollTop);
     if(opts.windowLayout !== false) applyWindowLayout();
     markRenderCost(renderStartedAt, patched ? 'sessions:partial' : 'sessions', sessionTableItems.length);
-    schedulePostCommit(() => {
+    scheduleRenderPostCommit(commitToken, () => {
       app?.classList.remove('view-switching');
       document.body?.classList?.remove?.('view-switching');
       bindIncrementalTables();
@@ -394,7 +429,7 @@ function renderImmediate(s, opts = {}){
   if(opts.windowLayout !== false) applyWindowLayout();
   markRenderCost(renderStartedAt, patched ? 'analytics:partial' : 'analytics', rows.length);
   const instant = opts.instantChart === true || modeChanged || suppressChartIntro || patched;
-  schedulePostCommit(() => {
+  scheduleRenderPostCommit(commitToken, () => {
     app?.classList.remove('view-switching');
     document.body?.classList?.remove?.('view-switching');
     bindIncrementalTables();

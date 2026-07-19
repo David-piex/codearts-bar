@@ -24,13 +24,15 @@ document.addEventListener('change', (e) => {
     resetSessionPaging();
     if(snapshot?.ok && workspaceMode === 'sessions'){
       setPagedTableLoading?.('sessions', true, 0);
-      refreshSessionPageCache(0, { force: true }).then(async () => {
+      refreshSessionPageCache(0, { force: true }).then(async (loaded) => {
+        if(!loaded) return;
         await ensureSessionPageInBoundsAfterLoad?.();
         scrollPagedTableToTop?.('sessions');
-        if(snapshot?.ok && workspaceMode === 'sessions') patchSessionView(snapshot, { table: true, toolbar: false, inspector: true, pageChange: true });
+        if(snapshot?.ok && workspaceMode === 'sessions'){
+          if(!patchSessionTablePageRows(snapshot, { inspector: true })) patchSessionView(snapshot, { table: true, toolbar: false, inspector: true, pageChange: true });
+        }
       }).catch(() => setPagedTableLoading?.('sessions', false, 0))
         .finally(() => clearPagedTableLoading?.('sessions'));
-      patchSessionView(snapshot, { table: true, toolbar: false, inspector: true, pageChange: true });
     }
     e.stopImmediatePropagation?.();
   }

@@ -8,6 +8,7 @@ async function main() {
   const calls = [];
   let dialogResult = { canceled: false, filePath: 'C:\\exports\\session.xlsx' };
   let exportError = null;
+  let dataSourceLookups = 0;
   const owner = { id: 'dashboard' };
   registerSessionIpc({
     ipcMain: { handle(name, handler) { handlers.set(name, handler); } },
@@ -15,9 +16,11 @@ async function main() {
     dialog: { async showSaveDialog(receivedOwner, options) { calls.push({ type: 'dialog', receivedOwner, options }); return dialogResult; } },
     BrowserWindow: { fromWebContents(sender) { assert.equal(sender.id, 'renderer'); return owner; } },
     localProvider: {
+      listDataSources() { dataSourceLookups += 1; return [{ dbPath: 'C:\\data\\opencode.db' }, { dbPath: 'C:\\data\\cli.db' }]; },
       safeFileStem(value) { return String(value).replace(/[^a-z0-9-]/gi, '_'); },
       async exportSessionToFile(options) { calls.push({ type: 'export', options }); if (exportError) throw exportError; return { path: options.outputPath, format: options.format, bytes: 321 }; },
       async exportSessionsToFile(options) { calls.push({ type: 'batch-export', options }); if (exportError) throw exportError; return { path: options.outputPath, format: options.format, bytes: 654, model: { sessions: options.sessions.filter((item) => item.id !== 'ses-internal') } }; },
+      async archiveSessions(options) { calls.push({ type: 'archive-batch', options }); return { ok: true, archived: options.archived, count: options.sessions.length, time: 123, attempts: 1, sources: 1 }; },
     },
     openSessionDir() {},
     openCodeArts() {},
@@ -84,6 +87,21 @@ async function main() {
   assert.equal(batchCall.includeToolIO, true);
   assert.equal(batchCall.redactPaths, false);
   assert.equal(batchCall.includeErrors, false);
+  const archiveBatchHandler = handlers.get('dashboard:archiveSessions');
+  assert.equal(typeof archiveBatchHandler, 'function');
+  const lookupsBeforeArchive = dataSourceLookups;
+  const archiveResult = await archiveBatchHandler({ sender: { id: 'renderer' } }, [session, second], true);
+  assert.deepEqual(archiveResult, { ok: true, archived: true, count: 2, time: 123, attempts: 1, sources: 1 });
+  const archiveCall = calls.findLast((call) => call.type === 'archive-batch').options;
+  assert.deepEqual(archiveCall.sessions, [
+    { id: 'ses-1', source: 'desktop', dbPath: 'C:\\data\\opencode.db' },
+    { id: 'ses-2', source: 'cli', dbPath: 'C:\\data\\cli.db' },
+  ]);
+  assert.equal(dataSourceLookups - lookupsBeforeArchive, 1, 'batch archive should discover allowed data sources once');
+  await assert.rejects(
+    () => archiveBatchHandler({}, Array.from({ length: 501 }, (_, index) => ({ id: `s-${index}` }))),
+    /最多支持 500/,
+  );
   await assert.rejects(() => batchHandler({ sender: { id: 'renderer' } }, Array.from({ length: 501 }, (_, index) => ({ id: `s-${index}` }))), /最多支持 500/);
   const renameHandler = handlers.get('dashboard:renameSession');
   await assert.rejects(() => renameHandler({}, session, 'x'.repeat(201)), /最多 200/);
