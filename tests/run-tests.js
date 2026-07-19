@@ -786,7 +786,7 @@ async function testInternalSessionsStayOutOfSessionViews() {
     dashboardUsageRollup.resetUsageRollupStats();
     if (previous == null) delete process.env.CODEARTS_BAR_FORCE_SQLJS; else process.env.CODEARTS_BAR_FORCE_SQLJS = previous;
     if (previousConfigDir == null) delete process.env.CODEARTS_BAR_CONFIG_DIR; else process.env.CODEARTS_BAR_CONFIG_DIR = previousConfigDir;
-    fs.rmSync(tmpDir, { recursive: true, force: true });
+    await fs.promises.rm(tmpDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   }
 }
 
