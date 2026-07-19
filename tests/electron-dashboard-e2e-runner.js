@@ -2,7 +2,7 @@
 
 const assert = require("node:assert/strict");
 const path = require("node:path");
-const { app, BrowserWindow, ipcMain } = require("electron");
+const { app, BrowserWindow, ipcMain, screen } = require("electron");
 
 const root = path.join(__dirname, "..");
 const now = Number(process.env.CODEARTS_BAR_NOW_MS || 0) || Date.UTC(2026, 6, 9, 12, 0, 0);
@@ -617,13 +617,21 @@ async function main() {
   await captureScenario(win, "desktop-narrow");
   win.maximize();
   await delay(700);
+  const maximizedDisplay = screen.getDisplayMatching(win.getBounds());
+  const maximizedWindowBounds = win.getBounds();
   const resizeState = await evalIn(win, () => ({
-    isMaxViewport: window.innerWidth >= 1040 && window.innerHeight >= 700,
+    viewport: { width: window.innerWidth, height: window.innerHeight },
     perf: window.__dashboardResizePerf || [],
     bodyResizing: document.body.classList.contains("is-resizing"),
     appHtml: document.getElementById("app")?.innerHTML?.length || 0,
   }));
-  assert.equal(resizeState.isMaxViewport, true);
+  assert.equal(win.isMaximized(), true, 'dashboard window should enter the maximized state');
+  assert.ok(
+    maximizedWindowBounds.width >= maximizedDisplay.workAreaSize.width - 2
+      && maximizedWindowBounds.height >= maximizedDisplay.workAreaSize.height - 2,
+    `maximized window should fill the available display: ${JSON.stringify({ bounds: maximizedWindowBounds, workArea: maximizedDisplay.workArea })}`,
+  );
+  assert.ok(resizeState.viewport.width > 0 && resizeState.viewport.height > 0, `maximized renderer viewport should remain valid: ${JSON.stringify(resizeState.viewport)}`);
   const maximizedLayout = await evalIn(win, () => {
     const content = document.querySelector('.content')?.getBoundingClientRect();
     const header = document.querySelector('.app-header')?.getBoundingClientRect();
