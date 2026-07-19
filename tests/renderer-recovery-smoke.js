@@ -42,7 +42,7 @@ try {
   assert.equal(diagnostics.gpuFeatureStatus.gpu_compositing, 'disabled_software');
   assert.deepEqual(diagnostics.commandLine, ['--inspect=0', '--open-dashboard']);
 
-  assert.equal(resolveRuntimeDataDir({ APPDATA: path.join(root, 'Roaming') }, root), path.join(root, 'Roaming', 'CodeArtsBar'));
+  assert.equal(resolveRuntimeDataDir({ APPDATA: path.join(root, 'Roaming') }, root, 'win32'), path.join(root, 'Roaming', 'CodeArtsBar'));
   assert.equal(resolveRuntimeDataDir({}, root, 'win32'), path.join(root, 'AppData', 'Roaming', 'CodeArtsBar'));
   assert.equal(resolveRuntimeDataDir({}, root, 'darwin'), path.join(root, 'Library', 'Application Support', 'CodeArtsBar'));
   assert.equal(resolveRuntimeDataDir({ XDG_CONFIG_HOME: path.join(root, 'xdg') }, root, 'linux'), path.join(root, 'xdg', 'CodeArtsBar'));

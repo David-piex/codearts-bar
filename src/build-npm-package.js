@@ -6,9 +6,15 @@ const { build: buildCliRuntime } = require('./build-cli-resources');
 const root = path.resolve(__dirname, '..');
 const runtime = path.join(root, '.cache', 'cli-runtime');
 const outDir = path.join(root, '.cache', 'npm-package');
+const releaseDir = path.join(root, 'release');
 function readJson(file) { return JSON.parse(fs.readFileSync(file, 'utf8').replace(/^\uFEFF/, '')); }
+function ensurePackDestination(target = releaseDir) {
+  fs.mkdirSync(target, { recursive: true });
+  return target;
+}
 function build() {
   buildCliRuntime();
+  ensurePackDestination();
   fs.rmSync(outDir, { recursive: true, force: true });
   fs.mkdirSync(outDir, { recursive: true });
   fs.cpSync(path.join(runtime, 'src'), path.join(outDir, 'src'), { recursive: true });
@@ -32,4 +38,4 @@ function build() {
   console.log(`npm package staging: ${path.relative(root, outDir)}`);
 }
 if (require.main === module) build();
-module.exports = { build };
+module.exports = { build, ensurePackDestination };

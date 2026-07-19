@@ -4,6 +4,7 @@ const fs=require('node:fs');
 const os=require('node:os');
 const path=require('node:path');
 const {spawnSync}=require('node:child_process');
+const {ensurePackDestination}=require('../src/build-npm-package');
 const root=path.resolve(__dirname,'..');
 const pkg=require('../package.json');
 const runtime=path.join(root,'.cache','cli-runtime');
@@ -22,6 +23,14 @@ assert.equal(fs.existsSync(path.join(npmStage,'src','dashboard-renderer.js')),fa
 const npmPkg=JSON.parse(fs.readFileSync(path.join(npmStage,'package.json'),'utf8'));
 assert.equal(npmPkg.version,pkg.version);
 assert.equal(npmPkg.bin['codearts-bar'],'src/bin.js');
+const packDestinationRoot=fs.mkdtempSync(path.join(os.tmpdir(),'codearts-bar-pack-destination-'));
+const packDestination=path.join(packDestinationRoot,'nested','release');
+try {
+  assert.equal(ensurePackDestination(packDestination),packDestination);
+  assert.equal(fs.statSync(packDestination).isDirectory(),true);
+} finally {
+  fs.rmSync(packDestinationRoot,{recursive:true,force:true});
+}
 const fixtureDb=path.join(root,'tests','fixtures','opencode-fixture.db');
 const fixtureConfig=path.join(os.tmpdir(),'codearts-bar-npm-smoke-config');
 const fixtureEnv={...process.env,CODEARTS_BAR_DB:fixtureDb,CODEARTS_BAR_CONFIG_DIR:fixtureConfig,CODEARTS_BAR_NOW_MS:'1783512000000'};
