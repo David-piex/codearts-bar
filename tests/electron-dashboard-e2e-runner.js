@@ -615,6 +615,17 @@ async function main() {
 
   await setWindowSize(win, 1040, 720);
   await captureScenario(win, "desktop-narrow");
+  await setWindowSize(win, 1024, 720);
+  const compactDesktopFilters = await evalIn(win, () => {
+    const pageHead = document.querySelector('.analytics-page-head')?.getBoundingClientRect();
+    const filters = document.querySelector('.analytics-page-head .filters')?.getBoundingClientRect();
+    return {
+      contained: Boolean(pageHead && filters && filters.left >= pageHead.left && filters.right <= pageHead.right + 1),
+      pageHead: pageHead ? { left: pageHead.left, right: pageHead.right, width: pageHead.width } : null,
+      filters: filters ? { left: filters.left, right: filters.right, width: filters.width } : null,
+    };
+  });
+  assert.equal(compactDesktopFilters.contained, true, `1024px dashboard filters should stay inside the page heading: ${JSON.stringify(compactDesktopFilters)}`);
   win.maximize();
   await delay(700);
   const maximizedDisplay = screen.getDisplayMatching(win.getBounds());

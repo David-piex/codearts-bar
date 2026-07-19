@@ -120,7 +120,7 @@ body.is-zooming :where(#app *, .chart-card *, .table-card *, .session-simple-she
   .app-brand .page-subtitle { display:none; }
   .analytics-page-head { grid-template-columns:1fr; align-items:stretch; }
   .analytics-page-head .filters {
-    width:max-content;
+    width:100%;
     max-width:100%;
     justify-self:start;
     justify-content:flex-start;

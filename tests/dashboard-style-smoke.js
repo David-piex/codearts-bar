@@ -75,6 +75,11 @@ const aggregateSlotPatch = analyticsSlotsSource.slice(
 );
 const cssBundlePath = path.join(__dirname, "..", "src", "dashboard-bundle.css");
 const cssBundle = fs.readFileSync(cssBundlePath, "utf8");
+const semanticCss = fs.readFileSync(path.join(__dirname, "..", "src", "styles", "domain-semantic.css"), "utf8");
+const analyticsResponsiveCss = semanticCss.slice(
+  semanticCss.indexOf('@media (max-width:1360px)'),
+  semanticCss.indexOf('@media (max-width:900px)'),
+);
 const cssSources = require(path.join(__dirname, "..", "src", "dashboard-css-sources.json"));
 const cssSourceBytes = cssSources.reduce((sum, file) => sum + fs.statSync(path.join(__dirname, "..", "src", file)).size, 0);
 const dashboardDocument = fs.readFileSync(path.join(__dirname, "..", "src", "dashboard.html"), "utf8");
@@ -90,6 +95,8 @@ assert.match(cssBundle, /@media\(min-width:1600px\)/);
 assert.match(cssBundle, /\.diagnostics-notice\{width:100%/);
 assert.match(cssBundle, /\.app-header\{display:grid/);
 assert.match(cssBundle, /\.analytics-page-head\{display:grid/);
+assert.match(analyticsResponsiveCss, /\.analytics-page-head \.filters \{[\s\S]*width:100%/);
+assert.doesNotMatch(analyticsResponsiveCss, /width:max-content/);
 assert.match(cssBundle, /\.series-panel-lean \.series-chip\.active/);
 assert.match(cssBundle, /body\.is-filtering :where\(\.summary-card,?\.chart-card,?\.table-card,?\.source-card/);
 assert.match(cssBundle, /body\.source-switch-pending :where\(\.summary-card,?\.chart-card,?\.table-card,?\.source-card/);
