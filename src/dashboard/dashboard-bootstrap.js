@@ -163,11 +163,25 @@ function applyRealtimeSnapshot(incoming){
     return true;
   }
   if(protectedRealtime.scopeMismatch){
+    const app = document.getElementById('app');
+    const content = document.querySelector('.content');
+    const appScrollTop = Number(app?.scrollTop || 0);
+    const appScrollLeft = Number(app?.scrollLeft || 0);
+    const contentScrollTop = Number(content?.scrollTop || 0);
+    const contentScrollLeft = Number(content?.scrollLeft || 0);
+    const restoreScopeScroll = () => {
+      const currentApp = document.getElementById('app');
+      const currentContent = document.querySelector('.content');
+      if(currentApp){ currentApp.scrollTop = appScrollTop; currentApp.scrollLeft = appScrollLeft; }
+      if(currentContent){ currentContent.scrollTop = contentScrollTop; currentContent.scrollLeft = contentScrollLeft; }
+    };
     snapshot = next;
     analyticsDeferredToken += 1;
     if(layoutMode === 'dashboard' && workspaceMode === 'analytics'){
       scheduleDashboardAggregates(next, { forceAggregates: true, aggregateDelayMs: 0 });
     }
+    restoreScopeScroll();
+    try { requestAnimationFrame(restoreScopeScroll); } catch {}
     return true;
   }
 

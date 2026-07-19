@@ -195,6 +195,7 @@ function patchRequestSelection(){
 }
 function patchDashboardAggregateSlots(s = snapshot || {}, changes = {}){
   if(!analyticsSlotsReady() || layoutMode !== 'dashboard' || workspaceMode !== 'analytics') return false;
+  setInteractionMode('is-filtering', 190);
   const preserveDatePopover = Boolean(dateRangeOpen && document.querySelector?.('.date-range-popover'));
   const patchAll = !Object.keys(changes || {}).length;
   const trendChangesChart = Boolean(changes.trend && trendListCanDriveChart(s, isDayRange()));

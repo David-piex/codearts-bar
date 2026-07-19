@@ -12,12 +12,20 @@ function patchSourceSelectionChrome(nextSource = sourceFilter){
   } catch {}
   return true;
 }
+function setSourceSwitchPending(active = false){
+  try {
+    document.body?.classList?.toggle?.('source-switch-pending', Boolean(active));
+    document.getElementById('app')?.classList?.toggle?.('source-switch-pending', Boolean(active));
+  } catch {}
+}
 function patchSourceSwitchPending(){
   if(!snapshot?.ok || workspaceMode !== 'analytics' || !analyticsSlotsReady()) return false;
+  setSourceSwitchPending(true);
   setInteractionMode('is-filtering', 120);
   patchSourceSelectionChrome(sourceFilter);
-  patchHtmlSlot('analyticsTableSlot', analyticsDeferredHtml(TXT.loading || TXT.refresh || '正在加载...'));
-  bindIncrementalTables();
+  // Keep the existing table mounted while the new source page is fetched.
+  // Replacing it with a loading node causes a visible layout flash.
+  setPagedTableLoading?.('requests', true, requestTablePage);
   return true;
 }
 async function switchSourceFilter(nextSource, opts = {}){
@@ -28,14 +36,18 @@ async function switchSourceFilter(nextSource, opts = {}){
   beginDashboardRequestGeneration();
   localStorage.setItem('statsSource', sourceFilter);
   patchSourceSelectionChrome(sourceFilter);
-  if(snapshot?.ok && workspaceMode === 'analytics'){
-    patchSourceSwitchPending();
-    const ok = await patchAnalyticsAfterRequestPageRefresh({ deferHeavy: true, chartDelayMs: opts.chartDelayMs ?? 40, sourceSwitch: true });
-    if(ok) return true;
+  try {
+    if(snapshot?.ok && workspaceMode === 'analytics'){
+      patchSourceSwitchPending();
+      const ok = await patchAnalyticsAfterRequestPageRefresh({ deferHeavy: true, chartDelayMs: opts.chartDelayMs ?? 40, sourceSwitch: true });
+      if(ok) return true;
+    }
+    if(snapshot?.ok && workspaceMode === 'sessions' && patchSessionView(snapshot, { table: true, toolbar: false, inspector: true })) return true;
+    if(snapshot?.ok) render(snapshot, { windowLayout: false, instantChart: true, deferHeavy: true, partial: true });
+    return true;
+  } finally {
+    setSourceSwitchPending(false);
   }
-  if(snapshot?.ok && workspaceMode === 'sessions' && patchSessionView(snapshot, { table: true, toolbar: false, inspector: true })) return true;
-  if(snapshot?.ok) render(snapshot, { windowLayout: false, instantChart: true, deferHeavy: true, partial: true });
-  return true;
 }
 async function handleDashboardAnalyticsClick(e){
     const requestPage = e.target.closest('[data-request-page]');

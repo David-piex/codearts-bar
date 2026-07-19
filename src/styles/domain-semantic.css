@@ -208,6 +208,19 @@ body.view-switching :where(button, .icon-chip, .range button, .series-chip, .tab
   box-shadow: var(--cb-shadow-control) !important;
 }
 
+/* Source filters patch cards in place; do not replay the entry animation. */
+body.is-filtering :where(.summary-card, .chart-card, .table-card, .source-card, .source-overview, .agent-rhythm-card, .analytics-advanced-shell) {
+  animation: none;
+  animation-delay: 0ms;
+  transition-duration: 0ms;
+}
+body.source-switch-pending :where(.summary-card, .chart-card, .table-card, .source-card, .source-overview, .agent-rhythm-card, .analytics-advanced-shell),
+body.source-switch-pending :where(.summary-card *, .chart-card *, .table-card *, .source-card *, .source-overview *, .agent-rhythm-card *, .analytics-advanced-shell *) {
+  animation: none;
+  animation-delay: 0ms;
+  transition-duration: 0ms;
+}
+
 /* 1.16.24 unified analytics filter geometry */
 .analytics-page-head .filters,
 .session-filter-head .filters {

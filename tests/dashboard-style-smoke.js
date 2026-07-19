@@ -58,6 +58,15 @@ const rendererFiles = [
 const renderer = rendererFiles
   .map((file) => fs.readFileSync(path.join(__dirname, "..", "src", file), "utf8"))
   .join("\n");
+const analyticsEventsSource = fs.readFileSync(path.join(__dirname, "..", "src", "dashboard", "events", "analytics-events.js"), "utf8");
+const sourceSwitchPending = analyticsEventsSource.slice(
+  analyticsEventsSource.indexOf("function patchSourceSwitchPending"),
+  analyticsEventsSource.indexOf("async function switchSourceFilter"),
+);
+const analyticsSlotsSource = fs.readFileSync(path.join(__dirname, "..", "src", "dashboard", "slots", "analytics-slots.js"), "utf8");
+const aggregateSlotPatch = analyticsSlotsSource.slice(
+  analyticsSlotsSource.indexOf("function patchDashboardAggregateSlots"),
+);
 const cssBundlePath = path.join(__dirname, "..", "src", "dashboard-bundle.css");
 const cssBundle = fs.readFileSync(cssBundlePath, "utf8");
 const cssSources = require(path.join(__dirname, "..", "src", "dashboard-css-sources.json"));
@@ -76,6 +85,11 @@ assert.match(cssBundle, /\.diagnostics-notice\{width:100%/);
 assert.match(cssBundle, /\.app-header\{display:grid/);
 assert.match(cssBundle, /\.analytics-page-head\{display:grid/);
 assert.match(cssBundle, /\.series-panel-lean \.series-chip\.active/);
+assert.match(cssBundle, /body\.is-filtering :where\(\.summary-card,?\.chart-card,?\.table-card,?\.source-card/);
+assert.match(cssBundle, /body\.source-switch-pending :where\(\.summary-card,?\.chart-card,?\.table-card,?\.source-card/);
+assert.match(sourceSwitchPending, /setPagedTableLoading\?\.\('requests', true, requestTablePage\)/);
+assert.doesNotMatch(sourceSwitchPending, /patchHtmlSlot\('analyticsTableSlot'/);
+assert.match(aggregateSlotPatch, /setInteractionMode\('is-filtering', 190\)/);
 assert.match(cssBundle, /--series-color/);
 assert.match(cssBundle, /--filter-control-height:42px/);
 assert.match(cssBundle, /:has\(\.date-range-control\.open\) \.filters\{overflow:visible/);

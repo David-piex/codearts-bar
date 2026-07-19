@@ -54,13 +54,17 @@ async function ensureRequestPageInBoundsAfterLoad(){
 async function patchAnalyticsAfterRequestPageRefresh(opts = {}){
   if(!snapshot?.ok || workspaceMode !== 'analytics') return false;
   setRefreshState(TXT.refresh);
-  await refreshRequestPageCache(requestTablePage, { force: true });
-  await ensureRequestPageInBoundsAfterLoad();
-  const ok = patchAnalyticsSlotsForState(snapshot, opts);
-  setRefreshState(TXT.refreshed);
-  clearTimeout(lastToastTimer);
-  lastToastTimer = setTimeout(() => setRefreshState(''), 700);
-  return ok;
+  try {
+    await refreshRequestPageCache(requestTablePage, { force: true });
+    await ensureRequestPageInBoundsAfterLoad();
+    const ok = patchAnalyticsSlotsForState(snapshot, opts);
+    setRefreshState(TXT.refreshed);
+    clearTimeout(lastToastTimer);
+    lastToastTimer = setTimeout(() => setRefreshState(''), 700);
+    return ok;
+  } finally {
+    clearPagedTableLoading?.('requests');
+  }
 }
 function currentRequestPageOffset(page = requestTablePage){
   return Math.max(0, Number(page || 0)) * REQUEST_PAGE_SIZE;

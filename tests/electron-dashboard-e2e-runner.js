@@ -61,6 +61,7 @@ const requestLog = Array.from({ length: 72 }, (_, i) => {
 let requestPageTotalOverride = null;
 let sessionPageTotalOverride = null;
 let refreshDelayMs = 0;
+let requestPageDelayMs = 0;
 let e2eWindow = null;
 
 function usageForRows(rows) {
@@ -194,8 +195,9 @@ function registerIpc() {
   ipcMain.handle("dashboard:refreshLight", async (_event, payload) => { ipcCalls.push({ channel: "dashboard:refreshLight", payload }); if (refreshDelayMs) await delay(refreshDelayMs); return snapshotFor(payload); });
   ipcMain.handle("dashboard:refreshFull", async (_event, payload) => { ipcCalls.push({ channel: "dashboard:refreshFull", payload }); if (refreshDelayMs) await delay(refreshDelayMs); return snapshotFor(payload); });
   ipcMain.handle("dashboard:getAggregates", (_event, payload) => { ipcCalls.push({ channel: "dashboard:getAggregates", payload }); return aggregatesFor(payload); });
-  ipcMain.handle("dashboard:getRequestsPage", (_event, payload) => {
+  ipcMain.handle("dashboard:getRequestsPage", async (_event, payload) => {
     ipcCalls.push({ channel: "dashboard:getRequestsPage", payload });
+    if (requestPageDelayMs) await delay(requestPageDelayMs);
     const rows = filterRows(payload);
     return page(Number.isFinite(requestPageTotalOverride) ? rows.slice(0, requestPageTotalOverride) : rows, payload, 20);
   });
@@ -238,6 +240,10 @@ function registerIpc() {
   ipcMain.handle("dashboard:e2eSetRefreshDelay", (_event, value) => {
     refreshDelayMs = Math.max(0, Number(value) || 0);
     return { ok: true, refreshDelayMs };
+  });
+  ipcMain.handle("dashboard:e2eSetRequestPageDelay", (_event, value) => {
+    requestPageDelayMs = Math.max(0, Number(value) || 0);
+    return { ok: true, requestPageDelayMs };
   });
   ipcMain.handle("dashboard:e2ePushRealtime", (_event, payload = {}) => {
     if (!e2eWindow || e2eWindow.isDestroyed()) return { ok: false };
@@ -714,11 +720,30 @@ async function main() {
     window.__e2eSummarySlot = document.querySelector("#analyticsSummarySlot");
     window.__e2eChartSlot = document.querySelector("#analyticsChartSlot");
     window.__e2eTableSlot = document.querySelector("#analyticsTableSlot");
+    window.__e2eSourceTable = document.querySelector(".request-main .table-scroll");
   });
+  await evalIn(win, () => window.codeartsApi.invoke("dashboard:e2eSetRequestPageDelay", 180));
   const sourceStarted = Date.now();
   await click(win, '[data-source="cli"]');
   await waitFor(win, () => localStorage.getItem("statsSource") === "cli" && document.querySelector('[data-source="cli"]')?.classList.contains("active"));
   const sourceSwitchMs = Date.now() - sourceStarted;
+  await delay(40);
+  const sourcePendingState = await evalIn(win, () => ({
+    pending: document.body.classList.contains("source-switch-pending"),
+    tableStable: window.__e2eSourceTable === document.querySelector(".request-main .table-scroll"),
+    tableBusy: document.querySelector(".request-main .table-scroll")?.getAttribute("aria-busy") === "true",
+    deferredVisible: Boolean(document.querySelector("#analyticsTableSlot .analytics-deferred")),
+    summaryAnimation: getComputedStyle(document.querySelector("#analyticsSummarySlot .summary-card")).animationName,
+  }));
+  assert.deepEqual(sourcePendingState, {
+    pending: true,
+    tableStable: true,
+    tableBusy: true,
+    deferredVisible: false,
+    summaryAnimation: "none",
+  }, `source switch should preserve the table and suppress entry animation while loading: ${JSON.stringify(sourcePendingState)}`);
+  await waitFor(win, () => !document.body.classList.contains("source-switch-pending") && document.querySelector(".request-main .table-scroll")?.getAttribute("aria-busy") === "false");
+  await evalIn(win, () => window.codeartsApi.invoke("dashboard:e2eSetRequestPageDelay", 0));
   await delay(140);
   const sourceState = await evalIn(win, () => ({
     source: localStorage.getItem("statsSource"),
