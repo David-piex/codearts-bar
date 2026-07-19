@@ -46,8 +46,12 @@ CodeArts Bar 在本机读取 CodeArts Agent 生成的 SQLite 数据，提供 **W
 - Windows 发布目录重命名增加最长 30 秒的 `EPERM`、`EBUSY`、`EACCES` 重试，提高杀毒扫描或文件索引占用时的打包稳定性。
 - Electron 主 dashboard 使用 lean 聚合，跳过首屏未消费的 `part` 扩展性能查询；rollup 全命中时在打开 SQLite 前直接返回，冷 miss 则构建一次 sidecar 并复用扫描结果。
 - 模型筛选的会话汇总由完整 token sidecar 限定 session ID，再与 session sidecar 合并，保留模型与时间范围语义；10 万消息下 native / SQL.js dashboard 热路径分别为 `60.2ms / 52.6ms`，模型筛选 dashboard 为 `51.4ms / 48.6ms`。
+- Desktop 在来源、筛选和实时快照快速变化时会取消上一轮延迟渲染、图表绑定和后台更新；旧任务不再覆盖当前界面或滚动位置，桌面端与 CLI 切换保持连续、无闪烁。
+- 图表固定点改为静态高亮，不再启动永久动画帧循环；长时间打开 dashboard 时减少无效重绘和持续 CPU 占用。
+- 会话分页大小切换时保留当前表格，等新页数据就绪后再局部替换，避免加载过程中短暂空白。
+- Desktop 批量归档和恢复改为单次 IPC、每个数据库一次事务；同批操作失败会整体回滚并重新读取真实状态，单批上限为 `500` 个会话。
 - Desktop 前端按开发者分析工作台重新校准，参考 CC Switch 的紧凑原生控件与清晰分组，统一电蓝选中态、焦点环、placeholder 和 disabled 对比度，并更新七场景视觉基线与 README 截图。
-- 完整发布已通过 Electron E2E、VS Code 1.129.1 隔离安装、JetBrains 2024.2 至 2025.2 兼容验证和 LibreOffice XLSX 往返测试。
+- 完整发布已通过单元测试、Electron 与 VS Code E2E、dashboard/分页/聚合压力测试、视觉回归、JetBrains 2024.2 至 2026.1 兼容验证、LibreOffice XLSX 往返测试和 npm 安全审计。
 
 ## 界面预览
 
