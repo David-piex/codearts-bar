@@ -42,6 +42,8 @@ const gradleRunnerSource = fs.readFileSync(path.join(root, 'src/run-jetbrains-gr
 const { discoverJavaHome, isTransientNetworkFailure, javaMajorVersion, parseJavaMajor, usableJavaHome } = require('../src/run-jetbrains-gradle');
 assert.match(gradleBuildSource, /gradleProperty\("codeartsBarVersion"\)/, 'JetBrains version must participate in the Gradle configuration-cache key');
 assert.match(gradleBuildSource, /VerifyPluginTask[\s\S]*offline\.set\(true\)/, 'JetBrains compatibility verification must not depend on Marketplace availability');
+assert.match(gradleBuildSource, /environmentVariable\("CODEARTS_BAR_JETBRAINS_VERIFY_IDE"\)[\s\S]*local\(localIde\)/, 'JetBrains verification must accept a checked local IDE distribution');
+assert.match(gradleBuildSource, /create\(IntelliJPlatformType\.IntellijIdea, "2026\.2"\)/, 'JetBrains verification must explicitly cover IDEA 2026.2');
 assert.match(gradleSettingsSource, /org\.gradle\.toolchains\.foojay-resolver-convention/, 'missing JDK 21 compilers must be auto-provisioned by the Gradle toolchain resolver');
 assert.match(gradleRunnerSource, /-PcodeartsBarVersion=\$\{packageVersion\}/, 'JetBrains builds must receive the current package version explicitly');
 assert.doesNotMatch(gradleRunnerSource, /IntelliJ IDEA 2025\.3\.3/, 'JetBrains JBR discovery must not rely on a developer-specific IDE path');
@@ -192,7 +194,7 @@ assert.match(refreshCoordinatorSource, /pendingNotification \|= notifyOnError[\s
 assert.match(serviceSource, /createNotification\("码道刷新失败", message/, 'deferred refresh notifications must capture their own failure instead of reading a later snapshot');
 assert.match(serviceSource, /catch \(RuntimeException rejected\)[\s\S]*refreshCoordinator\.abort\(\)/, 'rejected refresh submission must not leave the service stuck in refreshing state');
 const gradleProperties = fs.readFileSync(path.join(pluginRoot, 'gradle.properties'), 'utf8');
-assert.match(gradleProperties, /^pluginUntilBuild=261\.\*$/m, 'verified JetBrains compatibility ceiling must remain explicit');
+assert.match(gradleProperties, /^pluginUntilBuild=262\.\*$/m, 'verified JetBrains compatibility ceiling must remain explicit');
 for (const sourceFile of ['DashboardUi.java', 'TrendChartPanel.java']) {
   const source = fs.readFileSync(path.join(pluginRoot, 'src/main/java/com/codearts/bar/toolwindow', sourceFile), 'utf8');
   assert.doesNotMatch(source, /JBUI\.scale\([0-9.]+f\)/, `${sourceFile} must not use deprecated JBUI.scale(float)`);
@@ -244,7 +246,7 @@ if (process.platform === 'win32') {
     const cliDir = path.join(jarExtractDir, 'cli');
     const packagedPluginXml = fs.readFileSync(path.join(jarExtractDir, 'META-INF', 'plugin.xml'), 'utf8');
     assert.match(packagedPluginXml, /since-build="242"/, 'packaged JetBrains plugin must keep the 2024.2 floor');
-    assert.match(packagedPluginXml, /until-build="261\.\*"/, 'packaged JetBrains plugin must support IDEA 2026.1');
+    assert.match(packagedPluginXml, /until-build="262\.\*"/, 'packaged JetBrains plugin must support IDEA 2026.2');
     const manifest = JSON.parse(fs.readFileSync(path.join(cliDir, 'CLI_RUNTIME_MANIFEST.json'), 'utf8'));
     assert.equal(manifest.entry, 'src/providers/codearts/jetbrains-cli.js', 'embedded CLI manifest must use the dedicated query entry');
     assert.match(manifest.contentHash, /^[0-9a-f]{64}$/, 'embedded CLI manifest must include its content hash');

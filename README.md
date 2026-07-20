@@ -51,7 +51,7 @@ CodeArts Bar 在本机读取 CodeArts Agent 生成的 SQLite 数据，提供 **W
 - 会话分页大小切换时保留当前表格，等新页数据就绪后再局部替换，避免加载过程中短暂空白。
 - Desktop 批量归档和恢复改为单次 IPC、每个数据库一次事务；同批操作失败会整体回滚并重新读取真实状态，单批上限为 `500` 个会话。
 - Desktop 前端按开发者分析工作台重新校准，参考 CC Switch 的紧凑原生控件与清晰分组，统一电蓝选中态、焦点环、placeholder 和 disabled 对比度，并更新七场景视觉基线与 README 截图。
-- 完整发布已通过单元测试、Electron 与 VS Code E2E、dashboard/分页/聚合压力测试、视觉回归、JetBrains 2024.2 至 2026.1 兼容验证、LibreOffice XLSX 往返测试和 npm 安全审计。
+- 完整发布已通过单元测试、Electron 与 VS Code E2E、dashboard/分页/聚合压力测试、视觉回归、JetBrains 2024.2 至 2026.2 兼容验证、LibreOffice XLSX 往返测试和 npm 安全审计。
 
 ## 界面预览
 
@@ -114,7 +114,7 @@ codeartsBar.dbPath
 
 插件工具窗口使用 **使用分析 / 会话管理 / 诊断** 三项主导航。使用分析包含 Token、缓存、软上限、趋势、模型、Provider 和来源视图；会话管理支持搜索、项目/来源/模型多选筛选、原生 Boolean 复选框、跨页选择、每页 `10 / 20 / 50 / 100` 条与页码跳转，以及单会话和批量 JSON/Markdown/XLSX 导出；诊断页读取真实数据库健康状态，并支持重试、打开设置或数据目录及复制脱敏报告。会话重命名、固定和归档仍在桌面端完成。
 
-当前插件支持 JetBrains IDE 2024.2 至 2026.1（build `242` 至 `261.*`）。安装和使用插件**不需要单独安装 JDK**，它运行在 IDE 自带的 Java Runtime 上。插件内置共享 CLI 资源，但读取本地数据仍需要系统可执行的 Node.js 18 或更高版本；自动发现失败时，可在 **Settings | Tools | CodeArts Bar** 中配置 Node.js、CLI 或 `opencode.db` 路径。会话搜索和分页直接查询本地数据库，不受概览快照条数限制。
+当前插件支持 JetBrains IDE 2024.2 至 2026.2（build `242` 至 `262.*`）。安装和使用插件**不需要单独安装 JDK**，它运行在 IDE 自带的 Java Runtime 上。插件内置共享 CLI 资源，但读取本地数据仍需要系统可执行的 Node.js 18 或更高版本；自动发现失败时，可在 **Settings | Tools | CodeArts Bar** 中配置 Node.js、CLI 或 `opencode.db` 路径。会话搜索和分页直接查询本地数据库，不受概览快照条数限制。
 
 从源码构建需要带 `javac` 的 Java 21 或更高版本。Windows 构建脚本会自动发现独立安装或 Toolbox 安装的 IDEA JBR 21+；macOS 和 Linux 需通过 `CODEARTS_BAR_JAVA_HOME`、`JAVA_HOME` 或 `PATH` 提供 Java 21+ 编译器。
 

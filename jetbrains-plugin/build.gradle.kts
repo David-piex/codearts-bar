@@ -1,3 +1,5 @@
+import org.jetbrains.intellij.platform.gradle.IntelliJPlatformType
+
 plugins {
     id("java")
     id("org.jetbrains.intellij.platform") version "2.18.1"
@@ -15,6 +17,20 @@ version = providers.gradleProperty("codeartsBarVersion")
 repositories {
     mavenCentral()
     intellijPlatform { defaultRepositories() }
+}
+
+intellijPlatform {
+    pluginVerification {
+        ides {
+            val localIde = providers.environmentVariable("CODEARTS_BAR_JETBRAINS_VERIFY_IDE")
+            if (localIde.isPresent) {
+                local(localIde)
+            } else {
+                recommended()
+                create(IntelliJPlatformType.IntellijIdea, "2026.2")
+            }
+        }
+    }
 }
 
 dependencies {

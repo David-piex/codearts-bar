@@ -18,7 +18,7 @@ JetBrains IntelliJ Platform 插件，为 IntelliJ IDEA、PyCharm、WebStorm、Go
 
 ## 运行依赖
 
-插件支持 JetBrains IDE 2024.2、2024.3、2025.1、2025.2、2025.3 和 2026.1（build `242` 至 `261.*`），这些版本均已通过 Plugin Verifier。安装后的插件不需要用户另装 JDK，IDE 会使用自带的 JetBrains Runtime。插件内置 CodeArts Bar CLI，但执行该 CLI 需要 Node.js 18 或更高版本；可以从 `PATH` 自动发现，也可以在插件设置中指定路径，版本过低时插件会给出明确提示。
+插件支持 JetBrains IDE 2024.2、2024.3、2025.1、2025.2、2025.3、2026.1 和 2026.2（build `242` 至 `262.*`），这些版本均已通过 Plugin Verifier。安装后的插件不需要用户另装 JDK，IDE 会使用自带的 JetBrains Runtime。插件内置 CodeArts Bar CLI，但执行该 CLI 需要 Node.js 18 或更高版本；可以从 `PATH` 自动发现，也可以在插件设置中指定路径，版本过低时插件会给出明确提示。
 
 从源码运行或构建时，可以显式指定 JDK 21+：
 
@@ -42,3 +42,10 @@ $env:JAVA_HOME="<JDK 21>"
 ```
 
 ZIP 位于 `build/distributions/`。
+
+完整兼容性检查会自动解析 IDEA 2026.2；已有经过校验的本地 IDE 时可避免重复下载：
+
+```powershell
+$env:CODEARTS_BAR_JETBRAINS_VERIFY_IDE="<IDEA 2026.2 目录>"
+npm run verify:jetbrains
+```
