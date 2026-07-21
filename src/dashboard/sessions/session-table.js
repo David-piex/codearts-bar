@@ -36,7 +36,9 @@ function sessionRowHtml(x){
   const selected = key === selectedSessionId;
   const checked = selectedSessionKeys.has(key);
   const pinned = isPinnedSession(x);
-  return `<tr class="session-row ${selected ? 'selected' : ''} ${pinned ? 'pinned' : ''}" data-session-select="${esc(key)}"><td class="check-col"><input type="checkbox" data-session-check="${esc(key)}" ${checked ? 'checked' : ''}></td><td class="pin-col"><button class="pin-btn ${pinned ? 'active' : ''}" data-session-pin="${esc(key)}" title="${pinned ? TXT.unpin : TXT.pin}">${pinned ? '&#9733;' : '&#9734;'}</button></td><td>${esc(dateLabel(x.updatedAt))}</td><td><span class="source-pill">${esc(sourceName(x))}</span></td><td><b>${esc(x.title || TXT.untitled)}</b>${pinned ? `<span class="pin-label">${TXT.pinned}</span>` : ''}<span class="project-chip" title="${esc(x.directory || '')}">${esc(sessionProjectName(x))}</span><div class="muted">${esc(x.id)}</div></td><td>${sessionTagsHtml(x, 3)}</td><td><b>${n(u.total)}</b></td><td class="${x.archived ? 'muted' : 'ok'}">${x.archived ? TXT.archived : TXT.active}</td><td class="session-actions-cell"><div class="session-row-actions"><button data-session-action="copy-summary" data-session-key="${esc(key)}" title="${TXT.copySummary}">${TXT.copy}</button><button data-session-action="open" data-session-key="${esc(key)}" title="${TXT.open}">${TXT.open}</button><button data-session-action="archive" data-session-key="${esc(key)}" data-archive="${x.archived ? 'false' : 'true'}" title="${x.archived ? TXT.restore : TXT.archive}">${x.archived ? TXT.restore : TXT.archive}</button></div></td></tr>`;
+  const source = sourceKey(x);
+  const label = esc(x.title || TXT.untitled);
+  return `<tr class="session-row ${selected ? 'selected' : ''} ${pinned ? 'pinned' : ''} ${x.archived ? 'archived' : ''}" data-session-select="${esc(key)}" tabindex="0" aria-selected="${selected ? 'true' : 'false'}"><td class="check-col"><input type="checkbox" data-session-check="${esc(key)}" aria-label="${TXT.selectAll}: ${label}" ${checked ? 'checked' : ''}></td><td class="pin-col"><button class="pin-btn ${pinned ? 'active' : ''}" data-session-pin="${esc(key)}" aria-label="${pinned ? TXT.unpin : TXT.pin}: ${label}" title="${pinned ? TXT.unpin : TXT.pin}">${pinned ? '&#9733;' : '&#9734;'}</button></td><td>${esc(dateLabel(x.updatedAt))}</td><td><span class="source-pill" data-source="${esc(source)}">${esc(sourceName(x))}</span></td><td><b>${label}</b>${pinned ? `<span class="pin-label">${TXT.pinned}</span>` : ''}<span class="project-chip" title="${esc(x.directory || '')}">${esc(sessionProjectName(x))}</span><div class="muted">${esc(x.id)}</div></td><td>${sessionTagsHtml(x, 3)}</td><td><b>${n(u.total)}</b></td><td class="${x.archived ? 'muted' : 'ok'}">${x.archived ? TXT.archived : TXT.active}</td><td class="session-actions-cell"><div class="session-row-actions"><button data-session-action="copy-summary" data-session-key="${esc(key)}" title="${TXT.copySummary}">${TXT.copy}</button><button data-session-action="open" data-session-key="${esc(key)}" title="${TXT.open}">${TXT.open}</button><button data-session-action="archive" data-session-key="${esc(key)}" data-archive="${x.archived ? 'false' : 'true'}" title="${x.archived ? TXT.restore : TXT.archive}">${x.archived ? TXT.restore : TXT.archive}</button></div></td></tr>`;
 }
 function sessionLimitNote(rendered, total){
   if(typeof tablePaginationHtml === 'function') return tablePaginationHtml('sessions', rendered, total, sessionTablePage, SESSION_PAGE_SIZE);
@@ -59,7 +61,7 @@ function resetSessionPaging(){
   sessionTablePage = 0;
   sessionTableRenderLimit = SESSION_PAGE_SIZE;
   if(typeof invalidateSessionPageCache === 'function') invalidateSessionPageCache();
-  localStorage.setItem('sessionTablePage', '0');
+  persistStateNow('sessionTablePage', '0');
 }
 function sessionTable(s, opts = {}){
   const tableStartedAt = perfNow();
@@ -76,7 +78,7 @@ function sessionTable(s, opts = {}){
   const total = dbPage?.paged ? Math.max(Number(dbPage.total || 0), filtered.length) : filtered.length;
   const totalPages = Math.max(1, Math.ceil(total / limit));
   sessionTablePage = Math.max(0, Math.min(totalPages - 1, Number(sessionTablePage || 0)));
-  localStorage.setItem('sessionTablePage', String(sessionTablePage));
+  persistStateNow('sessionTablePage', String(sessionTablePage));
   const start = sessionTablePage * limit;
   const list = dbPage?.paged ? filtered.slice(0, limit) : filtered.slice(start, start + limit);
   sessionTableRenderLimit = limit;

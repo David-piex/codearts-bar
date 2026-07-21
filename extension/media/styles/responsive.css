@@ -8,15 +8,6 @@ body[data-mode="sidebar"] .app-header {
   padding-bottom: 12px;
 }
 body[data-mode="sidebar"] .app-icon { border-radius:8px; }
-body[data-mode="sidebar"] .app-icon i:nth-child(1) {
-  height: 10px;
-}
-body[data-mode="sidebar"] .app-icon i:nth-child(2) {
-  height: 20px;
-}
-body[data-mode="sidebar"] .app-icon i:nth-child(3) {
-  height: 15px;
-}
 body[data-mode="sidebar"] h1 { font-size:17px; }
 body[data-mode="sidebar"] .header-actions .accent-button {
   display: none;

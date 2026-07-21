@@ -49,7 +49,7 @@ assert.doesNotMatch(rangeHtmlBody, /localStorage\.setItem/);
 assert.doesNotMatch(rangeHtmlBody, /rangeFilter\s*=\s*['"]customTime/);
 assert.match(bootstrapSource, /function applyCustomDateInputs\(\)/);
 assert.match(bootstrapSource, /rangeFilter = 'customTime'/);
-assert.match(bootstrapSource, /localStorage\.setItem\('statsRange', rangeFilter\)/);
+assert.match(bootstrapSource, /persistStateBatch\(\{[\s\S]*?statsRange: rangeFilter,[\s\S]*?customDateStart,[\s\S]*?customDateEnd,[\s\S]*?\}\)/);
 assert.match(eventsSource, /dateCancel[\s\S]*?dateRangeOpen = false[\s\S]*?dateRangeDraftStart = 0/);
 assert.match(dateRangeSource, /dateRangeFutureInvalid/);
 assert.match(dateRangeSource, /end > now \+ 60000/);

@@ -9,14 +9,14 @@ function rememberSelectedSessions(items = []){
 }
 function saveSelectedSessions(){
   rememberSelectedSessions(sessionTableItems || []);
-  localStorage.setItem('selectedSessionKeys', [...selectedSessionKeys].join('|'));
+  persistStateNow('selectedSessionKeys', [...selectedSessionKeys].join('|'));
 }
 function clearSelectedSessions(){
   selectedSessionKeys.clear();
   selectedSessionRecords.clear();
-  localStorage.setItem('selectedSessionKeys', '');
+  persistStateNow('selectedSessionKeys', '');
 }
-function savePinnedSessions(){ localStorage.setItem('pinnedSessionKeys', [...pinnedSessionKeys].join('|')); }
+function savePinnedSessions(){ persistStateNow('pinnedSessionKeys', [...pinnedSessionKeys].join('|')); }
 function sessionByKey(key){ return (snapshot?.sessions || []).find((x) => sessionKeyFor(x) === key) || sessionTableItems.find((x) => sessionKeyFor(x) === key) || selectedSessionRecords.get(key) || null; }
 function selectedSessionItems(){
   if(!selectedSessionKeys?.size) return [];
@@ -131,7 +131,7 @@ function renderSessionInspector(){
   const item = findSelectedSession();
   if(!item) return `<aside class="session-inspector empty"><div class="inspector-title">${TXT.selectedSession}</div><p>${TXT.noSessionSelected}</p></aside>`;
   selectedSessionId = sessionKeyFor(item);
-  localStorage.setItem('selectedSessionId', selectedSessionId);
+  persistStateNow('selectedSessionId', selectedSessionId);
   prefetchSessionRequests(item, 80);
   return renderSessionEssentialInspector(item, selectedSessionId);
 }

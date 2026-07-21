@@ -1,6 +1,6 @@
 function syncFooter(){
-  const btn = document.getElementById('layoutMode');
-  if(btn) btn.textContent = layoutMode === 'compact' ? TXT.dashboardMode : TXT.menuCardMode;
+  const control = document.querySelector('[data-layout-select]');
+  if(control) control.value = layoutMode;
   document.body?.classList?.toggle?.('compact-layout', layoutMode === 'compact');
 }
 function switchLayoutMode(nextMode, renderOptions = {}){
@@ -11,7 +11,7 @@ function switchLayoutMode(nextMode, renderOptions = {}){
     return;
   }
   layoutMode = next;
-  localStorage.setItem('layoutMode', layoutMode);
+  persistStateNow('layoutMode', layoutMode);
   try {
     document.getElementById('app')?.classList?.add?.('view-switching');
     setAppInteractionMode('view-switching', 200);
@@ -449,9 +449,11 @@ function applyCustomDateInputs(){
   if(dateRangeDraftEnd) customDateEnd = dateRangeDraftEnd;
   normalizeCustomDateRange(snapshot || {});
   rangeFilter = 'customTime';
-  localStorage.setItem('statsRange', rangeFilter);
-  localStorage.setItem('customDateStart', String(customDateStart));
-  localStorage.setItem('customDateEnd', String(customDateEnd));
+  persistStateBatch({
+    statsRange: rangeFilter,
+    customDateStart,
+    customDateEnd,
+  });
   dateRangeError = '';
   return true;
 }

@@ -29,6 +29,7 @@ const invokeChannels = new Set([
 ]);
 const eventChannels = new Set(['dashboard:snapshot', 'dashboard:rollupState']);
 contextBridge.exposeInMainWorld('codeartsApi', Object.freeze({
+  platform: process.platform,
   invoke(channel, ...args) {
     if (!invokeChannels.has(channel)) return Promise.reject(new Error(`IPC channel not allowed: ${channel}`));
     return ipcRenderer.invoke(channel, ...args);

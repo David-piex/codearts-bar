@@ -31,6 +31,7 @@ function previewHtml(mode='panel') {
   html = html.replace(/<meta http-equiv="Content-Security-Policy"[^>]+>/, '');
   html = html.replace(/<link rel="stylesheet" href="([^"]+)">/g, (_m, rel) => `<style>${fs.readFileSync(path.join(root, 'extension', rel), 'utf8')}</style>`);
   html = html.replace(/<script nonce="[^"]+" src="([^"]+)"><\/script>/g, (_m, rel) => `<script>${fs.readFileSync(path.join(root, 'extension', rel), 'utf8')}</script>`);
+  html = html.replace(/src="media\//g, `src="${path.join(root, 'extension', 'media').replace(/\\/g, '/')}/`);
   html = html.replace(/<body data-mode="([^"]+)">/, `<body data-mode="$1"><script>window.__vscodeMessages=[];window.__vscodeState={};window.acquireVsCodeApi=()=>({postMessage(message){window.__vscodeMessages.push(message)},getState(){return window.__vscodeState},setState(state){window.__vscodeState=state}});</script>`);
   return html;
 }
@@ -61,7 +62,7 @@ function snapshot(zero=false) {
     await withTimeout('load VS Code preview',()=>page.goto('file:///'+file.replace(/\\/g,'/'),{waitUntil:'domcontentloaded'}));
     await page.evaluate(()=>document.body.classList.add('vscode-dark'));
     const palette=await page.evaluate(()=>({page:getComputedStyle(document.documentElement).getPropertyValue('--page').trim(),accent:getComputedStyle(document.documentElement).getPropertyValue('--accent').trim()}));
-    if(palette.page!=='#f5f5f7'||palette.accent!=='#007aff') throw new Error('VS Code theme leaked into fixed Desktop palette: '+JSON.stringify(palette));
+    if(palette.page!=='#1c1c1e'||palette.accent!=='#0a84ff') throw new Error('VS Code dark palette is not aligned with Desktop: '+JSON.stringify(palette));
     await page.evaluate((data)=>window.dispatchEvent(new MessageEvent('message',{data:{type:'details',payload:data,generation:1}})),snapshot(false));
     await new Promise(r=>setTimeout(r,400));
     const canvas=await page.$('#trendChart');

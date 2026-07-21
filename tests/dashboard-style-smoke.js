@@ -76,6 +76,8 @@ const aggregateSlotPatch = analyticsSlotsSource.slice(
 const cssBundlePath = path.join(__dirname, "..", "src", "dashboard-bundle.css");
 const cssBundle = fs.readFileSync(cssBundlePath, "utf8");
 const semanticCss = fs.readFileSync(path.join(__dirname, "..", "src", "styles", "domain-semantic.css"), "utf8");
+const dashboardThemeSource = fs.readFileSync(path.join(__dirname, "..", "src", "dashboard-theme.js"), "utf8");
+const dashboardAnalyticsSource = fs.readFileSync(path.join(__dirname, "..", "src", "dashboard-analytics.js"), "utf8");
 const analyticsResponsiveCss = semanticCss.slice(
   semanticCss.indexOf('@media (max-width:1360px)'),
   semanticCss.indexOf('@media (max-width:900px)'),
@@ -104,11 +106,17 @@ assert.match(sourceSwitchPending, /setPagedTableLoading\?\.\('requests', true, r
 assert.doesNotMatch(sourceSwitchPending, /patchHtmlSlot\('analyticsTableSlot'/);
 assert.match(aggregateSlotPatch, /setInteractionMode\('is-filtering', 190\)/);
 assert.match(cssBundle, /--series-color/);
-assert.match(cssBundle, /--filter-control-height:42px/);
+assert.match(html, /--filter-control-height:38px/);
 assert.match(cssBundle, /:has\(\.date-range-control\.open\) \.filters\{overflow:visible/);
 assert.match(cssBundle, /\.analytics-advanced-copy/);
 assert.match(cssBundle, /\.analytics-advanced-shell\.collapsed\{[^}]*content-visibility:visible!important/);
 assert.match(cssBundle, /\.table-page-field/);
+assert.match(cssBundle, /html\[data-platform=darwin\] \.app-header\{[^}]*-webkit-app-region:drag/);
+assert.match(cssBundle, /@media\(prefers-contrast:more\)/);
+assert.match(cssBundle, /@media print/);
+assert.match(dashboardThemeSource, /document\.documentElement\.dataset\.platform = platform/);
+assert.match(dashboardAnalyticsSource, /assets\/codearts-logo-ui\.png/);
+assert.doesNotMatch(dashboardAnalyticsSource, /assets\/codearts-logo\.png/);
 assert.match(
   cssBundle,
   /\.content:has\(\.modal-backdrop\)\{contain:none;overflow:hidden\}/,
@@ -118,6 +126,12 @@ const generatedRenderer = fs.readFileSync(path.join(__dirname, "..", "src", "das
 const rendererEntry = fs.readFileSync(path.join(__dirname, "..", "src", "dashboard", "renderer-entry.js"), "utf8");
 const rendererBundler = fs.readFileSync(path.join(__dirname, "..", "src", "build-dashboard-renderer.js"), "utf8");
 const rendererIncludeSources = `${rendererEntry}\n${renderer}`;
+const directRuntimeStorage = rendererFiles
+  .filter((file) => file.startsWith("dashboard/") && file !== "dashboard/renderer-entry.js")
+  .map((file) => fs.readFileSync(path.join(__dirname, "..", "src", file), "utf8"))
+  .join("\n");
+assert.doesNotMatch(directRuntimeStorage, /localStorage\.setItem/, "runtime dashboard modules must use the persistence boundary");
+assert.match(fs.readFileSync(path.join(__dirname, "..", "src", "dashboard-state.js"), "utf8"), /function persistStateNow/);
 const mainFiles = [
   "main.js",
   "main/logger.js",
@@ -182,18 +196,18 @@ assert.match(html, /cache-insights/);
 assert.match(html, /cache-insight-grid/);
 assert.match(html, /cache-insight-score/);
 assert.doesNotMatch(renderer, /chartSnapshotHtml\(rows, s\)/);
-assert.match(renderer, /chartTokenTrendMeta/);
+assert.doesNotMatch(renderer, /chartTokenTrendMeta/);
 assert.match(renderer, /cacheRead/);
 assert.match(html, /chart-tip::before/);
 assert.match(html, /chart-tip\.preview-pinned/);
-assert.match(html, /chart-card\.chart-hover-preview/);
+assert.doesNotMatch(html, /chart-card\.chart-hover-preview/);
 assert.match(html, /tip-row\.tip-state/);
 assert.doesNotMatch(renderer, /tip-cache-bar/);
 assert.doesNotMatch(renderer, /tip-row tip-metric/);
 assert.match(html, /tip-pin/);
 assert.doesNotMatch(renderer, /id="chartHoverScrubber"/);
 assert.doesNotMatch(renderer, /scrubber-cache/);
-assert.match(html, /scrubber-pin/);
+assert.doesNotMatch(html, /scrubber-pin/);
 assert.match(html, /width:var\(--hit,0%\)/);
 assert.match(html, /1\.18\.1 commercial cache governance workbench/);
 assert.match(html, /cache-governance/);
@@ -212,14 +226,14 @@ assert.match(html, /1\.18\.2 simplified session management/);
 assert.match(html, /session-simple-shell/);
 assert.match(html, /session-primary-filters/);
 assert.match(html, /session-saved-inline/);
-assert.match(html, /session-library-status/);
+assert.doesNotMatch(html, /session-library-status/);
 assert.match(html, /session-table\.simple/);
 assert.match(html, /session-actions-cell/);
 assert.match(html, /session-row-actions/);
 assert.match(html, /session-row-actions button/);
-assert.match(html, /idle-summary-card/);
-assert.match(html, /session-advanced-shell/);
-assert.match(html, /session-advanced-controls/);
+assert.doesNotMatch(html, /idle-summary-card/);
+assert.doesNotMatch(html, /session-advanced-shell/);
+assert.doesNotMatch(html, /session-advanced-controls/);
 assert.match(html, /1\.18\.4 native table and inspector surface/);
 assert.match(html, /session-inspector,/);
 assert.match(html, /request-manager-flat/);
@@ -231,7 +245,7 @@ assert.match(html, /usage-total-board/);
 assert.match(html, /usage-total-hero/);
 assert.match(html, /usage-total-strip/);
 assert.match(html, /usage-total-cache/);
-assert.match(html, /usage-total-request-spark/);
+assert.match(renderer, /usage-total-request-spark/);
 assert.match(html, /--cache-hit:/);
 assert.match(html, /grid-template-columns:repeat\(4,minmax\(140px,1fr\)\) minmax\(220px,1\.25fr\)/);
 assert.match(html, /\.session-overview\s*\{[^}]*grid-template-columns:\s*repeat\(4,\s*minmax\(0,\s*1fr\)\)/s);
@@ -241,9 +255,9 @@ assert.match(html, /usage-detail-stack/);
 assert.match(html, /\.usage-detail-stack\s*\{[^}]*padding:\s*0;[^}]*border:\s*0;/s);
 assert.match(html, /session-essential-inspector/);
 assert.match(html, /session-essential-actions/);
-assert.match(html, /session-essential-summary/);
+assert.match(renderer, /session-essential-summary-lean/);
 assert.match(html, /session-essential-meta/);
-assert.match(html, /--session-hit:/);
+assert.match(renderer, /session-essential-meta/);
 assert.match(html, /\.session-essential-inspector\s*\{[^}]*position:\s*relative/s);
 assert.match(html, /session-table\.simple \.session-row\.selected td/);
 assert.match(html, /session-table\.simple \.session-row\.selected td:first-child/);
@@ -267,7 +281,7 @@ assert.match(html, /--footer-safe-space:64px/);
 assert.match(html, /scroll-padding-bottom:var\(--footer-safe-space\)/);
 assert.match(html, /scroll-margin-bottom:var\(--footer-safe-space\)/);
 assert.match(html, /1\.18\.12 commercial session first-screen density/);
-assert.match(html, /grid-template-columns:minmax\(0,1\.02fr\) minmax\(360px,\.98fr\)/);
+assert.match(html, /grid-template-columns:minmax\(0,1fr\) minmax\(520px,1fr\)/);
 assert.match(html, /\.session-workspace-card \.session-manager/);
 assert.match(html, /min-height:520px/);
 assert.match(html, /1\.18\.13 commercial chart hover aperture/);

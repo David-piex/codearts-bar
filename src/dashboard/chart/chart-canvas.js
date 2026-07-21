@@ -1,5 +1,20 @@
 function drawSmooth(ctx, points){ if(!points.length) return; ctx.beginPath(); ctx.moveTo(points[0].x, points[0].y); for(let i = 1; i < points.length; i++){ const prev = points[i - 1]; const cur = points[i]; const midX = (prev.x + cur.x) / 2; const midY = (prev.y + cur.y) / 2; ctx.quadraticCurveTo(prev.x, prev.y, midX, midY); } const last = points[points.length - 1]; ctx.lineTo(last.x, last.y); }
 
+function chartThemePalette(){
+  let styles = null;
+  try { styles = getComputedStyle(document.documentElement); } catch {}
+  const color = (name, fallback) => String(styles?.getPropertyValue?.(name) || '').trim() || fallback;
+  return {
+    canvas: color('--chart-canvas', '#ffffff'),
+    plot: color('--chart-plot', '#f8fbff'),
+    grid: color('--chart-grid', 'rgba(149,164,184,.18)'),
+    axis: color('--chart-axis', '#7b8190'),
+    overlay: color('--chart-overlay', 'rgba(255,255,255,.92)'),
+    overlayText: color('--chart-overlay-text', '#18202b'),
+    pointRing: color('--chart-point-ring', '#ffffff'),
+  };
+}
+
 function drawHoverAperture(ctx, guideX, guideY, bounds, focus, isPinned){
   const tone = focus?.color || COLORS.input;
   const pulse = isPinned ? (Number(chartHover.pulse || 0) % 1) : 0;
@@ -143,6 +158,7 @@ function chartDrawSignature(data, active, box, hover = -1, progress = 1){
       Math.round(Number(box.width || 0)),
       Math.round(Number(box.height || 0)),
       Number(box.dpr || 1),
+      document.documentElement?.dataset?.theme || 'light',
       rangeFilter || '',
       sourceFilter || '',
       modelFilter || '',
@@ -233,12 +249,13 @@ function drawChart(rows, s, hover = -1, progress = 1){
   if(resizedCanvas) markPerfStage('chartResizeMs', perfNow() - resizeStartedAt);
   const paintStartedAt = perfNow();
   const ctx = canvas.getContext('2d', { alpha: false });
+  const palette = chartThemePalette();
   if(ctx.setTransform) ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   else {
     if(ctx.resetTransform) ctx.resetTransform();
     ctx.scale(dpr, dpr);
   }
-  ctx.fillStyle = '#ffffff';
+  ctx.fillStyle = palette.canvas;
   ctx.fillRect(0, 0, rect.width, rect.height);
   const pad = { l: 58, r: 28, t: 18, b: 36 };
   const w = Math.max(1, rect.width - pad.l - pad.r);
@@ -248,12 +265,7 @@ function drawChart(rows, s, hover = -1, progress = 1){
   const globalScale = niceChartScale(rawGlobalMax);
   const seriesScale = new Map(active.map((cfg) => [cfg.key, niceChartScale(Math.max(1, ...data.map((b) => Number(b[cfg.key] || 0))))]));
   const scaleFor = (cfg) => mixedScale ? (seriesScale.get(cfg.key)?.max || 1) : globalScale.max;
-  const plotBg = light ? null : ctx.createLinearGradient(0, pad.t, 0, pad.t + h);
-  if(plotBg){
-    plotBg.addColorStop(0, 'rgba(22,135,245,.035)');
-    plotBg.addColorStop(1, 'rgba(255,255,255,0)');
-  }
-  ctx.fillStyle = plotBg || 'rgba(22,135,245,.018)';
+  ctx.fillStyle = palette.plot;
   ctx.fillRect(pad.l, pad.t, w, h);
   if(!light){
     const idleBandGrad = ctx.createLinearGradient(0, pad.t, 0, pad.t + h);
@@ -270,8 +282,8 @@ function drawChart(rows, s, hover = -1, progress = 1){
       ctx.fillRect(Math.max(prevX, x - .5), pad.t, 1, h);
     });
   }
-  ctx.strokeStyle = 'rgba(149,164,184,.18)';
-  ctx.fillStyle = '#7b8190';
+  ctx.strokeStyle = palette.grid;
+  ctx.fillStyle = palette.axis;
   ctx.font = '12px Segoe UI, Microsoft YaHei UI, sans-serif';
   ctx.textAlign = 'left';
   ctx.lineWidth = 1;
@@ -333,7 +345,7 @@ function drawChart(rows, s, hover = -1, progress = 1){
     series: active.map((cfg) => ({ key: cfg.key, label: cfg.label, color: cfg.color, kind: cfg.kind, value: b[cfg.key] || 0, scaleMax: scaleFor(cfg), ...xy(i, cfg) })),
   }));
   if(chartPinnedIndex >= chartPoints.length) chartPinnedIndex = -1;
-  ctx.fillStyle = '#8a909c';
+  ctx.fillStyle = palette.axis;
   ctx.textAlign = 'center';
   const xAxisIndices = chartAxisIndices(data.length, w, rect.width < 760 ? 108 : 88);
   xAxisIndices.forEach((i, position) => {
@@ -350,7 +362,7 @@ function drawChart(rows, s, hover = -1, progress = 1){
   } catch {}
   const hasData = data.some((b) => active.some((cfg) => (b[cfg.key] || 0) > 0));
   if(!hasData){
-    ctx.fillStyle = '#9aa0aa';
+    ctx.fillStyle = palette.axis;
     ctx.font = '14px Segoe UI, Microsoft YaHei UI, sans-serif';
     ctx.fillText(TXT.emptyHint, pad.l + w / 2, pad.t + h / 2);
   }
@@ -369,7 +381,7 @@ function drawChart(rows, s, hover = -1, progress = 1){
       const axisW = Math.min(86, Math.max(42, ctx.measureText(axisText).width + 18));
       const axisX = Math.max(6, pad.l - axisW - 8);
       const axisY = clamp(guideY - 11, pad.t + 4, pad.t + h - 24);
-      ctx.fillStyle = 'rgba(255,255,255,.90)';
+      ctx.fillStyle = palette.overlay;
       ctx.strokeStyle = rgba(focus.color, .34);
       ctx.lineWidth = 1;
       ctx.beginPath();
@@ -400,7 +412,7 @@ function drawChart(rows, s, hover = -1, progress = 1){
       ctx.beginPath();
       ctx.arc(p.x, p.y, 4.2, 0, Math.PI * 2);
       ctx.fill();
-      ctx.strokeStyle = '#fff';
+      ctx.strokeStyle = palette.pointRing;
       ctx.lineWidth = 2;
       ctx.stroke();
     }
@@ -412,7 +424,7 @@ function drawChart(rows, s, hover = -1, progress = 1){
       const boxH = 24;
       const bx = Math.max(pad.l + 4, Math.min(pad.l + w - boxW - 4, focus.x + 12));
       const by = Math.max(pad.t + 4, Math.min(pad.t + h - boxH - 4, focus.y - 32));
-      ctx.fillStyle = 'rgba(255,255,255,.92)';
+      ctx.fillStyle = palette.overlay;
       ctx.strokeStyle = rgba(focus.color, .38);
       ctx.lineWidth = 1;
       ctx.beginPath();
@@ -423,7 +435,7 @@ function drawChart(rows, s, hover = -1, progress = 1){
       ctx.beginPath();
       ctx.arc(bx + 10, by + boxH / 2, 3.2, 0, Math.PI * 2);
       ctx.fill();
-      ctx.fillStyle = '#18202b';
+      ctx.fillStyle = palette.overlayText;
       ctx.textAlign = 'left';
       ctx.fillText(label, bx + 17, by + 16);
     }

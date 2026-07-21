@@ -1,0 +1,57 @@
+/* Theme ownership: keep dark mode semantic instead of recoloring every product domain. */
+html[data-theme="dark"] {
+  --bg:#1c1c1e;--panel:#2c2c2e;--panel2:#323234;--text:#f5f5f7;--muted:#b0b0b5;--subtle:#8e8e93;
+  --line:#48484a;--line2:#545456;--blue:#0a84ff;--blue2:rgba(10,132,255,.18);--red:#ff453a;
+  --cb-accent-soft:rgba(10,132,255,.18);--cb-surface-popover:var(--mac-surface-elevated);
+  --cb-row-border:rgba(255,255,255,.08);--cb-row-hover:rgba(10,132,255,.12);
+  --cb-row-selected:rgba(10,132,255,.18);--cb-hover-fill:rgba(255,255,255,.08);--session-actions-cell-bg:var(--mac-surface);--session-actions-cell-shadow:-10px 0 18px rgba(0,0,0,.24);
+  --card-glow-opacity:0;--usage-cache-bg:transparent;--usage-cache-warm-bg:transparent;--usage-cache-shadow:none;--usage-cache-track-bg:rgba(48,209,88,.20);
+  --date-popover-bg:var(--mac-surface-elevated);--date-field-bg:var(--mac-surface-muted);--date-calendar-bg:var(--mac-surface-muted);
+}
+html[data-theme="dark"] :where(.date-range-control,.toolbar-select,.session-primary-filters,.session-row-actions,.saved-view-composer.compact,.saved-view-empty.compact) {
+  color:var(--mac-text);background:var(--mac-surface-muted);border-color:var(--mac-line);box-shadow:none;
+}
+html[data-theme="dark"] :where(input,textarea)::placeholder { color:var(--mac-subtle); }
+html[data-theme="dark"] :where(.workspace-tabs,.source-switch,.range,.table-tabs)::before,
+html[data-theme="dark"] :where(.workspace-tabs .tab.active,.source-switch-btn.active,.range button.active,.table-tabs button.active)::before,
+html[data-theme="dark"] .workspace-tabs .tab.active::after { content:none; }
+html[data-theme="dark"] :where(.workspace-tabs .tab:not(.active),.source-switch-btn:not(.active),.range button:not(.active),.table-tabs button:not(.active)) {
+  color:var(--mac-muted);background:transparent;text-shadow:none;box-shadow:none;
+}
+html[data-theme="dark"] :where(.workspace-tabs .tab.active,.source-switch-btn.active,.range button.active,.table-tabs button.active) {
+  color:var(--mac-text);background:var(--mac-surface);border-color:var(--mac-line);box-shadow:var(--mac-shadow);text-shadow:none;
+}
+html[data-theme="dark"] :where(.session-manager,.session-main) {
+  color:var(--mac-text);background:var(--mac-surface);border-color:var(--mac-line);box-shadow:var(--mac-shadow);
+}
+html[data-theme="dark"] .usage-total-tile {
+  color:var(--mac-text);background:transparent;border-color:var(--mac-line-soft);box-shadow:none;
+}
+html[data-theme="dark"] .usage-total-board :where(span,strong,b) { color:var(--mac-text); }
+html[data-theme="dark"] .usage-total-board :where(em,small) { color:var(--mac-muted); }
+html[data-theme="dark"] :where(.usage-total-value span,.source-pill,.session-state.archived,.session-filter,.session-sort,.session-primary-filters button:not(.active)) { color:var(--mac-muted);background:var(--mac-surface-muted);border-color:var(--mac-line); }
+html[data-theme="dark"] :where(.period-card,.mini,.table-page-note,.table-page-actions .table-page-field) { color:var(--mac-text);background:var(--mac-surface-muted);border-color:var(--mac-line);box-shadow:none; }
+html[data-theme="dark"] :where(.period-card,.mini,.session-overview-card,.session-inspector,.session-essential-meta,.table-page-note) :where(span,small,em,p) { color:var(--mac-muted); }
+html[data-theme="dark"] :where(.period-card,.mini,.session-overview-card,.session-inspector,.session-essential-meta) :where(strong,b,h3) { color:var(--mac-text); }
+html[data-theme="dark"] .session-state.live { color:#30d158;background:rgba(48,209,88,.16);border-color:rgba(48,209,88,.32); }
+html[data-theme="dark"] .session-overview-card.strong { background:rgba(10,132,255,.10); }
+html[data-theme="dark"] :where(.session-simple-shell,.session-workspace-card,.session-overview) { border-color:var(--mac-line-soft);box-shadow:none; }
+.saved-view-empty.compact { place-items:center start;padding-inline:10px;border:0;background:transparent;box-shadow:none;text-align:left; }
+html[data-theme="dark"] .series-panel-lean .series-chip:not(.active) { color:var(--mac-muted);background:transparent;border-color:transparent; }
+html[data-theme="dark"] .modal-backdrop { background:rgba(0,0,0,.38); }
+
+html[data-platform="darwin"] .content { padding-top:10px; }
+html[data-platform="darwin"] .app-header { padding-left:78px;-webkit-app-region:drag; }
+html[data-platform="darwin"] .app-header :where(button,select,input,label,a) { -webkit-app-region:no-drag; }
+
+@media (prefers-contrast: more) {
+  :root { --mac-line:#8e8e93;--mac-line-soft:#aeaeb2;--mac-focus:rgba(0,122,255,.50); }
+  html[data-theme="dark"] { --mac-line:#8e8e93;--mac-line-soft:#636366; }
+}
+
+@media print {
+  .app-header,.analytics-page-head,.session-filter-head,.table-tabs,.table-toolbar,.session-row-actions,.perf-panel { display:none; }
+  .content { padding:0;overflow:visible; }
+  :where(.summary-card,.chart-card,.table-card,.session-simple-shell,.session-inspector) { box-shadow:none;break-inside:avoid; }
+  .table-scroll,.session-scroll { max-height:none;overflow:visible; }
+}

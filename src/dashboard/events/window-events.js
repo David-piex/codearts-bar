@@ -1,5 +1,96 @@
 readSessionMeta();
 readSavedSessionViews();
+window.addEventListener('pagehide', () => { flushSessionMetaSave(); flushPersistedState?.(); });
+window.addEventListener('beforeunload', () => { flushSessionMetaSave(); flushPersistedState?.(); });
+let dashboardDialog = null;
+let dashboardDialogReturnFocus = null;
+let dashboardDialogReturnSelector = '';
+function dialogFocusables(dialog = dashboardDialog){
+  if(!dialog) return [];
+  return [...dialog.querySelectorAll('button:not([disabled]),input:not([disabled]),textarea:not([disabled]),select:not([disabled]),a[href],[tabindex]:not([tabindex="-1"])')]
+    .filter((element) => !element.hidden && element.getAttribute('aria-hidden') !== 'true');
+}
+function dialogReturnSelector(element){
+  if(!element) return '';
+  if(element.id) return `#${CSS.escape(element.id)}`;
+  for(const name of ['data-session-bulk', 'data-session-action', 'data-session-key', 'data-workspace']){
+    const value = element.getAttribute?.(name);
+    if(value != null) return `[${name}="${CSS.escape(value)}"]`;
+  }
+  return '';
+}
+function focusDashboardDialog(dialog = dashboardDialog){
+  if(!dialog?.isConnected) return;
+  const target = dialog.querySelector('[autofocus]') || dialogFocusables(dialog)[0] || dialog;
+  if(!dialog.hasAttribute('tabindex') && target === dialog) dialog.setAttribute('tabindex', '-1');
+  target?.focus?.({ preventScroll: true });
+  target?.select?.();
+}
+function restoreDashboardDialogFocus(){
+  const target = dashboardDialogReturnFocus?.isConnected
+    ? dashboardDialogReturnFocus
+    : (dashboardDialogReturnSelector ? document.querySelector(dashboardDialogReturnSelector) : null);
+  dashboardDialogReturnFocus = null;
+  dashboardDialogReturnSelector = '';
+  requestAnimationFrame(() => target?.focus?.({ preventScroll: true }));
+}
+function syncDashboardDialog(){
+  const next = document.querySelector('[role="dialog"][aria-modal="true"]');
+  if(next && next !== dashboardDialog){
+    if(!dashboardDialog){
+      dashboardDialogReturnFocus = document.activeElement && document.activeElement !== document.body ? document.activeElement : null;
+      dashboardDialogReturnSelector = dialogReturnSelector(dashboardDialogReturnFocus);
+    }
+    dashboardDialog = next;
+    requestAnimationFrame(() => focusDashboardDialog(next));
+    return;
+  }
+  if(!next && dashboardDialog){
+    dashboardDialog = null;
+    restoreDashboardDialogFocus();
+  }
+}
+if(typeof MutationObserver !== 'undefined') new MutationObserver(syncDashboardDialog).observe(document.body, { childList: true, subtree: true });
+document.addEventListener('focusin', (e) => {
+  if(dashboardDialog?.isConnected && !dashboardDialog.contains(e.target)) focusDashboardDialog();
+});
+document.addEventListener('keydown', (e) => {
+  if(e.key !== 'Tab' || !dashboardDialog?.isConnected) return;
+  const focusables = dialogFocusables();
+  if(!focusables.length){ e.preventDefault(); focusDashboardDialog(); return; }
+  const current = focusables.indexOf(document.activeElement);
+  const next = e.shiftKey
+    ? (current <= 0 ? focusables.length - 1 : current - 1)
+    : (current < 0 || current === focusables.length - 1 ? 0 : current + 1);
+  e.preventDefault();
+  focusables[next]?.focus?.({ preventScroll: true });
+}, true);
+document.addEventListener('keydown', (e) => {
+  if(!(e.metaKey || e.ctrlKey) || e.altKey || e.defaultPrevented) return;
+  const key = String(e.key || '').toLowerCase();
+  if(key === '1' || key === '2'){
+    if(document.querySelector('[role="dialog"][aria-modal="true"]')) return;
+    e.preventDefault();
+    document.querySelector(`[data-workspace="${key === '1' ? 'analytics' : 'sessions'}"]`)?.click?.();
+    return;
+  }
+  if(key === 'f'){
+    e.preventDefault();
+    const query = document.querySelector(`[data-query="${workspaceMode === 'sessions' ? 'sessions' : 'analytics'}"]`);
+    query?.focus?.();
+    query?.select?.();
+    return;
+  }
+  if(key === 'r'){
+    e.preventDefault();
+    document.querySelector('[data-refresh]')?.click?.();
+    return;
+  }
+  if(key === ','){
+    e.preventDefault();
+    document.querySelector('[data-settings]')?.click?.();
+  }
+}, true);
 document.addEventListener('keydown', (e) => {
   if(!exportDialog || e.key !== 'Escape') return;
   e.preventDefault();
@@ -7,14 +98,15 @@ document.addEventListener('keydown', (e) => {
   patchSessionModalOrRender();
 });
 applyZoom();
-document.getElementById('refresh').onclick = refreshNow;
-document.getElementById('settings').onclick = () => ipcRenderer.invoke('dashboard:settings');
 document.addEventListener('visibilitychange', () => {
   setupAutoRefresh();
   if(document.visibilityState !== 'hidden' && snapshot?.ok) refreshNow({ windowLayout: false, instantChart: true, partial: true });
 });
-const legacyLayoutButton = document.getElementById('layoutMode');
-if(legacyLayoutButton) legacyLayoutButton.onclick = () => switchLayoutMode(layoutMode === 'compact' ? 'dashboard' : 'compact');
+window.addEventListener('codearts-theme-change', () => {
+  lastChartDrawSignature = '';
+  chartGeometryDirty = true;
+  if(snapshot?.ok && workspaceMode === 'analytics' && layoutMode !== 'compact') scheduleChartResizeRedraw('theme');
+});
 document.addEventListener('keydown', async (e) => { if((e.ctrlKey || e.metaKey) && e.shiftKey && String(e.key || '').toLowerCase() === 'p'){ e.preventDefault(); togglePerfPanel(); return; } if(e.key === 'Enter' && e.target.closest('[data-request-page-input]')){ e.preventDefault(); document.querySelector('[data-request-page-go]')?.click?.(); return; } if(e.key === 'Enter' && e.target.closest('[data-session-page-input]')){ e.preventDefault(); document.querySelector('[data-session-page-go]')?.click?.(); return; } if(dateRangeOpen && e.key === 'Escape'){ e.preventDefault(); dateRangeOpen = false; if(!patchDateRangeChrome?.() && snapshot?.ok) render(snapshot, { windowLayout: false, instantChart: true, deferHeavy: true, partial: true }); return; } if(e.key === 'Enter' && e.target.closest('[data-saved-session-name]')){ saveCurrentSessionView(); patchSessionsOrRender({ table: false, toolbar: true, inspector: false, overview: false }); return; } if(bulkMetaOpen && e.key === 'Escape'){ bulkMetaOpen = false; bulkMetaTagsDraft = ''; bulkMetaNoteDraft = ''; patchSessionModalOrRender(); return; } if(!renameSessionKey) return; if(e.key === 'Escape'){ renameSessionKey = ''; renameDraft = ''; patchSessionModalOrRender(); } if(e.key === 'Enter' && e.target.closest('[data-rename-input]')){ await saveRenameSheet(); } });
 ipcRenderer.on('dashboard:snapshot', (_e, s) => { suppressChartIntro = true; applyRealtimeSnapshot(s); suppressChartIntro = false; setRefreshState(TXT.realtime); setTimeout(() => setRefreshState(''), 900); });
 ipcRenderer.on('dashboard:rollupState', (_e, state) => applyRollupState(state || {}));
@@ -156,7 +248,7 @@ function scheduleResizeSettledChartRedraw(reason = 'resize', sessionId = null, d
     const canvas = document.getElementById('usageChart');
     if(!canvas){ finishResizePerf('resizeEnd', 'no-canvas', sessionId); return; }
     const nextKey = chartCanvasSettledSizeKey(canvas);
-    if(nextKey && nextKey === chartResizeSizeKey){
+    if(reason !== 'theme' && nextKey && nextKey === chartResizeSizeKey){
       try { if(canvas.dataset) delete canvas.dataset.pendingResizeKey; } catch {}
       markResizePerf('sameSizeSkip', nextKey, sessionId);
       finishResizePerf('resizeEnd', 'same-size', sessionId);

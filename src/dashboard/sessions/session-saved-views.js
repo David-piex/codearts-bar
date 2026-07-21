@@ -29,12 +29,15 @@ function smartViewActive(key){
   return false;
 }
 function saveSessionViewState(){
-  localStorage.setItem('sessionQuickFilter', sessionQuickFilter);
-  localStorage.setItem('sessionProjectFilter', sessionProjectFilter);
-  localStorage.setItem('sessionStatusFilter', sessionStatusFilter);
-  localStorage.setItem('sessionTagFilter', sessionTagFilter);
-  localStorage.setItem('sessionSort', sessionSort);
-  localStorage.setItem('statsSessionQuery', sessionQuery);
+  persistStateBatch({
+    sessionQuickFilter,
+    sessionProjectFilter,
+    sessionStatusFilter,
+    sessionTagFilter,
+    sessionSort,
+    statsSessionQuery: sessionQuery,
+  });
+  flushPersistedState();
 }
 function currentSessionViewState(){
   return {
@@ -57,7 +60,7 @@ function applySavedSessionView(view){
   sessionTagFilter = view.state.sessionTagFilter || 'all';
   sessionSort = view.state.sessionSort || 'updated';
   sessionQuery = view.state.sessionQuery || '';
-  localStorage.setItem('statsSource', sourceFilter);
+  persistState('statsSource', sourceFilter);
   saveSessionViewState();
 }
 function savedViewSummary(view, s){

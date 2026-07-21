@@ -9,10 +9,7 @@ dashboard/sessions/session-table.js
 dashboard/sessions/session-workspace.js
 */
 function sessionSimpleToolbarHtml(s){
-  return `<section class="session-simple-shell session-library-shell"><div class="session-simple-head"><div><b>${TXT.sessionEssentials}</b><span>${TXT.sessionEssentialsHint}</span></div></div>${sessionQuickFilterHtml(s)}${sessionSavedViewsInlineHtml(s)}</section>`;
-}
-function sessionAdvancedHtml(s){
-  return '';
+  return `<section class="session-simple-shell session-library-shell" aria-label="${TXT.sessionEssentials}">${sessionQuickFilterHtml(s)}${sessionSavedViewsInlineHtml(s)}</section>`;
 }
 function sessionFiltersActive(){ return sessionQuickFilter !== 'all' || sessionProjectFilter !== 'all' || sessionStatusFilter !== 'active' || sessionTagFilter !== 'all' || sessionQuery.trim(); }
 function sessionFilterContextHtml(s){
@@ -31,7 +28,7 @@ function renderRenameSheet(){
   const item = sessionByKey(renameSessionKey);
   if(!item) return '';
   const value = renameDraft || item.title || '';
-  return `<div class="modal-backdrop" data-modal-backdrop="rename"><div class="rename-sheet" role="dialog" aria-modal="true" data-modal="rename"><div class="rename-head"><div><b>${TXT.renameTitle}</b><span>${esc(item.id || '')}</span></div><button data-rename-cancel="1">&#215;</button></div><label>${TXT.renameHint}<input data-rename-input value="${esc(value)}" /></label><div class="rename-actions"><button data-rename-cancel="1">${TXT.cancel}</button><button class="primary" data-rename-save="1">${TXT.save}</button></div></div></div>`;
+  return `<div class="modal-backdrop" data-modal-backdrop="rename"><div class="rename-sheet" role="dialog" aria-modal="true" aria-labelledby="rename-title" data-modal="rename"><div class="rename-head"><div><b id="rename-title">${TXT.renameTitle}</b><span>${esc(item.id || '')}</span></div><button data-rename-cancel="1" aria-label="${TXT.cancel}">&#215;</button></div><label>${TXT.renameHint}<input data-rename-input value="${esc(value)}" autofocus /></label><div class="rename-actions"><button data-rename-cancel="1">${TXT.cancel}</button><button class="primary" data-rename-save="1">${TXT.save}</button></div></div></div>`;
 }
 async function saveRenameSheet(){
   const key = renameSessionKey;

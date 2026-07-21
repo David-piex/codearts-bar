@@ -196,20 +196,6 @@ function inlineAnalyticsChartScript(options = {}) {
         tip.style.transform = 'translate3d(868px, 315px, 0) scale(1)';
       }
     }
-    const meta = document.getElementById('chartHoverMeta');
-    if(meta) meta.innerHTML = previewOptions.pinnedHover
-      ? '<b>07/08 09:50</b><span>\u5df2\u56fa\u5b9a\u70b9\u4f4d</span><span>\u8bf7\u6c42 ' + n(focus.requests) + '</span><span>\u603b token ' + n(focus.total) + '</span><span>\u8f93\u5165 ' + n(focus.input) + '</span><span>\u8f93\u51fa ' + n(focus.output) + '</span><span>\u7f13\u5b58\u547d\u4e2d ' + n(focus.cacheRead) + '</span>'
-      : '<b>\u56fe\u8868\u9884\u89c8</b><span>\u8bf7\u6c42 ' + n(hot.requests) + '</span><span>\u603b token ' + n(hot.total) + '</span><span>\u7f13\u5b58\u547d\u4e2d ' + n(hot.cacheRead) + '</span>';
-    const scrubber = document.getElementById('chartHoverScrubber');
-    if(scrubber){
-      const activeBucket = previewOptions.pinnedHover ? focus : hot;
-      const activeHit = Math.round(pct(activeBucket.cacheRead, activeBucket.cacheWrite, activeBucket.input));
-      scrubber.classList.toggle('active', Boolean(previewOptions.pinnedHover));
-      scrubber.classList.toggle('pinned', Boolean(previewOptions.pinnedHover));
-      scrubber.innerHTML = previewOptions.pinnedHover
-        ? '<b>07/08 09:50</b><span class="scrubber-pin">\u5df2\u56fa\u5b9a\u70b9\u4f4d</span><span>\u8bf7\u6c42 ' + n(activeBucket.requests) + '</span><span>\u603b token ' + n(activeBucket.total) + '</span><span>\u8f93\u5165 ' + n(activeBucket.input) + '</span><span>\u8f93\u51fa ' + n(activeBucket.output) + '</span><span>\u7f13\u5b58\u547d\u4e2d ' + n(activeBucket.cacheRead) + '</span>'
-        : '<b>\u4f7f\u7528\u8d8b\u52bf</b><span>\u603b token \u00b7 \u8f93\u5165 \u00b7 \u8f93\u51fa \u00b7 \u7f13\u5b58\u547d\u4e2d</span>';
-    }
   }
   window.addEventListener('load', draw);
   setTimeout(draw, 80);
@@ -268,8 +254,6 @@ function assertPreviewHtml(label, html){
     const groups = [
       ["chart-hover-preview"],
       ["preview-pinned"],
-      ["chartHoverScrubber"],
-      ["scrubber-pin"],
       [pinnedPoint, "\\u5df2\\u56fa\\u5b9a\\u70b9\\u4f4d"],
       [cacheReadText, "\\u7f13\\u5b58\\u547d\\u4e2d"],
     ];

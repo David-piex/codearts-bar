@@ -56,7 +56,7 @@ if (stdout) process.stdout.write(stdout);
 if (stderr) process.stderr.write(stderr);
 if (result.error) throw result.error;
 assert.equal(result.status, 0, `Electron visual capture exited with ${result.status}`);
-for (const name of ['desktop-standard.png', 'desktop-narrow.png', 'desktop-wide-layout.png', 'desktop-sessions.png', 'desktop-date-picker.png']) {
+for (const name of ['desktop-standard.png', 'desktop-dark.png', 'desktop-empty-state.png', 'desktop-narrow.png', 'desktop-wide-layout.png', 'desktop-sessions.png', 'desktop-sessions-dark.png', 'desktop-export-dialog.png', 'desktop-date-picker.png', 'desktop-date-picker-dark.png']) {
   assert.ok(fs.existsSync(path.join(outputDir, name)), `missing Electron visual capture ${name}`);
 }
 console.log(`ok - electron visual capture ${outputDir}`);

@@ -14,6 +14,7 @@ const images = [
   ['desktop-narrow.png', electronDir],
   ['desktop-wide-layout.png', electronDir],
   ['desktop-sessions.png', electronDir],
+  ['desktop-export-dialog.png', electronDir],
   ['desktop-date-picker.png', electronDir],
 ];
 fs.mkdirSync(baselineDir, { recursive: true });

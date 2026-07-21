@@ -34,7 +34,7 @@ async function ensureRequestPageInBoundsAfterLoad(){
   if(total <= 0 && Number(requestTablePage || 0) > 0){
     requestTablePage = 0;
     requestTableRenderLimit = REQUEST_PAGE_SIZE;
-    localStorage.setItem('requestTablePage', '0');
+    persistStateNow('requestTablePage', '0');
     requestPageCache = { ...requestPageCache, key: requestPageCacheKey(0), page: 0, items: [], total: 0 };
     if(snapshot?.requestPage) snapshot.requestPage = { ...snapshot.requestPage, offset: 0, payload: requestPagePayload(0, REQUEST_PAGE_SIZE), items: [], total: 0 };
     syncPagedTableInput('requests', 0, 0, REQUEST_PAGE_SIZE);
@@ -43,7 +43,7 @@ async function ensureRequestPageInBoundsAfterLoad(){
   if(total > 0 && Number(requestTablePage || 0) > maxPage){
     requestTablePage = maxPage;
     requestTableRenderLimit = REQUEST_PAGE_SIZE;
-    localStorage.setItem('requestTablePage', String(requestTablePage));
+    persistStateNow('requestTablePage', String(requestTablePage));
     await refreshRequestPageCache(requestTablePage, { force: true });
     syncPagedTableInput('requests', total, requestTablePage, REQUEST_PAGE_SIZE);
     return true;
@@ -97,7 +97,7 @@ function resetRequestPaging(){
   requestTablePage = 0;
   requestTableRenderLimit = REQUEST_PAGE_SIZE;
   invalidateRequestPageCache();
-  localStorage.setItem('requestTablePage', '0');
+  persistStateNow('requestTablePage', '0');
 }
 function sameRequestPagePayload(a = {}, b = {}){
   return Number(a.limit || REQUEST_PAGE_SIZE) === Number(b.limit || REQUEST_PAGE_SIZE)

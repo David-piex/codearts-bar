@@ -9,6 +9,9 @@ const manifest = JSON.parse(fs.readFileSync(path.join(src, 'dashboard-css-source
 assert.equal(manifest.length, 11, 'dashboard CSS domain source count must not grow without an intentional budget update');
 for (const owner of ['styles/domain-controls.css','styles/domain-sessions.css','styles/domain-chart.css','styles/domain-semantic.css','styles/domain-workbench.css']) assert.equal(manifest.includes(owner), true, `semantic owner missing from CSS manifest: ${owner}`);
 const source = manifest.map((rel) => fs.readFileSync(path.join(src, rel), 'utf8')).join('\n');
+for (const dead of ['session-advanced-shell','chart-hover-scrubber','chart-hover-meta','range-select-filter','range-custom','session-efficiency','model-break-row','compact-deep-panel','topbar-actions','view-mode-switch','session-stat','workspace-jump','idle-summary-card']) {
+  assert.equal(new RegExp(`\\.${dead}(?![\\w-])`).test(source), false, `retired dashboard selector returned: .${dead}`);
+}
 const domainBudgets = {
   'styles/domain-shell.css': { important:2, bytes:27 * 1024 },
   'styles/domain-inspector.css': { important:1, bytes:13 * 1024 },
@@ -20,9 +23,7 @@ const domainBudgets = {
   'styles/domain-native.css': { important:17, bytes:28 * 1024 },
   'styles/domain-semantic.css': { important:21, bytes:26 * 1024 },
   'styles/domain-workbench.css': { important:0, bytes:14 * 1024 },
-  // The final calibration layer owns the software-rendering fallback and
-  // interaction states; keep it bounded separately from product surfaces.
-  'styles/domain-taste.css': { important:0, bytes:5 * 1024 },
+  'styles/domain-theme.css': { important:0, bytes:8 * 1024 },
 };
 for (const rel of manifest) {
   const domainSource = fs.readFileSync(path.join(src, rel), 'utf8');

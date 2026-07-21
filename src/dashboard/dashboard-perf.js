@@ -25,7 +25,7 @@ function resetIncrementalRenderLimits(scope = 'all'){
     requestTableRenderLimit = REQUEST_PAGE_SIZE;
     requestTablePage = 0;
     requestPageCache = { key: '', items: null, total: 0, page: 0, timestamp: 0 };
-    localStorage.setItem('requestTablePage', '0');
+    persistStateNow('requestTablePage', '0');
   }
   if(scope === 'all' || scope === 'sessions') sessionTableRenderLimit = SESSION_PAGE_SIZE;
 }

@@ -414,8 +414,8 @@
 .request-table td small { display:block; color:var(--muted); font-size:8px; }
 .request-session { max-width:260px; overflow:hidden; text-overflow:ellipsis; }
 .request-status { display:inline-flex; min-width:34px; justify-content:center; padding:2px 6px; border-radius:6px; font-weight:700; }
-.request-status.ok { color:#087a45; background:#e9f8f0; }
-.request-status.bad { color:var(--danger); background:#fff0f3; }
+.request-status.ok { color:var(--success); background:var(--success-soft); }
+.request-status.bad { color:var(--danger); background:var(--danger-soft); }
 .loading-state {
   min-height: 430px;
   display: grid;

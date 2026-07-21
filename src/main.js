@@ -25,6 +25,7 @@ const { createCrashReporter } = require('./main/crash-reporter');
 const { resolveRuntimeDataDir, migratePersistentUserData } = require('./main/user-data');
 const { clearDisposableRendererCaches, rendererCrashDiagnostics } = require('./main/renderer-recovery');
 const { createDbWatchService } = require('./main/db-watch-service');
+const { createUsageRollupPrewarmer, prewarmAfterRefresh } = require('./main/rollup-prewarm');
 const { createLatestTaskQueue } = require('./main/latest-task-queue');
 const { ScoredCache } = require('./core/scored-cache');
 const lifecycle = require('./main/lifecycle');
@@ -97,6 +98,13 @@ try {
 appendLog('info', 'crashpad', crashpadStarted ? 'local crash dumps enabled' : 'local crash dumps unavailable', { crashDumps: app.getPath('crashDumps') });
 const crashReporter = createCrashReporter({ app, appendLog });
 crashReporter.install();
+const usageRollupPrewarmer = createUsageRollupPrewarmer({
+  loadSettings,
+  listDataSources: (settings) => localProvider.listDataSources(settings),
+  nativeSqliteStatus,
+  scheduleMaintenance: scheduleUsageRollupMaintenance,
+  onBuilt: handleUsageRollupBuilt,
+});
 const dbWatchService = createDbWatchService({
   fs,
   loadSettings,
@@ -104,20 +112,7 @@ const dbWatchService = createDbWatchService({
   dashboardWindowVisible,
   refreshLightAndPush,
   refreshTraySummaryOnly,
-  onDatabaseChange: () => {
-    const settings = loadSettings();
-    const adapter = process.env.CODEARTS_BAR_FORCE_SQLJS === '1' || !nativeSqliteStatus().available ? 'sql.js' : 'node:sqlite';
-    for (const source of localProvider.listDataSources(settings)) {
-      scheduleUsageRollupMaintenance(source, {
-        adapter,
-        minNewRows: 100,
-        cooldownMs: 60 * 60 * 1000,
-        lastBuildMs: Number(settings.rollupMaintenance?.bySource?.[source.id] || settings.rollupMaintenance?.lastRollupBuildMs || 0),
-        delayMs: 50,
-        onBuilt: handleUsageRollupBuilt,
-      });
-    }
-  },
+  onDatabaseChange: (reason) => usageRollupPrewarmer.schedule(reason || 'database-change'),
 });
 function handleUsageRollupBuilt({ source, result, completedAt }) {
   const status = String(result?.usageRollup?.status || '');
@@ -625,7 +620,7 @@ if (lifecycle.requestSingleInstance(app, { refreshLight, openDashboardWindow }))
     tray.on('right-click', () => showTrayMenu());
     refreshTrayMenu();
     warmupSqlJsFallback();
-    refreshLight({ summaryOnly: true, reason: 'startup' });
+    prewarmAfterRefresh(refreshLight({ summaryOnly: true, reason: 'startup' }), usageRollupPrewarmer);
     scheduleRefresh();
     scheduleDbWatch();
     scheduleRuntimeStable();

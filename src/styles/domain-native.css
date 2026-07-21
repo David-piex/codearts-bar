@@ -19,7 +19,7 @@
   min-height:var(--control-height);
   border-radius:var(--control-radius);
 }
-:where(.summary-card,.chart-card,.table-card,.source-card,.session-simple-shell,.session-advanced-shell,.session-essential-inspector,.session-inspector,.cache-governance,.usage-total-board,.agent-rhythm-card) {
+:where(.summary-card,.chart-card,.table-card,.source-card,.session-simple-shell,.session-essential-inspector,.session-inspector,.cache-governance,.usage-total-board,.agent-rhythm-card) {
   border-color:var(--hairline);
   box-shadow:var(--shadow-card);
 }
@@ -45,10 +45,10 @@
 .session-table.simple .session-row td{border-bottom-color:var(--native-row-border)}
 .session-table.simple .session-row:hover td{background:var(--native-row-hover)}
 .session-table.simple .session-row.selected td{background:var(--native-row-selected)}
-.session-workspace-card,.session-simple-shell,.session-advanced-shell,.session-inspector{box-shadow:0 10px 34px rgba(26,42,74,.055),inset 0 1px 0 rgba(255,255,255,.68)}
-.session-row-actions button,.session-essential-actions button,.topbar-actions button,.filters button{transition:background .14s ease,border-color .14s ease,transform .12s ease,opacity .14s ease}
-.session-row-actions button:hover,.session-essential-actions button:hover,.topbar-actions button:hover,.filters button:hover{background:rgba(15,23,42,.045);transform:none}
-.session-row-actions button:active,.session-essential-actions button:active,.topbar-actions button:active,.filters button:active{transform:translateY(1px)}
+.session-workspace-card,.session-simple-shell,.session-inspector{box-shadow:0 10px 34px rgba(26,42,74,.055),inset 0 1px 0 rgba(255,255,255,.68)}
+.session-row-actions button,.session-essential-actions button,.filters button{transition:background .14s ease,border-color .14s ease,transform .12s ease,opacity .14s ease}
+.session-row-actions button:hover,.session-essential-actions button:hover,.filters button:hover{background:rgba(15,23,42,.045);transform:none}
+.session-row-actions button:active,.session-essential-actions button:active,.filters button:active{transform:translateY(1px)}
 .commercial-error-state{border-color:rgba(239,68,68,.16);background:linear-gradient(180deg,rgba(255,255,255,.86),rgba(248,250,252,.78));box-shadow:var(--native-popover-shadow)}
 .commercial-error-state .error-orb{background:rgba(239,68,68,.10);color:#c2410c;box-shadow:inset 0 1px 0 rgba(255,255,255,.86)}
 /* merged source: dashboard-layout.css */
@@ -134,10 +134,6 @@ body.is-zooming :where(.menu-card,.summary-card,.chart-card,.table-card,.source-
 }
 .chart-tip {
   will-change:transform;
-  contain:layout paint style;
-}
-.chart-hover-meta,
-.chart-hover-scrubber {
   contain:layout paint style;
 }
 button:disabled,
@@ -238,7 +234,6 @@ button:active,
 .chart-card,
 .table-card,
 .session-simple-shell,
-.session-advanced-shell,
 .session-inspector,
 
 .usage-total-board,
@@ -252,8 +247,7 @@ button:active,
 }
 
 .date-range-popover,
-.chart-tip,
-.rename-sheet {
+.chart-tip {
   border-color: var(--border-soft);
   border-radius: var(--radius-xl);
   background: rgba(255,255,255,.92);
@@ -556,9 +550,9 @@ tr:hover td,
 }
 .session-row-actions button,
 .inspector-actions button:not(.primary-action) {
-  background: rgba(247,249,252,.78);
-  border-color: rgba(216,224,235,.76);
-  color: #475467;
+  background: var(--native-control-bg,rgba(247,249,252,.78));
+  border-color: var(--native-control-border,rgba(216,224,235,.76));
+  color: var(--native-text-muted,#475467);
 }
 
 body {
@@ -588,11 +582,6 @@ body.view-switching::after {
 .content.view-switching {
   scroll-behavior:auto;
 }
-.content.is-resizing .chart-hover-scrubber,
-.content.is-zooming .chart-hover-scrubber,
-.content.view-switching .chart-hover-scrubber {
-  opacity:0;
-}
 
 .chart-card-lean .card-head {
   align-items:center;
@@ -609,19 +598,8 @@ body.view-switching::after {
   padding:0 9px;
   font-size:11px;
 }
-.chart-underbar-lean {
-  grid-template-columns:minmax(0,1fr) auto;
-  min-height:30px;
-}
 .chart-underbar-minimal {
   grid-template-columns:minmax(0,1fr) auto;
-}
-.chart-underbar-lean > em {
-  color:#8a93a3;
-  font-size:11px;
-  font-style:normal;
-  font-weight:760;
-  white-space:nowrap;
 }
 .chart-legend-lean {
   justify-content:flex-end;
@@ -678,31 +656,7 @@ body.view-switching::after {
 .table-scroll.is-page-loading tbody {
   pointer-events:none;
 }
-
-
-.chart-card-lean:not(.chart-active):not(.chart-pinned) .chart-hover-scrubber {
-  min-height:0;
-  height:0;
-  padding:0;
-  margin:0;
-  opacity:0;
-  overflow:hidden;
-  border:0;
-}
-.chart-card-lean:not(.chart-active):not(.chart-pinned) .chart-underbar-lean {
-  min-height:22px;
-  padding-top:2px;
-  padding-bottom:2px;
-  opacity:.72;
-}
 .chart-card-lean:not(.chart-active):not(.chart-pinned) #chartHoverMeta {
-  display:none;
-}
-
-.chart-card-lean .chart-hover-scrubber {
-  display:none;
-}
-.chart-card-lean .chart-hover-meta span:nth-of-type(n+6) {
   display:none;
 }
 
@@ -733,7 +687,7 @@ body.view-switching {
 }
 
 /* 1.20.2 commercial performance restraint: native surfaces should feel solid, not constantly blurred. */
-:where(.summary-card,.chart-card,.table-card,.usage-total-board,.agent-rhythm-card,.analytics-advanced-shell,.session-simple-shell,.session-advanced-shell,.session-overview-card,.session-manager,.session-inspector,.source-card) {
+:where(.summary-card,.chart-card,.table-card,.usage-total-board,.agent-rhythm-card,.analytics-advanced-shell,.session-simple-shell,.session-overview-card,.session-manager,.session-inspector,.source-card) {
   -webkit-backdrop-filter:none !important;
   backdrop-filter:none !important;
 }

@@ -278,6 +278,7 @@ async function captureScenario(win, name) {
     }
     const content = document.querySelector(".content");
     if (content) content.scrollTop = 0;
+    window.scrollTo(0, 0);
     const dateConfirm = document.querySelector("[data-date-range-confirm]");
     if (dateConfirm) dateConfirm.disabled = true;
     for (const canvas of document.querySelectorAll("canvas")) {
@@ -287,6 +288,14 @@ async function captureScenario(win, name) {
     return true;
   });
   await delay(180);
+  await evalIn(win, () => {
+    document.activeElement?.blur?.();
+    const content = document.querySelector(".content");
+    if (content) content.scrollTop = 0;
+    window.scrollTo(0, 0);
+    return true;
+  });
+  await delay(40);
   const image = await win.webContents.capturePage();
   fs.writeFileSync(path.join(screenshotDir, `${name}.png`), image.toPNG());
 }
@@ -398,6 +407,7 @@ async function main() {
       hasBackControl: Boolean(document.querySelector(".back, [data-back]")),
       nodeRequireType: typeof window.require,
       preloadApi: Boolean(window.codeartsApi && typeof window.codeartsApi.invoke === "function"),
+      platform: document.documentElement.dataset.platform || "",
       canvasSize: document.querySelector("#usageChart")?.dataset?.sizeKey || "",
       yAxisTicks: JSON.parse(document.querySelector("#usageChart")?.dataset?.yAxisTicks || "[]"),
       yAxisMax: Number(document.querySelector("#usageChart")?.dataset?.yAxisMax || 0),
@@ -411,12 +421,43 @@ async function main() {
   assert.equal(initial.hasBackControl, false, "dashboard should not show a non-functional back control");
   assert.equal(initial.nodeRequireType, "undefined", "dashboard renderer should not expose Node require");
   assert.equal(initial.preloadApi, true, "dashboard should use the isolated preload API");
+  assert.equal(initial.platform, process.platform, "dashboard theme bootstrap should expose the current Electron platform");
+  const macChrome = await evalIn(win, () => {
+    const previous = document.documentElement.dataset.platform || "";
+    document.documentElement.dataset.platform = "darwin";
+    const header = document.querySelector(".app-header");
+    const brand = document.querySelector(".app-brand");
+    const refresh = document.querySelector("#refresh");
+    const headerRect = header?.getBoundingClientRect();
+    const brandRect = brand?.getBoundingClientRect();
+    const result = {
+      safeInset: Number(brandRect?.left || 0) - Number(headerRect?.left || 0),
+      headerDrag: getComputedStyle(header).webkitAppRegion,
+      controlDrag: getComputedStyle(refresh).webkitAppRegion,
+    };
+    document.documentElement.dataset.platform = previous;
+    return result;
+  });
+  assert.ok(macChrome.safeInset >= 76, `macOS toolbar should reserve traffic-light space: ${JSON.stringify(macChrome)}`);
+  assert.equal(macChrome.headerDrag, "drag", "macOS toolbar should be a native window drag region");
+  assert.equal(macChrome.controlDrag, "no-drag", "macOS toolbar controls must stay interactive");
   assert.ok(initial.yAxisTicks.length >= 4 && initial.yAxisTicks.length <= 6, "trend chart should expose readable Y-axis ticks");
   assert.equal(initial.yAxisTicks[0], 0, "trend chart Y-axis should start at zero");
   assert.equal(initial.yAxisTicks.at(-1), initial.yAxisMax, "trend chart top tick should match its scale maximum");
   assert.ok(["token", "ms", "percent"].includes(initial.yAxisUnit), "trend chart should expose its Y-axis unit");
   assert.ok(initial.xAxisLabels.length >= 2, "trend chart should keep responsive X-axis labels visible");
   await captureScenario(win, "desktop-standard");
+  await changeValue(win, "[data-theme-mode]", "dark");
+  await waitFor(win, () => document.documentElement.dataset.theme === "dark");
+  await delay(180);
+  await captureScenario(win, "desktop-dark");
+  await changeValue(win, "[data-theme-mode]", "system");
+  await waitFor(win, () => document.documentElement.dataset.theme === "light");
+  await changeValue(win, '[data-query="analytics"]', "no-match-empty-state");
+  await waitFor(win, () => Boolean(document.querySelector(".analytics-empty-state")));
+  await captureScenario(win, "desktop-empty-state");
+  await changeValue(win, '[data-query="analytics"]', "");
+  await waitFor(win, () => !document.querySelector(".analytics-empty-state") && document.querySelectorAll(".request-row").length > 0);
   const projectOptions = await evalIn(win, () => [...document.querySelectorAll('[data-select="project"] option')].map((option) => ({ value: option.value, label: option.textContent })));
   assert.ok(projectOptions.some((option) => option.value === "C:/e2e/desktop"), `desktop project should be available: ${JSON.stringify(projectOptions)}`);
   assert.ok(projectOptions.some((option) => option.value === "C:/e2e/cli"), `cli project should be available: ${JSON.stringify(projectOptions)}`);
@@ -610,11 +651,22 @@ async function main() {
   assert.equal(normalWindowDatePopover.hit, true, `normal-window date popover should be visible and interactive: ${JSON.stringify(normalWindowDatePopover)}`);
   assert.ok(normalWindowDatePopover.rect.width > 500 && normalWindowDatePopover.rect.height > 300, `normal-window date popover should render at usable size: ${JSON.stringify(normalWindowDatePopover)}`);
   await captureScenario(win, "desktop-date-picker");
+  await changeValue(win, "[data-theme-mode]", "dark");
+  await waitFor(win, () => document.documentElement.dataset.theme === "dark");
+  await captureScenario(win, "desktop-date-picker-dark");
+  await changeValue(win, "[data-theme-mode]", "system");
+  await waitFor(win, () => document.documentElement.dataset.theme === "light");
   await click(win, '[data-date-range-toggle]');
   await waitFor(win, () => !document.querySelector('.date-range-popover'));
 
   await setWindowSize(win, 1040, 720);
   await captureScenario(win, "desktop-narrow");
+  const narrowSourceLabels = await evalIn(win, () => [...document.querySelectorAll(".analytics-page-head .source-switch-btn span:last-child")].map((node) => {
+    const rect = node.getBoundingClientRect();
+    const style = getComputedStyle(node);
+    return { text: node.textContent, fits: node.scrollWidth <= node.clientWidth + 1, oneLine: style.whiteSpace === "nowrap" && node.getClientRects().length === 1 && node.scrollHeight <= node.clientHeight + 1, height: Math.round(rect.height) };
+  }));
+  assert.ok(narrowSourceLabels.length >= 3 && narrowSourceLabels.every((item) => item.fits && item.oneLine), `narrow source labels must remain single-line and fully visible: ${JSON.stringify(narrowSourceLabels)}`);
   await setWindowSize(win, 1024, 720);
   const compactDesktopFilters = await evalIn(win, () => {
     const pageHead = document.querySelector('.analytics-page-head')?.getBoundingClientRect();
@@ -689,7 +741,7 @@ async function main() {
   assert.equal(maximizedLayout.headerDoesNotOverlap, true, `application identity and navigation must not overlap: ${JSON.stringify(maximizedLayout)}`);
   assert.equal(maximizedLayout.filtersInsidePage, true, `analytics filters should stay inside the page heading: ${JSON.stringify(maximizedLayout)}`);
   assert.equal(maximizedLayout.seriesReadable, true, `chart series controls should retain readable text and fit their panel: ${JSON.stringify(maximizedLayout)}`);
-  assert.deepEqual(maximizedLayout.filterHeights, [42, 42, 42, 42, 42], `analytics filter controls should share one height: ${JSON.stringify(maximizedLayout)}`);
+  assert.deepEqual(maximizedLayout.filterHeights, [38, 38, 38, 38, 38], `analytics filter controls should share one compact height: ${JSON.stringify(maximizedLayout)}`);
   assert.equal(maximizedLayout.refreshPartsSeparated, true, `refresh glyph and value should not collide: ${JSON.stringify(maximizedLayout)}`);
   assert.ok(resizeState.appHtml > 1000, "dashboard should remain rendered after maximize");
   assert.equal(resizeState.bodyResizing, false, "resize class should settle after maximize");
@@ -879,6 +931,71 @@ async function main() {
   assert.deepEqual(sessionPagerOptions, [10, 20, 50, 100], "session page size options should be 10/20/50/100");
   await waitFor(win, () => document.querySelectorAll(".session-scroll tbody tr.session-row").length >= 2);
   await captureScenario(win, "desktop-sessions");
+  const shortcutCallsBefore = {
+    refresh: ipcCalls.filter((item) => item.channel === "dashboard:refreshLight").length,
+    settings: ipcCalls.filter((item) => item.channel === "dashboard:settings").length,
+  };
+  await evalIn(win, () => document.dispatchEvent(new KeyboardEvent("keydown", { key: "1", ctrlKey: true, bubbles: true, cancelable: true })));
+  await waitFor(win, () => localStorage.getItem("workspaceMode") === "analytics" && Boolean(document.querySelector("#usageChart")));
+  await evalIn(win, () => document.dispatchEvent(new KeyboardEvent("keydown", { key: "2", ctrlKey: true, bubbles: true, cancelable: true })));
+  await waitFor(win, () => localStorage.getItem("workspaceMode") === "sessions" && Boolean(document.querySelector(".session-manager")));
+  await evalIn(win, () => document.dispatchEvent(new KeyboardEvent("keydown", { key: "f", ctrlKey: true, bubbles: true, cancelable: true })));
+  await waitFor(win, () => document.activeElement?.matches?.('[data-query="sessions"]'));
+  await evalIn(win, () => document.dispatchEvent(new KeyboardEvent("keydown", { key: "r", ctrlKey: true, bubbles: true, cancelable: true })));
+  await evalIn(win, () => document.dispatchEvent(new KeyboardEvent("keydown", { key: ",", ctrlKey: true, bubbles: true, cancelable: true })));
+  await delay(180);
+  assert.ok(ipcCalls.filter((item) => item.channel === "dashboard:refreshLight").length > shortcutCallsBefore.refresh, "Ctrl/Cmd+R should invoke dashboard refresh");
+  assert.ok(ipcCalls.filter((item) => item.channel === "dashboard:settings").length > shortcutCallsBefore.settings, "Ctrl/Cmd+, should open settings");
+  const stateSnapshot = await evalIn(win, () => JSON.parse(localStorage.getItem("dashboardStateSnapshotV1") || "null"));
+  assert.equal(stateSnapshot?.version, 1, "dashboard startup state should use a versioned snapshot");
+  assert.equal(stateSnapshot?.values?.workspaceMode, "sessions", "state snapshot should track current workspace");
+  await evalIn(win, () => {
+    const checkbox = document.querySelector('.session-scroll tbody [data-session-check]');
+    if(!checkbox) throw new Error('missing session checkbox for dialog focus test');
+    checkbox.click();
+  });
+  await waitFor(win, () => {
+    const trigger = document.querySelector('[data-session-bulk="export-json"]');
+    return Boolean(trigger && !trigger.disabled);
+  });
+  const exportOpenResult = await evalIn(win, () => {
+    try {
+      const trigger = document.querySelector('[data-session-bulk="export-json"]');
+      if(!trigger) return { ok: false, error: 'missing trigger' };
+      trigger.focus();
+      trigger.click();
+      return { ok: true };
+    } catch(error) {
+      return { ok: false, error: error?.stack || error?.message || String(error) };
+    }
+  });
+  assert.equal(exportOpenResult.ok, true, exportOpenResult.error || "bulk export dialog should open");
+  await waitFor(win, () => document.activeElement?.matches?.('[data-export-option="includeContent"]'));
+  const dialogSemantics = await evalIn(win, () => ({
+    labelled: document.querySelector('[data-modal="export"]')?.getAttribute('aria-labelledby') || '',
+    closeLabel: document.querySelector('[data-export-cancel]')?.getAttribute('aria-label') || '',
+    title: document.querySelector('#export-title')?.textContent || '',
+  }));
+  assert.equal(dialogSemantics.labelled, "export-title");
+  assert.ok(dialogSemantics.closeLabel, "export dialog close control needs an accessible label");
+  assert.ok(dialogSemantics.title, "export dialog needs a visible accessible title");
+  await captureScenario(win, "desktop-export-dialog");
+  await evalIn(win, () => {
+    const last = document.querySelector('[data-export-confirm]');
+    last.focus();
+    last.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", bubbles: true, cancelable: true }));
+  });
+  await waitFor(win, () => document.activeElement?.matches?.('[data-export-cancel][aria-label]'));
+  await evalIn(win, () => document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true })));
+  await waitFor(win, () => !document.querySelector('[role="dialog"][aria-modal="true"]') && document.activeElement?.matches?.('[data-session-bulk="export-json"]'));
+  await click(win, '[data-session-bulk="clear"]');
+  await waitFor(win, () => !selectedSessionKeys.size);
+  await changeValue(win, "[data-theme-mode]", "dark");
+  await waitFor(win, () => document.documentElement.dataset.theme === "dark");
+  await delay(180);
+  await captureScenario(win, "desktop-sessions-dark");
+  await changeValue(win, "[data-theme-mode]", "system");
+  await waitFor(win, () => document.documentElement.dataset.theme === "light");
   const sessionLocalInitial = await evalIn(win, () => {
     const rows = [...document.querySelectorAll(".session-scroll tbody tr.session-row")];
     window.__e2eSessionTableSlot = document.querySelector("#sessionTableSlot");

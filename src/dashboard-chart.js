@@ -1,7 +1,7 @@
 function emptyRow(colspan){ return `<tr><td colspan="${colspan}" class="empty-cell">${TXT.emptyHint}</td></tr>`; }
 function requestKeyFor(r){ return `${sourceKey(r)}:${r.id || ''}:${r.sessionId || ''}:${r.time || ''}`; }
 function requestByKey(key){ return (snapshot?.requestLog || []).find((r) => requestKeyFor(r) === key) || null; }
-function selectedRequestFrom(list){ if(selectedRequestKey && list.some((r) => requestKeyFor(r) === selectedRequestKey)) return list.find((r) => requestKeyFor(r) === selectedRequestKey); const first = list[0] || null; selectedRequestKey = first ? requestKeyFor(first) : ''; localStorage.setItem('selectedRequestKey', selectedRequestKey); return first; }
+function selectedRequestFrom(list){ if(selectedRequestKey && list.some((r) => requestKeyFor(r) === selectedRequestKey)) return list.find((r) => requestKeyFor(r) === selectedRequestKey); const first = list[0] || null; selectedRequestKey = first ? requestKeyFor(first) : ''; persistStateNow('selectedRequestKey', selectedRequestKey); return first; }
 function requestRowHtml(r){
   const key = requestKeyFor(r);
   const selected = key === selectedRequestKey;

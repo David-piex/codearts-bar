@@ -35,7 +35,7 @@ async function switchSourceFilter(nextSource, opts = {}){
   clearSelectedSessions();
   sourceFilter = nextSource || 'all';
   beginDashboardRequestGeneration();
-  localStorage.setItem('statsSource', sourceFilter);
+  persistStateNow('statsSource', sourceFilter);
   patchSourceSelectionChrome(sourceFilter);
   try {
     if(snapshot?.ok && workspaceMode === 'analytics'){
@@ -51,6 +51,16 @@ async function switchSourceFilter(nextSource, opts = {}){
   }
 }
 async function handleDashboardAnalyticsClick(e){
+    const queryClear = e.target.closest('[data-analytics-query-clear]');
+    if(queryClear){
+      analyticsQuery = '';
+      persistState('statsAnalyticsQuery', analyticsQuery);
+      flushPersistedState();
+      resetRequestPaging();
+      if(snapshot?.ok && patchAnalyticsSlotsForState(snapshot, { lowerOnly: true })) throw DASHBOARD_EVENT_HANDLED;
+      if(snapshot?.ok) render(snapshot, { windowLayout: false, instantChart: true, partial: true });
+      throw DASHBOARD_EVENT_HANDLED;
+    }
     const requestPage = e.target.closest('[data-request-page]');
     const requestPageGo = e.target.closest('[data-request-page-go]');
     if(requestPage || requestPageGo){
@@ -66,7 +76,7 @@ async function handleDashboardAnalyticsClick(e){
       }
       requestTablePage = clampTablePageIndex(nextPage, total, REQUEST_PAGE_SIZE);
       requestTableRenderLimit = REQUEST_PAGE_SIZE;
-      localStorage.setItem('requestTablePage', String(requestTablePage));
+      persistStateNow('requestTablePage', String(requestTablePage));
       setPagedTableFeedback?.('requests', feedback);
       syncPagedTableInput?.('requests', total, requestTablePage, REQUEST_PAGE_SIZE);
       if(snapshot?.ok){
@@ -85,12 +95,12 @@ async function handleDashboardAnalyticsClick(e){
     const requestSelect = e.target.closest('[data-request-select]');
     if(requestSelect){
       selectedRequestKey = requestSelect.dataset.requestSelect;
-      localStorage.setItem('selectedRequestKey', selectedRequestKey);
+      persistStateNow('selectedRequestKey', selectedRequestKey);
       if(requestSelect.dataset.table){
         tableTab = requestSelect.dataset.table;
-        localStorage.setItem('statsTableTab', tableTab);
+        persistStateNow('statsTableTab', tableTab);
         layoutMode = 'dashboard';
-        localStorage.setItem('layoutMode', layoutMode);
+        persistStateNow('layoutMode', layoutMode);
         if(snapshot?.ok && patchAnalyticsSlotsForState(snapshot, { tableOnly: true })) throw DASHBOARD_EVENT_HANDLED;
       }
       if(patchRequestSelection()) throw DASHBOARD_EVENT_HANDLED;
@@ -111,10 +121,10 @@ async function handleDashboardAnalyticsClick(e){
         clearSelectedSessions();
         resetSessionPaging();
         workspaceMode = 'sessions';
-        localStorage.setItem('workspaceMode', workspaceMode);
-        localStorage.setItem('statsTableTab', tableTab);
-        localStorage.setItem('selectedSessionId', selectedSessionId);
-        localStorage.setItem('statsSessionQuery', sessionQuery);
+        persistStateNow('workspaceMode', workspaceMode);
+        persistStateNow('statsTableTab', tableTab);
+        persistStateNow('selectedSessionId', selectedSessionId);
+        persistStateNow('statsSessionQuery', sessionQuery);
         if(snapshot?.ok) render(snapshot, { windowLayout: false, instantChart: true, partial: true });
         throw DASHBOARD_EVENT_HANDLED;
       }
@@ -126,7 +136,7 @@ async function handleDashboardAnalyticsClick(e){
     const series = e.target.closest('[data-series]');
     if(series){ const key = series.dataset.series; if(visibleSeries.has(key)) visibleSeries.delete(key); else visibleSeries.add(key); saveVisibleSeries(); if(snapshot?.ok && patchAnalyticsChartOnly(snapshot)) throw DASHBOARD_EVENT_HANDLED; if(snapshot?.ok) render(snapshot, { windowLayout: false, instantChart: true, partial: true }); throw DASHBOARD_EVENT_HANDLED; }
     const cacheModel = e.target.closest('[data-cache-model]');
-    if(cacheModel){ resetIncrementalRenderLimits('all'); resetRequestPaging(); modelFilter = cacheModel.dataset.cacheModel || 'all'; beginDashboardRequestGeneration(); localStorage.setItem('statsModel', modelFilter); if(snapshot?.ok && patchAnalyticsSlotsForState(snapshot, { deferHeavy: true })) throw DASHBOARD_EVENT_HANDLED; if(snapshot?.ok) render(snapshot, { windowLayout: false, instantChart: true, partial: true }); throw DASHBOARD_EVENT_HANDLED; }
+    if(cacheModel){ resetIncrementalRenderLimits('all'); resetRequestPaging(); modelFilter = cacheModel.dataset.cacheModel || 'all'; beginDashboardRequestGeneration(); persistStateNow('statsModel', modelFilter); if(snapshot?.ok && patchAnalyticsSlotsForState(snapshot, { deferHeavy: true })) throw DASHBOARD_EVENT_HANDLED; if(snapshot?.ok) render(snapshot, { windowLayout: false, instantChart: true, partial: true }); throw DASHBOARD_EVENT_HANDLED; }
     const cacheProject = e.target.closest('[data-cache-project]');
     if(cacheProject){
       workspaceMode = 'sessions';
@@ -137,11 +147,11 @@ async function handleDashboardAnalyticsClick(e){
       tableTab = 'sessions';
       clearSelectedSessions();
       resetSessionPaging();
-      localStorage.setItem('workspaceMode', workspaceMode);
-      localStorage.setItem('sessionProjectFilter', sessionProjectFilter);
-      localStorage.setItem('sessionQuickFilter', sessionQuickFilter);
-      localStorage.setItem('sessionStatusFilter', sessionStatusFilter);
-      localStorage.setItem('statsTableTab', tableTab);
+      persistStateNow('workspaceMode', workspaceMode);
+      persistStateNow('sessionProjectFilter', sessionProjectFilter);
+      persistStateNow('sessionQuickFilter', sessionQuickFilter);
+      persistStateNow('sessionStatusFilter', sessionStatusFilter);
+      persistStateNow('statsTableTab', tableTab);
       if(snapshot?.ok) render(snapshot, { windowLayout: false, instantChart: true, partial: true });
       throw DASHBOARD_EVENT_HANDLED;
     }
@@ -150,6 +160,6 @@ async function handleDashboardAnalyticsClick(e){
     const tab = e.target.closest('[data-table]');
     if(rangeApply){ if(typeof applyDateRangeAndPatchView === 'function') await applyDateRangeAndPatchView(); else { if(applyCustomDateInputs() === false){ syncDateRangeErrorChrome?.(); throw DASHBOARD_EVENT_HANDLED; } if(snapshot?.ok && workspaceMode === 'analytics' && patchAnalyticsSlotsForState(snapshot, { deferHeavy: true })) throw DASHBOARD_EVENT_HANDLED; if(snapshot?.ok) render(snapshot, { windowLayout: false, instantChart: true, deferHeavy: true, partial: true }); } throw DASHBOARD_EVENT_HANDLED; }
     if(src){ await switchSourceFilter(src.dataset.source, { chartDelayMs: 40 }); throw DASHBOARD_EVENT_HANDLED; }
-    if(tab){ resetIncrementalRenderLimits('all'); const previousWorkspace = workspaceMode; tableTab = tab.dataset.table; localStorage.setItem('statsTableTab', tableTab); if(tableTab === 'sessions'){ workspaceMode = 'sessions'; resetSessionPaging(); localStorage.setItem('workspaceMode', workspaceMode); } else { workspaceMode = 'analytics'; localStorage.setItem('workspaceMode', workspaceMode); } const workspaceChanged = previousWorkspace !== workspaceMode; if(workspaceChanged){ document.getElementById('app')?.classList?.add?.('view-switching'); setAppInteractionMode('view-switching', 200); } if(tab.closest('.compact-panel-actions')){ layoutMode = 'dashboard'; localStorage.setItem('layoutMode', layoutMode); } if(snapshot?.ok && workspaceMode === 'analytics' && !workspaceChanged && patchAnalyticsSlotsForState(snapshot, { tableOnly: true })) throw DASHBOARD_EVENT_HANDLED; if(snapshot?.ok) render(snapshot, { windowLayout: false, instantChart: true, partial: true, deferHeavy: workspaceMode === 'analytics' && workspaceChanged && typeof ResizeObserver !== 'undefined' }); throw DASHBOARD_EVENT_HANDLED; }
+    if(tab){ resetIncrementalRenderLimits('all'); const previousWorkspace = workspaceMode; tableTab = tab.dataset.table; persistStateNow('statsTableTab', tableTab); if(tableTab === 'sessions'){ workspaceMode = 'sessions'; resetSessionPaging(); persistStateNow('workspaceMode', workspaceMode); } else { workspaceMode = 'analytics'; persistStateNow('workspaceMode', workspaceMode); } const workspaceChanged = previousWorkspace !== workspaceMode; if(workspaceChanged){ document.getElementById('app')?.classList?.add?.('view-switching'); setAppInteractionMode('view-switching', 200); } if(tab.closest('.compact-panel-actions')){ layoutMode = 'dashboard'; persistStateNow('layoutMode', layoutMode); } if(snapshot?.ok && workspaceMode === 'analytics' && !workspaceChanged && patchAnalyticsSlotsForState(snapshot, { tableOnly: true })) throw DASHBOARD_EVENT_HANDLED; if(snapshot?.ok) render(snapshot, { windowLayout: false, instantChart: true, partial: true, deferHeavy: workspaceMode === 'analytics' && workspaceChanged && typeof ResizeObserver !== 'undefined' }); throw DASHBOARD_EVENT_HANDLED; }
   return false;
 }

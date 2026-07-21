@@ -45,6 +45,49 @@ function installRendererErrorReporting(){
 }
 installRendererErrorReporting();
 
+const DASHBOARD_STATE_SNAPSHOT_KEY = 'dashboardStateSnapshotV1';
+const DASHBOARD_STATE_SNAPSHOT_KEYS = new Set([
+  'statsSource', 'statsModel', 'statsProject', 'statsRange', 'customRangeDays', 'customDateStart', 'customDateEnd',
+  'dateRangeMonth', 'statsTableTab', 'workspaceMode', 'statsAnalyticsQuery', 'statsQuery', 'statsSessionQuery',
+  'sessionStatusFilter', 'sessionSort', 'sessionTagFilter', 'sessionQuickFilter', 'sessionProjectFilter',
+  'analyticsAdvancedOpen', 'selectedSessionId', 'selectedSessionKeys', 'pinnedSessionKeys', 'selectedRequestKey',
+  'statsRefreshEvery', 'layoutMode', 'uiZoom', 'compactPane', 'compactPinned', 'sessionPageSize',
+  'requestPageSize', 'requestTablePage', 'sessionTablePage', 'perfPanelOpen', 'chartSeries',
+  'chartSeriesLeanMigrated', 'chartSeriesMinimalMigrated', 'chartSeriesTokenOnlyMigrated',
+]);
+function loadDashboardStateSnapshot(){
+  try {
+    const parsed = JSON.parse(localStorage.getItem(DASHBOARD_STATE_SNAPSHOT_KEY) || 'null');
+    if(parsed?.version === 1 && parsed.values && typeof parsed.values === 'object') return new Map(Object.entries(parsed.values));
+  } catch {}
+  const migrated = new Map();
+  for(const key of DASHBOARD_STATE_SNAPSHOT_KEYS){
+    try {
+      const value = localStorage.getItem(key);
+      if(value != null) migrated.set(key, value);
+    } catch {}
+  }
+  try { localStorage.setItem(DASHBOARD_STATE_SNAPSHOT_KEY, JSON.stringify({ version: 1, values: Object.fromEntries(migrated) })); } catch {}
+  return migrated;
+}
+const dashboardStateSnapshot = loadDashboardStateSnapshot();
+function initialStateValue(key, fallback = null){ return dashboardStateSnapshot.has(key) ? dashboardStateSnapshot.get(key) : fallback; }
+function syncDashboardStateSnapshot(key, value, persist = false){
+  if(!DASHBOARD_STATE_SNAPSHOT_KEYS.has(String(key))) return;
+  dashboardStateSnapshot.set(String(key), String(value ?? ''));
+  if(persist){
+    try { localStorage.setItem(DASHBOARD_STATE_SNAPSHOT_KEY, JSON.stringify({ version: 1, values: Object.fromEntries(dashboardStateSnapshot) })); } catch {}
+  }
+}
+function removeInitialStateValue(key){
+  dashboardStateSnapshot.delete(String(key));
+  try { localStorage.removeItem(key); } catch {}
+  try { localStorage.setItem(DASHBOARD_STATE_SNAPSHOT_KEY, JSON.stringify({ version: 1, values: Object.fromEntries(dashboardStateSnapshot) })); } catch {}
+}
+function writeInitialStateValue(key, value){
+  syncDashboardStateSnapshot(key, value, true);
+  try { localStorage.setItem(key, String(value ?? '')); } catch {}
+}
 
 let snapshot = null;
 let copyResetTimer = null;
@@ -54,34 +97,34 @@ let refreshInFlightScope = '';
 let dashboardRequestGeneration = 0;
 let dashboardScopeTimestamp = rendererNow();
 let lastRealtimeSnapshotTimestamp = 0;
-let sourceFilter = localStorage.getItem('statsSource') || 'all';
-let modelFilter = localStorage.getItem('statsModel') || 'all';
-let analyticsProjectFilter = localStorage.getItem('statsProject') || 'all';
-let rangeFilter = localStorage.getItem('statsRange') || 'today';
-let customRangeDays = Math.max(2, Math.min(365, Number(localStorage.getItem('customRangeDays') || '60') || 60));
-let customDateStart = Number(localStorage.getItem('customDateStart') || 0) || (rendererNow() - 86400000);
-let customDateEnd = Number(localStorage.getItem('customDateEnd') || 0) || rendererNow();
+let sourceFilter = initialStateValue('statsSource', 'all') || 'all';
+let modelFilter = initialStateValue('statsModel', 'all') || 'all';
+let analyticsProjectFilter = initialStateValue('statsProject', 'all') || 'all';
+let rangeFilter = initialStateValue('statsRange', 'today') || 'today';
+let customRangeDays = Math.max(2, Math.min(365, Number(initialStateValue('customRangeDays', '60')) || 60));
+let customDateStart = Number(initialStateValue('customDateStart', 0)) || (rendererNow() - 86400000);
+let customDateEnd = Number(initialStateValue('customDateEnd', 0)) || rendererNow();
 let dateRangeOpen = false;
 let dateRangeDraftStart = 0;
 let dateRangeDraftEnd = 0;
 let dateRangeError = '';
 let dateRangeFocus = 'start';
-let dateRangeMonth = Number(localStorage.getItem('dateRangeMonth') || 0) || 0;
-let tableTab = localStorage.getItem('statsTableTab') || 'requests';
+let dateRangeMonth = Number(initialStateValue('dateRangeMonth', 0)) || 0;
+let tableTab = initialStateValue('statsTableTab', 'requests') || 'requests';
 let workspaceMode = 'analytics';
-try { localStorage.setItem('workspaceMode', workspaceMode); } catch {}
-let analyticsQuery = localStorage.getItem('statsAnalyticsQuery') || localStorage.getItem('statsQuery') || '';
-let sessionQuery = localStorage.getItem('statsSessionQuery') || '';
-let sessionStatusFilter = localStorage.getItem('sessionStatusFilter') || 'active';
-let sessionSort = localStorage.getItem('sessionSort') || 'updated';
-let sessionTagFilter = localStorage.getItem('sessionTagFilter') || 'all';
-let sessionQuickFilter = localStorage.getItem('sessionQuickFilter') || 'all';
-let sessionProjectFilter = localStorage.getItem('sessionProjectFilter') || 'all';
-let analyticsAdvancedOpen = localStorage.getItem('analyticsAdvancedOpen') === '1';
-let selectedSessionId = localStorage.getItem('selectedSessionId') || '';
-let selectedSessionKeys = new Set((localStorage.getItem('selectedSessionKeys') || '').split('|').filter(Boolean));
+writeInitialStateValue('workspaceMode', workspaceMode);
+let analyticsQuery = initialStateValue('statsAnalyticsQuery') || initialStateValue('statsQuery') || '';
+let sessionQuery = initialStateValue('statsSessionQuery', '') || '';
+let sessionStatusFilter = initialStateValue('sessionStatusFilter', 'active') || 'active';
+let sessionSort = initialStateValue('sessionSort', 'updated') || 'updated';
+let sessionTagFilter = initialStateValue('sessionTagFilter', 'all') || 'all';
+let sessionQuickFilter = initialStateValue('sessionQuickFilter', 'all') || 'all';
+let sessionProjectFilter = initialStateValue('sessionProjectFilter', 'all') || 'all';
+let analyticsAdvancedOpen = initialStateValue('analyticsAdvancedOpen') === '1';
+let selectedSessionId = initialStateValue('selectedSessionId', '') || '';
+let selectedSessionKeys = new Set((initialStateValue('selectedSessionKeys', '') || '').split('|').filter(Boolean));
 let selectedSessionRecords = new Map();
-let pinnedSessionKeys = new Set((localStorage.getItem('pinnedSessionKeys') || '').split('|').filter(Boolean));
+let pinnedSessionKeys = new Set((initialStateValue('pinnedSessionKeys', '') || '').split('|').filter(Boolean));
 let renameSessionKey = '';
 let renameDraft = '';
 let bulkMetaOpen = false;
@@ -90,15 +133,13 @@ let bulkMetaNoteDraft = '';
 let exportDialog = null;
 let savedSessionViews = [];
 let savedSessionViewNameDraft = '';
-let sessionAdvancedOpen = false;
-try { localStorage.removeItem('sessionAdvancedOpen'); } catch {}
-let selectedRequestKey = localStorage.getItem('selectedRequestKey') || '';
-let refreshEvery = localStorage.getItem('statsRefreshEvery') || '30';
-let layoutMode = localStorage.getItem('layoutMode') || 'dashboard';
-let zoom = Number(localStorage.getItem('uiZoom') || '1');
-let compactPane = localStorage.getItem('compactPane') || 'overview';
-let compactPinned = localStorage.getItem('compactPinned') === '1';
-try { localStorage.removeItem('compactOpacity'); } catch {}
+let selectedRequestKey = initialStateValue('selectedRequestKey', '') || '';
+let refreshEvery = initialStateValue('statsRefreshEvery', '30') || '30';
+let layoutMode = initialStateValue('layoutMode', 'dashboard') || 'dashboard';
+let zoom = Number(initialStateValue('uiZoom', '1'));
+let compactPane = initialStateValue('compactPane', 'overview') || 'overview';
+let compactPinned = initialStateValue('compactPinned') === '1';
+removeInitialStateValue('compactOpacity');
 let chartPoints = [];
 let chartAnimationFrame = null;
 let chartHoverFrame = null;
@@ -138,12 +179,12 @@ function clampTablePageIndex(value, total, pageSize){
   const n = Math.floor(Number(value));
   return Math.max(0, Math.min(maxTablePageIndex(total, pageSize), Number.isFinite(n) ? n : 0));
 }
-let SESSION_PAGE_SIZE = normalizeTablePageSize(localStorage.getItem('sessionPageSize'), 50);
-let REQUEST_PAGE_SIZE = normalizeTablePageSize(localStorage.getItem('requestPageSize'), 100);
+let SESSION_PAGE_SIZE = normalizeTablePageSize(initialStateValue('sessionPageSize'), 50);
+let REQUEST_PAGE_SIZE = normalizeTablePageSize(initialStateValue('requestPageSize'), 100);
 let requestTableRenderLimit = REQUEST_PAGE_SIZE;
 let sessionTableRenderLimit = SESSION_PAGE_SIZE;
-let requestTablePage = Math.max(0, Number(localStorage.getItem('requestTablePage') || '0') || 0);
-let sessionTablePage = Math.max(0, Number(localStorage.getItem('sessionTablePage') || '0') || 0);
+let requestTablePage = Math.max(0, Number(initialStateValue('requestTablePage', '0')) || 0);
+let sessionTablePage = Math.max(0, Number(initialStateValue('sessionTablePage', '0')) || 0);
 let requestPageLoading = false;
 let sessionPageLoading = false;
 let requestPageLoadToken = 0;
@@ -158,7 +199,7 @@ let sessionPageRefreshTimer = null;
 let lastRenderPerf = null;
 let currentRenderPerf = null;
 let tableScrollBindFrame = null;
-let perfPanelOpen = localStorage.getItem('perfPanelOpen') === '1';
+let perfPanelOpen = initialStateValue('perfPanelOpen') === '1';
 let perfDiagnostics = null;
 let perfDiagnosticsLoading = false;
 let perfDiagnosticsFetchedAt = 0;
@@ -200,34 +241,34 @@ let sessionInspectorPatchToken = 0;
 let sessionInspectorPatchTimer = null;
 let analyticsDeferredTasks = new Set();
 let lastSessionSelectedRowKey = '';
-let storedChartSeries = localStorage.getItem('chartSeries') || '';
-if(localStorage.getItem('chartSeriesLeanMigrated') !== '1'){
+let storedChartSeries = initialStateValue('chartSeries', '') || '';
+if(initialStateValue('chartSeriesLeanMigrated') !== '1'){
   if(!storedChartSeries || storedChartSeries === 'total,input,output,cacheHitRate') storedChartSeries = 'total,input,output,cacheRead';
-  localStorage.setItem('chartSeries', storedChartSeries);
-  localStorage.setItem('chartSeriesLeanMigrated', '1');
+  writeInitialStateValue('chartSeries', storedChartSeries);
+  writeInitialStateValue('chartSeriesLeanMigrated', '1');
 }
-if(localStorage.getItem('chartSeriesMinimalMigrated') !== '1'){
+if(initialStateValue('chartSeriesMinimalMigrated') !== '1'){
   const chosen = new Set(String(storedChartSeries || '').split(',').filter(Boolean));
   if(!chosen.size || chosen.has('cacheHitRate') || chosen.has('cacheWrite') || chosen.has('ttftMs') || chosen.has('waitMs') || chosen.has('queueMs')){
     storedChartSeries = 'total,input,output,cacheRead';
-    localStorage.setItem('chartSeries', storedChartSeries);
+    writeInitialStateValue('chartSeries', storedChartSeries);
   }
-  localStorage.setItem('chartSeriesMinimalMigrated', '1');
+  writeInitialStateValue('chartSeriesMinimalMigrated', '1');
 }
-if(localStorage.getItem('chartSeriesTokenOnlyMigrated') !== '1'){
+if(initialStateValue('chartSeriesTokenOnlyMigrated') !== '1'){
   const chosen = new Set(String(storedChartSeries || '').split(',').filter(Boolean));
   if(!chosen.size || chosen.has('cacheHitRate') || !chosen.has('cacheRead')){
     storedChartSeries = 'total,input,output,cacheRead';
-    localStorage.setItem('chartSeries', storedChartSeries);
+    writeInitialStateValue('chartSeries', storedChartSeries);
   }
-  localStorage.setItem('chartSeriesTokenOnlyMigrated', '1');
+  writeInitialStateValue('chartSeriesTokenOnlyMigrated', '1');
 }
 let visibleSeries = new Set((storedChartSeries || 'total,input,output,cacheRead').split(',').filter(Boolean));
 let sessionMeta = {};
 const prefersReducedMotion = Boolean(window.matchMedia?.('(prefers-reduced-motion: reduce)').matches);
 if(workspaceMode === 'analytics' && tableTab === 'sessions'){
   tableTab = 'requests';
-  localStorage.setItem('statsTableTab', tableTab);
+  writeInitialStateValue('statsTableTab', tableTab);
 }
 
 /* @dashboard-include dashboard/i18n.js */
@@ -377,7 +418,7 @@ function renderImmediate(s, opts = {}){
   if(needsRequestScope && modelFilter !== 'all' && !modelOptions(s).includes(modelFilter)) modelFilter = 'all';
   if(needsRequestScope && analyticsProjectFilter !== 'all' && !analyticsProjectOptions(s).some((item) => item.key === analyticsProjectFilter)){
     analyticsProjectFilter = 'all';
-    localStorage.setItem('statsProject', analyticsProjectFilter);
+    persistStateNow('statsProject', analyticsProjectFilter);
   }
   const rowsForRender = () => {
     const filterStartedAt = perfNow();

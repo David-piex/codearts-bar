@@ -276,7 +276,7 @@ document.addEventListener('click', async (e) => {
     const d = new Date(dateRangeMonth || monthStart(dateRangeDraftStart));
     d.setMonth(d.getMonth() + (dateMonth.dataset.dateRangeMonth === 'next' ? 1 : -1));
     dateRangeMonth = monthStart(d.getTime());
-    localStorage.setItem('dateRangeMonth', String(dateRangeMonth));
+    persistStateNow('dateRangeMonth', String(dateRangeMonth));
     patchDateRangePopoverOnly();
     if(dateRangeScrollState) scheduleDateRangeScrollRestore(dateRangeScrollState);
     e.__dashboardHandled = true; return;

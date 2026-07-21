@@ -4,7 +4,7 @@
 
 CodeArts Bar 在本机读取 CodeArts Agent 生成的 SQLite 数据，提供 **Windows 桌面端、VS Code / CodeArts 扩展、JetBrains 插件和 CLI**。它用于查看 token 用量、缓存命中、模型与来源趋势、性能指标和最近会话；原始数据库、日志和 prompt 不会上传。
 
-当前版本：**1.16.37**。
+当前版本：**1.16.39**。
 
 [下载 Windows 版本](https://github.com/David-piex/codearts-bar/releases) · [安装 VS Code 扩展](#vs-code--codearts-扩展) · [使用 CLI](#cli) · [从源码运行](#从源码运行)
 
@@ -34,7 +34,16 @@ CodeArts Bar 在本机读取 CodeArts Agent 生成的 SQLite 数据，提供 **W
 - **平滑冷启动**：先显示 Summary Skeleton 和核心指标，再在后台补趋势、模型及会话聚合。
 - **开发者工作台界面**：参考 CC Switch 的原生桌面工具感，使用冷灰画布、单一电蓝强调、紧凑分段控件和低动效信息层级；标准、窄屏、宽屏、会话与日期弹层均有视觉回归。
 
-## 1.16.37 更新
+## 1.16.39 更新
+
+- Desktop 明暗主题重新校准为克制的原生开发者工具风格，统一弹窗、控件、边框、密度和单一电蓝强调色，并补齐批量导出弹窗视觉基线。
+- 新增 `Cmd/Ctrl + 1`、`Cmd/Ctrl + 2`、`Cmd/Ctrl + F`、`Cmd/Ctrl + R` 与 `Cmd/Ctrl + ,` 键盘工作流；弹窗支持首焦点、Tab 循环、Esc 关闭和关闭后焦点恢复。
+- 启动偏好收拢为版本化状态快照，保留旧键兼容，减少 Renderer 启动阶段的同步 `localStorage` 读取。
+- usage rollup 改为用户可见摘要完成后再空闲预热；缺少 rollup 时直接构建，已有 rollup 使用有限阈值扫描，降低大数据库冷启动竞争。
+- 清理无渲染入口的旧会话面板、旧图表交互、旧范围控件和重复响应式样式，CSS 从 `206449B` 降至 `191819B`，Renderer 从 `313164B` 降至 `311704B`，不提高既有预算。
+- 新增 rollup 启动顺序、维护路径、死选择器、状态快照、快捷键和弹窗焦点回归；Electron E2E、VS Code E2E、压力测试和视觉回归均覆盖本轮改动。
+
+## 1.16.38 更新
 
 - VS Code 与 JetBrains 的会话列表新增原生复选框、选择本页、清空选择和跨页选择；选择键统一为 `source:id`，避免不同数据源的同名会话互相覆盖。
 - Desktop、VS Code 和 JetBrains 统一支持批量导出 Excel、Markdown 和 JSON；批量流程只确认一次隐私选项、只选择一次保存位置。

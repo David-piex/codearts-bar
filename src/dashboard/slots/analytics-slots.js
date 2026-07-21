@@ -58,14 +58,6 @@ function patchChartChrome(rows, s){
   const nextHead = tmp.querySelector?.('.card-head');
   const currentHead = slot.querySelector?.('.card-head');
   if(nextHead && currentHead) patchSubSlotHtml('chart:head', currentHead, nextHead.innerHTML);
-  if(chartPinnedIndex < 0){
-    const nextUnderbar = tmp.querySelector?.('.chart-underbar');
-    const currentUnderbar = slot.querySelector?.('.chart-underbar');
-    if(nextUnderbar && currentUnderbar) patchSubSlotHtml('chart:underbar', currentUnderbar, nextUnderbar.innerHTML);
-    const nextScrubber = tmp.querySelector?.('#chartHoverScrubber');
-    const currentScrubber = document.getElementById('chartHoverScrubber');
-    if(nextScrubber && currentScrubber) patchSubSlotHtml('chart:scrubber', currentScrubber, nextScrubber.innerHTML);
-  }
   return true;
 }
 function patchAnalyticsView(s, rows, opts = {}){
@@ -175,6 +167,7 @@ function patchAnalyticsSlotsForState(s = snapshot || {}, opts = {}){
     return true;
   }
   if(opts.lowerOnly === true){
+    patchHtmlSlot('analyticsEmptySlot', analyticsEmptyState(rows));
     patchHtmlSlot('analyticsTableSlot', analyticsTableHtml(rows, s));
     patchHtmlSlot('analyticsAdvancedSlot', analyticsAdvancedHtml(rows, s));
     bindIncrementalTables();

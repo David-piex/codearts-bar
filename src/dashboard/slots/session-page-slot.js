@@ -13,7 +13,7 @@ function patchSessionTablePageRows(s = snapshot || {}, opts = {}){
   const total = dbPage?.paged ? Math.max(Number(dbPage.total || 0), filtered.length) : filtered.length;
   const totalPages = Math.max(1, Math.ceil(total / limit));
   sessionTablePage = Math.max(0, Math.min(totalPages - 1, Number(sessionTablePage || 0)));
-  localStorage.setItem('sessionTablePage', String(sessionTablePage));
+  persistStateNow('sessionTablePage', String(sessionTablePage));
   const start = sessionTablePage * limit;
   const list = dbPage?.paged ? filtered.slice(0, limit) : filtered.slice(start, start + limit);
   sessionTableRenderLimit = limit;
@@ -51,7 +51,7 @@ async function ensureSessionPageInBoundsAfterLoad(){
   if(total <= 0 && Number(sessionTablePage || 0) > 0){
     sessionTablePage = 0;
     sessionTableRenderLimit = SESSION_PAGE_SIZE;
-    localStorage.setItem('sessionTablePage', '0');
+    persistStateNow('sessionTablePage', '0');
     sessionPageCache = { ...sessionPageCache, key: sessionPageCacheKey(0), page: 0, items: [], total: 0 };
     if(snapshot?.sessionPage) snapshot.sessionPage = { ...snapshot.sessionPage, offset: 0, payload: sessionPagePayload(0, SESSION_PAGE_SIZE), items: [], total: 0 };
     syncPagedTableInput('sessions', 0, 0, SESSION_PAGE_SIZE);
@@ -60,7 +60,7 @@ async function ensureSessionPageInBoundsAfterLoad(){
   if(total > 0 && Number(sessionTablePage || 0) > maxPage){
     sessionTablePage = maxPage;
     sessionTableRenderLimit = SESSION_PAGE_SIZE;
-    localStorage.setItem('sessionTablePage', String(sessionTablePage));
+    persistStateNow('sessionTablePage', String(sessionTablePage));
     await refreshSessionPageCache(sessionTablePage, { force: true });
     syncPagedTableInput('sessions', total, sessionTablePage, SESSION_PAGE_SIZE);
     return true;

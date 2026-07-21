@@ -55,13 +55,6 @@ async function handleDashboardSessionClick(e){
       patchSessionsOrRender({ table: false, toolbar: true, inspector: false, overview: false });
       throw DASHBOARD_EVENT_HANDLED;
     }
-    const advancedToggle = e.target.closest('[data-session-advanced-toggle]');
-    if(advancedToggle){
-      sessionAdvancedOpen = false;
-      try { localStorage.removeItem('sessionAdvancedOpen'); } catch {}
-      patchSessionsOrRender({ table: false, toolbar: true, inspector: false, overview: false });
-      throw DASHBOARD_EVENT_HANDLED;
-    }
     const primaryFilter = e.target.closest('[data-session-primary-filter]');
     if(primaryFilter){
       const key = primaryFilter.dataset.sessionPrimaryFilter || 'all';
@@ -78,9 +71,9 @@ async function handleDashboardSessionClick(e){
       throw DASHBOARD_EVENT_HANDLED;
     }
     const quick = e.target.closest('[data-session-quick]');
-    if(quick){ sessionQuickFilter = quick.dataset.sessionQuick || 'all'; clearSelectedSessions(); resetSessionPaging(); localStorage.setItem('sessionQuickFilter', sessionQuickFilter); patchSessionsOrRender({ table: true, toolbar: true, inspector: true, overview: true }); throw DASHBOARD_EVENT_HANDLED; }
+    if(quick){ sessionQuickFilter = quick.dataset.sessionQuick || 'all'; clearSelectedSessions(); resetSessionPaging(); persistStateNow('sessionQuickFilter', sessionQuickFilter); patchSessionsOrRender({ table: true, toolbar: true, inspector: true, overview: true }); throw DASHBOARD_EVENT_HANDLED; }
     const project = e.target.closest('[data-session-project]');
-    if(project){ sessionProjectFilter = project.dataset.sessionProject || 'all'; beginDashboardRequestGeneration({ preserveBoundary: true }); clearSelectedSessions(); resetSessionPaging(); localStorage.setItem('sessionProjectFilter', sessionProjectFilter); patchSessionsOrRender({ table: true, toolbar: true, inspector: true, overview: true }); throw DASHBOARD_EVENT_HANDLED; }
+    if(project){ sessionProjectFilter = project.dataset.sessionProject || 'all'; beginDashboardRequestGeneration({ preserveBoundary: true }); clearSelectedSessions(); resetSessionPaging(); persistStateNow('sessionProjectFilter', sessionProjectFilter); patchSessionsOrRender({ table: true, toolbar: true, inspector: true, overview: true }); throw DASHBOARD_EVENT_HANDLED; }
     const resetSessionFilters = e.target.closest('[data-session-reset-filters]');
     if(resetSessionFilters){
       sessionQuickFilter = 'all';
@@ -132,7 +125,7 @@ async function handleDashboardSessionClick(e){
         feedback = state.adjusted ? state.reason : '';
       }
       sessionTablePage = clampTablePageIndex(nextPage, total, SESSION_PAGE_SIZE);
-      localStorage.setItem('sessionTablePage', String(sessionTablePage));
+      persistStateNow('sessionTablePage', String(sessionTablePage));
       setPagedTableFeedback?.('sessions', feedback);
       syncPagedTableInput?.('sessions', total, sessionTablePage, SESSION_PAGE_SIZE);
       if(workspaceMode === 'sessions'){
@@ -250,9 +243,9 @@ async function handleDashboardSessionClick(e){
         analyticsQuery = item.id || '';
         beginDashboardRequestGeneration({ preserveBoundary: true });
         workspaceMode = 'analytics';
-        localStorage.setItem('workspaceMode', workspaceMode);
-        localStorage.setItem('statsTableTab', tableTab);
-        localStorage.setItem('statsAnalyticsQuery', analyticsQuery);
+        persistStateNow('workspaceMode', workspaceMode);
+        persistStateNow('statsTableTab', tableTab);
+        persistStateNow('statsAnalyticsQuery', analyticsQuery);
         if(snapshot?.ok) render(snapshot, { windowLayout: false, instantChart: true, partial: true });
         throw DASHBOARD_EVENT_HANDLED;
       }
@@ -287,8 +280,14 @@ async function handleDashboardSessionClick(e){
       throw DASHBOARD_EVENT_HANDLED;
     }
     const select = e.target.closest('[data-session-select]');
-    if(select){ selectedSessionId = select.dataset.sessionSelect; localStorage.setItem('selectedSessionId', selectedSessionId); if(select.dataset.table){ tableTab = select.dataset.table; localStorage.setItem('statsTableTab', tableTab); layoutMode = 'dashboard'; localStorage.setItem('layoutMode', layoutMode); if(tableTab === 'sessions'){ workspaceMode = 'sessions'; localStorage.setItem('workspaceMode', workspaceMode); } if(snapshot?.ok) render(snapshot, { windowLayout: false, instantChart: true, partial: true }); throw DASHBOARD_EVENT_HANDLED; } if(workspaceMode === 'sessions'){ patchSessionSelectionChrome(select); scheduleSessionInspectorPatch(8); throw DASHBOARD_EVENT_HANDLED; } if(snapshot?.ok) render(snapshot, { windowLayout: false, instantChart: true, partial: true }); throw DASHBOARD_EVENT_HANDLED; }
+    if(select){ selectedSessionId = select.dataset.sessionSelect; persistStateNow('selectedSessionId', selectedSessionId); if(select.dataset.table){ tableTab = select.dataset.table; persistStateNow('statsTableTab', tableTab); layoutMode = 'dashboard'; persistStateNow('layoutMode', layoutMode); if(tableTab === 'sessions'){ workspaceMode = 'sessions'; persistStateNow('workspaceMode', workspaceMode); } if(snapshot?.ok) render(snapshot, { windowLayout: false, instantChart: true, partial: true }); throw DASHBOARD_EVENT_HANDLED; } if(workspaceMode === 'sessions'){ patchSessionSelectionChrome(select); scheduleSessionInspectorPatch(8); throw DASHBOARD_EVENT_HANDLED; } if(snapshot?.ok) render(snapshot, { windowLayout: false, instantChart: true, partial: true }); throw DASHBOARD_EVENT_HANDLED; }
     const status = e.target.closest('[data-session-status]');
-    if(status){ sessionStatusFilter = status.dataset.sessionStatus; beginDashboardRequestGeneration({ preserveBoundary: true }); clearSelectedSessions(); resetSessionPaging(); localStorage.setItem('sessionStatusFilter', sessionStatusFilter); patchSessionsOrRender({ table: true, toolbar: true, inspector: true, overview: true }); throw DASHBOARD_EVENT_HANDLED; }
+    if(status){ sessionStatusFilter = status.dataset.sessionStatus; beginDashboardRequestGeneration({ preserveBoundary: true }); clearSelectedSessions(); resetSessionPaging(); persistStateNow('sessionStatusFilter', sessionStatusFilter); patchSessionsOrRender({ table: true, toolbar: true, inspector: true, overview: true }); throw DASHBOARD_EVENT_HANDLED; }
   return false;
 }
+document.addEventListener('keydown', (e) => {
+  const row = e.target.closest?.('.session-row[data-session-select]');
+  if(!row || e.target !== row || !['Enter', ' '].includes(e.key)) return;
+  e.preventDefault();
+  row.click?.();
+});

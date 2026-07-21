@@ -25,8 +25,12 @@ async function maintainUsageRollupForSource(source, options = {}) {
     return { usageRollup: { status: 'maintenance-cooldown', changedRows: 0, built: false } };
   }
   const stale = readUsageRollupForSource(source, { allowStale: true });
-  const maxUpdatedTime = stale.ok ? stale.rows.reduce((max, row) => Math.max(max, Number(row.timeUpdated || row.timeCreated || 0)), 0) : 0;
   const adapter = options.adapter || 'node:sqlite';
+  if (!stale.ok) {
+    const built = await buildAndWriteUsageRollupForSource(source, { ...options, adapter });
+    return { ...built, usageRollup: { ...(built.usageRollup || {}), built: true } };
+  }
+  const maxUpdatedTime = stale.rows.reduce((max, row) => Math.max(max, Number(row.timeUpdated || row.timeCreated || 0)), 0);
   let db;
   try {
     db = adapter === 'sql.js' ? await openSqlJsDbReadonly(source.dbPath) : openNativeDbReadonly(source.dbPath);
@@ -39,7 +43,7 @@ async function maintainUsageRollupForSource(source, options = {}) {
       excludePlaceholders: true,
       outerAlias: 'message',
     });
-    const changedRows = Number(queryAll(db, `select count(*) as count from message where ${where}`, params)[0]?.count || 0);
+    const changedRows = Number(queryAll(db, `select count(*) as count from (select 1 from message where ${where} limit ?)`, [...params, minNewRows])[0]?.count || 0);
     if (changedRows < minNewRows) {
       return { usageRollup: { status: 'maintenance-threshold', changedRows, minNewRows, built: false } };
     }

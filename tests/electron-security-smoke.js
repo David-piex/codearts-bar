@@ -23,6 +23,7 @@ assert.match(windowSource, /settings-preload\.js/);
 assert.match(windowSource, /setWindowOpenHandler/);
 assert.match(windowSource, /will-navigate/);
 assert.match(dashboardPreload, /contextBridge\.exposeInMainWorld/);
+assert.match(dashboardPreload, /platform:\s*process\.platform/);
 assert.match(dashboardPreload, /dashboard:refreshLight/);
 assert.match(dashboardPreload, /dashboard:refreshFull/);
 assert.match(dashboardPreload, /dashboard:setRefreshInterval/);

@@ -20,6 +20,7 @@ const cases = [
   { name: 'desktop-narrow.png', actualDir: electronDir, maxDiffRatio: 0.003 },
   { name: 'desktop-wide-layout.png', actualDir: electronDir, maxDiffRatio: 0.003 },
   { name: 'desktop-sessions.png', actualDir: electronDir, maxDiffRatio: 0.003 },
+  { name: 'desktop-export-dialog.png', actualDir: electronDir, maxDiffRatio: 0.003 },
   { name: 'desktop-date-picker.png', actualDir: electronDir, maxDiffRatio: 0.003 },
 ].filter((item) => !only.size || only.has(item.name));
 

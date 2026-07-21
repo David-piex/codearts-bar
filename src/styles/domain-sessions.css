@@ -193,73 +193,7 @@
       .saved-view-composer button { width:100%; }
       .session-project-list { grid-auto-flow:row; grid-auto-columns:auto; grid-template-columns:1fr; overflow:visible; }
     }
-
-
-    /* 1.17.4 session efficiency signal */
-    .session-efficiency {
-      position:relative;
-      overflow:hidden;
-      display:grid;
-      grid-template-columns:repeat(3,minmax(0,1fr));
-      gap:8px;
-      border:1px solid rgba(222,229,238,.86);
-      border-radius:13px;
-      background:linear-gradient(180deg,rgba(255,255,255,.68),rgba(247,250,253,.48));
-      padding:9px;
-      box-shadow:0 1px 0 rgba(255,255,255,.86) inset;
-    }
-    .session-efficiency.hot {
-      border-color:rgba(139,92,246,.24);
-      background:linear-gradient(180deg,rgba(250,245,255,.72),rgba(247,250,253,.48));
-    }
-    .session-efficiency.warm {
-      border-color:rgba(245,158,11,.24);
-      background:linear-gradient(180deg,rgba(255,251,235,.72),rgba(247,250,253,.48));
-    }
-    .session-efficiency > div {
-      position:relative;
-      z-index:1;
-      min-width:0;
-    }
-    .session-efficiency span,
-    .session-efficiency b,
-    .session-efficiency em {
-      display:block;
-      overflow:hidden;
-      text-overflow:ellipsis;
-      white-space:nowrap;
-    }
-    .session-efficiency span {
-      color:#737d8d;
-      font-size:11px;
-      font-weight:850;
-    }
-    .session-efficiency b {
-      margin-top:5px;
-      color:#172033;
-      font-size:14px;
-      font-weight:900;
-      letter-spacing:-.02em;
-    }
-    .session-efficiency em {
-      margin-top:2px;
-      color:#97a0ae;
-      font-style:normal;
-      font-size:10px;
-      font-weight:740;
-    }
-    .session-efficiency > i {
-      position:absolute;
-      left:0;
-      bottom:0;
-      width:var(--w);
-      height:3px;
-      border-radius:0 999px 999px 0;
-      background:linear-gradient(90deg,#8b5cf6,#0a84ff);
-      opacity:.82;
-    }
     @media (max-width:760px) {
-      .session-efficiency { grid-template-columns:1fr; }
     }
 
 
@@ -800,26 +734,26 @@
       background:
         linear-gradient(180deg,rgba(255,255,255,.44),rgba(255,255,255,0) 42%),
         radial-gradient(circle at 16% 0%,rgba(255,255,255,.36),transparent 28%);
-      opacity:.72;
+      opacity:var(--card-glow-opacity,.72);
     }
-    :where(.content, .table-scroll, .session-scroll, .session-project-list, .session-inspector, .compact-deep-panel) {
+    :where(.content, .table-scroll, .session-scroll, .session-project-list, .session-inspector) {
       scrollbar-width:thin;
       scrollbar-color:rgba(148,163,184,.42) transparent;
     }
-    :where(.content, .table-scroll, .session-scroll, .session-project-list, .session-inspector, .compact-deep-panel)::-webkit-scrollbar {
+    :where(.content, .table-scroll, .session-scroll, .session-project-list, .session-inspector)::-webkit-scrollbar {
       width:10px;
       height:10px;
     }
-    :where(.content, .table-scroll, .session-scroll, .session-project-list, .session-inspector, .compact-deep-panel)::-webkit-scrollbar-track {
+    :where(.content, .table-scroll, .session-scroll, .session-project-list, .session-inspector)::-webkit-scrollbar-track {
       background:transparent;
     }
-    :where(.content, .table-scroll, .session-scroll, .session-project-list, .session-inspector, .compact-deep-panel)::-webkit-scrollbar-thumb {
+    :where(.content, .table-scroll, .session-scroll, .session-project-list, .session-inspector)::-webkit-scrollbar-thumb {
       border:3px solid transparent;
       border-radius:999px;
       background:rgba(148,163,184,.42);
       background-clip:padding-box;
     }
-    :where(.content, .table-scroll, .session-scroll, .session-project-list, .session-inspector, .compact-deep-panel)::-webkit-scrollbar-thumb:hover {
+    :where(.content, .table-scroll, .session-scroll, .session-project-list, .session-inspector)::-webkit-scrollbar-thumb:hover {
       background:rgba(100,116,139,.56);
       background-clip:padding-box;
     }

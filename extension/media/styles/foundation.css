@@ -37,8 +37,8 @@ button {
     box-shadow 0.14s ease;
 }
 button:hover {
-  border-color: #c5c5ca;
-  background: #f8f8fa;
+  border-color: var(--control-border-hover);
+  background: var(--control-hover);
   box-shadow: var(--shadow-control);
 }
 button:active {
@@ -74,30 +74,10 @@ button:focus-visible {
   width: 34px;
   height: 34px;
   flex: 0 0 auto;
-  display: flex;
-  align-items: flex-end;
-  gap: 4px;
-  padding: 7px;
-  border: 1px solid var(--accent-border);
   border-radius: 8px;
-  background: var(--accent-soft);
+  object-fit: cover;
+  background: #fff;
   box-shadow: none;
-}
-.app-icon i {
-  width: 6px;
-  border-radius: 2px 2px 1px 1px;
-  background: var(--accent);
-}
-.app-icon i:nth-child(1) {
-  height: 11px;
-  opacity: 0.58;
-}
-.app-icon i:nth-child(2) {
-  height: 21px;
-}
-.app-icon i:nth-child(3) {
-  height: 16px;
-  opacity: 0.78;
 }
 .app-kicker,
 .section-label {
@@ -174,9 +154,9 @@ body.refreshing .refresh-glyph {
   gap: 2px;
   margin-bottom: 12px;
   padding: 3px;
-  border: 1px solid #d9d9dd;
+  border: 1px solid var(--segment-border);
   border-radius: 7px;
-  background: #e9e9ec;
+  background: var(--segment-bg);
   box-shadow: inset 0 1px 2px rgba(15, 20, 28, 0.05), inset 0 1px rgba(255, 255, 255, 0.62);
 }
 .range-filter {
@@ -224,8 +204,8 @@ body.refreshing .refresh-glyph {
 .menu-trigger[aria-expanded="true"] > i { transform:rotate(225deg) translate(-1px,-1px); }
 .control-menu { position:absolute; z-index:20; top:calc(100% + 5px); left:0; width:max-content; min-width:100%; max-width:min(280px,calc(100vw - 24px)); padding:4px; border:1px solid var(--line-strong); border-radius:8px; background:var(--surface-solid); box-shadow:var(--shadow-md); }
 .control-menu button { width:100%; min-height:29px; display:flex; align-items:center; border:0; border-radius:5px; padding:0 28px 0 9px; background:transparent; box-shadow:none; font-weight:500; white-space:nowrap; text-align:left; }
-.control-menu button:hover,.control-menu button:focus-visible { background:#e9f2ff; outline:none; }
-.control-menu button.selected { position:relative; color:var(--text); background:#e9f2ff; }
+.control-menu button:hover,.control-menu button:focus-visible { background:var(--menu-hover); outline:none; }
+.control-menu button.selected { position:relative; color:var(--text); background:var(--menu-hover); }
 .control-menu button.selected::after { content:""; position:absolute; right:10px; width:7px; height:4px; border-left:1.5px solid currentColor; border-bottom:1.5px solid currentColor; transform:rotate(-45deg); }
 .multi-select-menu { max-height:min(320px,55vh); overflow-y:auto; }
 .multi-select-menu button { position:relative; padding-left:32px; }

@@ -74,6 +74,7 @@ const uiFiles = [
   "webview/html.js",
   "webview/model.js",
   "media/codearts.svg",
+  "media/codearts-logo.png",
   "media/styles/tokens.css",
   "media/styles/foundation.css",
   "media/styles/components.css",
@@ -189,9 +190,13 @@ assert.doesNotMatch(
   "snapshot values must be escaped before HTML insertion",
 );
 assert.doesNotMatch(tokenCss, /--vscode-/, "webview palette must stay aligned with Desktop instead of inheriting the editor theme");
-assert.match(tokenCss, /color-scheme:\s*light/);
+assert.match(tokenCss, /color-scheme:\s*light dark/);
 assert.match(tokenCss, /--page:\s*#f5f5f7/);
 assert.match(tokenCss, /--accent:\s*#007aff/);
+assert.match(tokenCss, /:root:has\(body\.vscode-dark\)/);
+assert.match(tokenCss, /--page:#1c1c1e/);
+assert.match(htmlSource, /media", "codearts-logo\.png/);
+assert.match(htmlSource, /class="app-icon"[^>]+width="29"[^>]+height="29"/);
 assert.match(tokenCss, /SF Pro/);
 assert.match(
   foundationCss,

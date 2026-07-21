@@ -3,7 +3,9 @@
 <head>
   <meta charset="utf-8" />
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'" />
+  <meta name="color-scheme" content="light dark" />
   <title>&#30721;&#36947; Bar</title>
+  <script src="dashboard-theme.js"></script>
   <link rel="stylesheet" href="dashboard-bundle.css" />
 </head>
 <body>
@@ -11,17 +13,11 @@
   <div class="shell">
     <div class="menu-card">
       <main id="app" class="content">
-        <div class="topbar">
-          <div class="logo"><img src="../assets/codearts-logo.png" alt="CodeArts" width="29" height="29" decoding="async" draggable="false" /></div>
+        <div class="topbar app-header initial-header">
+          <div class="logo"><img src="../assets/codearts-logo-ui.png" alt="CodeArts" width="29" height="29" decoding="async" draggable="false" /></div>
           <div><h1 class="page-title">&#30721;&#36947; Bar</h1><div class="page-subtitle">&#21152;&#36733;&#20013;...</div></div>
         </div>
       </main>
-      <div class="footer">
-        <button id="refresh" class="primary">&#21047;&#26032;</button>
-        <button id="settings">&#35774;&#32622;</button>
-        <button id="layoutMode" class="dev-only" aria-hidden="true" tabindex="-1">&#33756;&#21333;&#21345;&#29255;</button>
-        <span id="refreshState" class="refresh-state"></span>
-      </div>
     </div>
   </div>
   <script src="dashboard-renderer.js"></script>

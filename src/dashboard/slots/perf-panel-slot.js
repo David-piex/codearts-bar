@@ -89,7 +89,7 @@ function updatePerfPanel(){
 }
 function togglePerfPanel(){
   perfPanelOpen = !perfPanelOpen;
-  localStorage.setItem('perfPanelOpen', perfPanelOpen ? '1' : '0');
+  persistStateNow('perfPanelOpen', perfPanelOpen ? '1' : '0');
   if(perfPanelOpen) refreshPerfDiagnostics(true);
   updatePerfPanel();
 }

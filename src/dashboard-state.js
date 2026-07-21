@@ -1,4 +1,44 @@
 function normalizeRangeFilter(value){ return normalizeRangeFilterValue(value, Number(localStorage.getItem('customRangeDays') || customRangeDays || 60)); }
+const persistedStateMirror = new Map();
+let persistedStateTimer = null;
+function schedulePersistedStateFlush(){
+  if(persistedStateTimer != null) return;
+  const flush = () => { persistedStateTimer = null; flushPersistedState(); };
+  if(typeof requestIdleCallback === 'function') persistedStateTimer = requestIdleCallback(flush, { timeout: 180 });
+  else persistedStateTimer = setTimeout(flush, 0);
+}
+function persistState(key, value){
+  if(!key) return value;
+  persistedStateMirror.set(String(key), String(value ?? ''));
+  syncDashboardStateSnapshot?.(key, value, false);
+  schedulePersistedStateFlush();
+  return value;
+}
+function persistStateNow(key, value){
+  if(!key) return value;
+  const normalizedKey = String(key);
+  persistedStateMirror.delete(normalizedKey);
+  try { localStorage.setItem(normalizedKey, String(value ?? '')); } catch {}
+  syncDashboardStateSnapshot?.(normalizedKey, value, true);
+  return value;
+}
+function persistStateBatch(entries){
+  if(!entries) return;
+  if(entries instanceof Map) entries.forEach((value, key) => persistState(key, value));
+  else if(Array.isArray(entries)) entries.forEach((entry) => entry && persistState(entry[0], entry[1]));
+  else Object.entries(entries).forEach(([key, value]) => persistState(key, value));
+}
+function flushPersistedState(){
+  if(persistedStateTimer != null){
+    try { if(typeof cancelIdleCallback === 'function') cancelIdleCallback(persistedStateTimer); else clearTimeout(persistedStateTimer); } catch {}
+    persistedStateTimer = null;
+  }
+  for(const [key, value] of persistedStateMirror){
+    try { localStorage.setItem(key, value); } catch {}
+  }
+  try { localStorage.setItem(DASHBOARD_STATE_SNAPSHOT_KEY, JSON.stringify({ version: 1, values: Object.fromEntries(dashboardStateSnapshot) })); } catch {}
+  persistedStateMirror.clear();
+}
 const SERIES = [
   { key: 'total', label: TXT.total, color: COLORS.total, dash: [6, 5], kind: 'token' },
   { key: 'input', label: TXT.input, color: COLORS.input, dash: [], kind: 'token' },
@@ -11,7 +51,7 @@ function ensureVisibleSeries(){
   for(const key of [...visibleSeries]) if(!allowed.has(key)) visibleSeries.delete(key);
   if(!visibleSeries.size) visibleSeries.add('total');
 }
-function saveVisibleSeries(){ ensureVisibleSeries(); localStorage.setItem('chartSeries', [...visibleSeries].join(',')); }
+function saveVisibleSeries(){ ensureVisibleSeries(); persistStateNow('chartSeries', [...visibleSeries].join(',')); }
 const interactionTimers = {};
 function setInteractionMode(cls, ms = 160){
   try {
@@ -58,7 +98,7 @@ function applyZoom(){
       if(typeof scheduleChartResizeRedraw === 'function') scheduleChartResizeRedraw('zoom');
     }
   } catch {}
-  localStorage.setItem('uiZoom', String(zoom));
+  persistStateNow('uiZoom', String(zoom));
 }
 function n(v){ return fmt.format(Math.round(Number(v) || 0)); }
 function compact(v){ v = Number(v) || 0; if(Math.abs(v) >= 1e8) return `${(v / 1e8).toFixed(2)}\u4ebf`; if(Math.abs(v) >= 1e4) return `${(v / 1e4).toFixed(1)}\u4e07`; return n(v); }
@@ -92,7 +132,18 @@ function cacheEfficiencyPanel(st, extra = ''){
 }
 function esc(s){ return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 function readSessionMeta(){ try { sessionMeta = JSON.parse(localStorage.getItem('sessionMeta') || '{}') || {}; } catch { sessionMeta = {}; } }
-function saveSessionMeta(){ localStorage.setItem('sessionMeta', JSON.stringify(sessionMeta)); }
+let sessionMetaSaveTimer = null;
+function saveSessionMeta(){
+  if(sessionMetaSaveTimer) clearTimeout(sessionMetaSaveTimer);
+  sessionMetaSaveTimer = null;
+  persistState('sessionMeta', JSON.stringify(sessionMeta));
+  flushPersistedState();
+}
+function scheduleSessionMetaSave(delay = 260){
+  if(sessionMetaSaveTimer) clearTimeout(sessionMetaSaveTimer);
+  sessionMetaSaveTimer = setTimeout(saveSessionMeta, Math.max(80, Number(delay) || 260));
+}
+function flushSessionMetaSave(){ if(sessionMetaSaveTimer) saveSessionMeta(); }
 function readSavedSessionViews(){ try { const parsed = JSON.parse(localStorage.getItem('savedSessionViews') || '[]'); savedSessionViews = Array.isArray(parsed) ? parsed : []; } catch { savedSessionViews = []; } }
-function saveSavedSessionViews(){ localStorage.setItem('savedSessionViews', JSON.stringify(savedSessionViews.slice(0, 24))); }
+function saveSavedSessionViews(){ persistState('savedSessionViews', JSON.stringify(savedSessionViews.slice(0, 24))); flushPersistedState(); }
 function shortModel(model){ const p = String(model || 'unknown').split('/'); return p.slice(-1)[0] || 'unknown'; }

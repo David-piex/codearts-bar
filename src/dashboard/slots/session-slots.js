@@ -15,7 +15,7 @@ function patchSessionInspector(){
     }
   } else {
     selectedSessionId = sessionKeyFor(item);
-    localStorage.setItem('selectedSessionId', selectedSessionId);
+    persistStateNow('selectedSessionId', selectedSessionId);
     if(typeof prefetchSessionRequests === 'function') prefetchSessionRequests(item, 80);
     if(!patchSessionInspectorInPlace(slot, item, selectedSessionId)){
       const html = renderSessionEssentialInspector(item, selectedSessionId);
@@ -143,8 +143,7 @@ function patchSessionBulk(){
   const slot = document.getElementById('sessionBulkSlot');
   if(!slot) return false;
   const selected = selectedSessionItems();
-  const simple = !sessionAdvancedOpen;
-  const existingSimple = simple ? slot.querySelector?.('.session-bulk.simple') : null;
+  const existingSimple = slot.querySelector?.('.session-bulk.simple');
   if(existingSimple){
     existingSimple.classList.toggle('empty', !selected.length);
     const label = existingSimple.querySelector('span');
@@ -169,7 +168,7 @@ function patchSessionOverview(s = snapshot || {}){
   return patchHtmlSlot('sessionOverviewSlot', sessionOverviewHtml(s));
 }
 function patchSessionToolbar(s = snapshot || {}){
-  return patchHtmlSlot('sessionToolbarSlot', `${sessionSimpleToolbarHtml(s)}${sessionFilterContextHtml(s)}${sessionAdvancedHtml(s)}`);
+  return patchHtmlSlot('sessionToolbarSlot', `${sessionSimpleToolbarHtml(s)}${sessionFilterContextHtml(s)}`);
 }
 function patchSessionModal(){
   return patchHtmlSlot('sessionModalSlot', `${renderRenameSheet()}${renderBulkMetaSheet()}${renderExportSheet()}`);
@@ -267,12 +266,14 @@ function patchSessionSelectionChrome(nextRow = null){
   if(lastSessionSelectedRowKey && lastSessionSelectedRowKey !== key){
     const prev = sessionRowForKey(lastSessionSelectedRowKey);
     if(prev?.classList?.contains?.('selected')) prev.classList.remove('selected');
+    prev?.setAttribute?.('aria-selected', 'false');
   }
   document.querySelectorAll?.('.session-row.selected')?.forEach?.((row) => {
-    if(row?.dataset?.sessionSelect !== key) row.classList.remove('selected');
+    if(row?.dataset?.sessionSelect !== key){ row.classList.remove('selected'); row.setAttribute?.('aria-selected', 'false'); }
   });
   let row = nextRow?.dataset?.sessionSelect === key ? nextRow : sessionRowForKey(key);
   if(row && !row.classList.contains('selected')) row.classList.add('selected');
+  row?.setAttribute?.('aria-selected', 'true');
   lastSessionSelectedRowKey = key;
   return Boolean(row);
 }

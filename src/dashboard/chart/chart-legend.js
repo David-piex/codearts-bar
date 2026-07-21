@@ -1,14 +1,3 @@
-function defaultChartMeta(){ return `${TXT.hoverHint} · ${TXT.pinPoint}`; }
-
-function chartTokenTrendMeta(){ return `${TXT.total} &#183; ${TXT.input} &#183; ${TXT.output} &#183; ${TXT.cacheRead}`; }
-
-function defaultChartScrubber(){ return `<b>${TXT.trend}</b><span>${chartTokenTrendMeta()}</span>`; }
-
-function chartScrubberHtml(title, b, health, hit, pinned = false, focus = null){
-  const active = Number(b.requests || 0) > 0;
-  return `<b>${esc(title)}</b>${pinned ? `<span class="scrubber-pin">${TXT.pinnedPoint}</span>` : ''}<span>${active ? `${TXT.requests} ${n(b.requests || 0)}` : TXT.idleHours}</span><span>${TXT.total} ${n(b.total || 0)}</span><span>${TXT.input} ${n(b.input || 0)}</span><span>${TXT.output} ${n(b.output || 0)}</span><span>${TXT.cacheRead} ${n(b.cacheRead || 0)}</span>`;
-}
-
 function renderChart(rows, s){
   ensureVisibleSeries();
   const primaryKeys = new Set(['total', 'input', 'output', 'cacheRead']);
