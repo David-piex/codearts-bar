@@ -147,6 +147,8 @@ async function main() {
   const rollingEndExclusive = vm.runInContext('(() => { const previousRange = rangeFilter; rangeFilter = "30d"; try { return untilForRange(testSnapshot); } finally { rangeFilter = previousRange; } })()', context);
   assert.ok(rollingBuckets.length > 0);
   assert.ok(rollingBuckets.every((bucket) => bucket.start < rollingEndExclusive), 'trend buckets must not begin at or after the exclusive range end');
+  assert.equal(vm.runInContext('avg(undefined)', context), null, 'analytics averages must tolerate missing metric arrays');
+  assert.equal(vm.runInContext('avg(null)', context), null, 'analytics averages must tolerate null metric arrays');
   for (let i = 0; i < 8; i += 1) await new Promise((resolve) => setImmediate(resolve));
 
   const html = elements.get("app").innerHTML;

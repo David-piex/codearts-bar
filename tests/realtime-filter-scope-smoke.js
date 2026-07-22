@@ -6,9 +6,18 @@ const path = require('node:path');
 const vm = require('node:vm');
 
 const source = fs.readFileSync(path.join(__dirname, '..', 'src', 'dashboard', 'dashboard-bootstrap.js'), 'utf8');
+const windowEventsSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'dashboard', 'events', 'window-events.js'), 'utf8');
 const context = { console, Math, Number, String, Object };
 vm.createContext(context);
 vm.runInContext(source, context, { filename: 'dashboard-bootstrap.js' });
+
+const refreshState = { textContent: '' };
+context.TXT = { realtime: '\u5b9e\u65f6\u66f4\u65b0' };
+context.document = { getElementById(id){ return id === 'refreshState' ? refreshState : null; } };
+vm.runInContext('markRealtimeUpdated(); markRealtimeUpdated();', context);
+assert.equal(refreshState.textContent, context.TXT.realtime, 'realtime status should remain stable instead of flashing away');
+assert.match(windowEventsSource, /const applied = applyRealtimeSnapshot\(s\)/, 'realtime updates should only announce applied snapshots');
+assert.doesNotMatch(windowEventsSource, /setTimeout\(\(\) => setRefreshState\(''\), 900\)/, 'realtime status must not auto-clear after 900ms');
 
 const start = Date.UTC(2026, 5, 13, 2, 42);
 const end = Date.UTC(2026, 6, 13, 2, 42);

@@ -1,11 +1,11 @@
 {
   "name": "codearts-bar",
-  "version": "1.16.39",
+  "version": "1.16.42",
   "description": "CodeArts Bar: desktop tray app, VS Code/CodeArts status extension, and CLI for local CodeArts Agent usage.",
   "main": "src/main.js",
   "type": "commonjs",
   "scripts": {
-    "pretest": "node tests/rollup-recovery-smoke.js && node tests/rollup-prewarm-smoke.js && node tests/rollup-maintenance-smoke.js && node tests/renderer-recovery-smoke.js && node tests/github-release-workflow-smoke.js",
+    "pretest": "node tests/codearts-installation-smoke.js && node tests/rollup-recovery-smoke.js && node tests/rollup-prewarm-smoke.js && node tests/rollup-maintenance-smoke.js && node tests/renderer-recovery-smoke.js && node tests/github-release-workflow-smoke.js",
     "prepare:electron": "node src/ensure-electron-runtime.js",
     "prestart": "npm run prepare:electron",
     "start": "electron .",

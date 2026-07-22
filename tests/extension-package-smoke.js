@@ -67,7 +67,7 @@ assertLocalRequiresPresent(extensionDir, extensionPkg.files);
 
 const sharedRuntimeFiles = [
   'codeartsData.js', 'officialStats.js', 'authStatus.js', 'settings.js',
-  'quota.js', 'health.js', 'extension-data.js',
+  'quota.js', 'health.js', 'extension-data.js', 'codearts-installation.js',
 ];
 for (const file of sharedRuntimeFiles) {
   assert.equal(

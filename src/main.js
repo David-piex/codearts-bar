@@ -5,6 +5,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
 const { spawn } = require('node:child_process');
+const { findCodeArtsAgentExecutable } = require('./codearts-installation');
 
 // The dashboard uses a canvas for the trend chart. Hardware accelerated
 // renderer crashes were observed in the portable Windows build (exit code
@@ -372,10 +373,10 @@ function openSessionDir(session) {
   return shell.openPath(dir);
 }
 function openCodeArts(targetDir) {
-  const exe = path.join(process.env.ProgramFiles || 'C:\\Program Files', 'CodeArts Agent', 'codearts-agent.exe');
+  const exe = findCodeArtsAgentExecutable();
   const args = [];
   if (targetDir && fs.existsSync(targetDir)) args.push(targetDir);
-  if (fs.existsSync(exe)) { const child = spawn(exe, args, { detached: true, stdio: 'ignore', windowsHide: false }); child.unref(); return; }
+  if (exe) { const child = spawn(exe, args, { detached: true, stdio: 'ignore', windowsHide: false }); child.unref(); return; }
   shell.openExternal('https://codearts.huaweicloud.com/');
 }
 

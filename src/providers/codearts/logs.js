@@ -5,6 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { SOURCE_DEFS } = require('./sources');
 const { configDir } = require('../../settings');
+const { findCodeArtsAgentExecutable } = require('../../codearts-installation');
 
 const LOG_CACHE_VERSION = 2;
 let diskLogCacheLoaded = false;
@@ -271,7 +272,7 @@ function readCodeArtsConfig(configPath = path.join(os.homedir(), '.codeartsdoer'
 }
 function detectProcesses() {
   return {
-    expectedExe: path.join(process.env.ProgramFiles || 'C:\\Program Files', 'CodeArts Agent', 'codearts-agent.exe'),
+    expectedExe: findCodeArtsAgentExecutable(),
     cli: path.join(os.homedir(), '.codeartsdoer', 'installers', 'codearts.cmd'),
   };
 }

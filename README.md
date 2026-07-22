@@ -4,7 +4,7 @@
 
 CodeArts Bar 在本机读取 CodeArts Agent 生成的 SQLite 数据，提供 **Windows 桌面端、VS Code / CodeArts 扩展、JetBrains 插件和 CLI**。它用于查看 token 用量、缓存命中、模型与来源趋势、性能指标和最近会话；原始数据库、日志和 prompt 不会上传。
 
-当前版本：**1.16.39**。
+当前版本：**1.16.42**。
 
 [下载 Windows 版本](https://github.com/David-piex/codearts-bar/releases) · [安装 VS Code 扩展](#vs-code--codearts-扩展) · [使用 CLI](#cli) · [从源码运行](#从源码运行)
 
@@ -29,10 +29,29 @@ CodeArts Bar 在本机读取 CodeArts Agent 生成的 SQLite 数据，提供 **W
 - **多维筛选**：项目维度贯穿使用分析、会话列表和导出工作流；VS Code 与 JetBrains 的来源、模型和项目支持多选。
 - **完整统计口径**：总量、趋势、模型和来源来自完整数据库聚合；当前页只作为明细样本，并在界面明确标注。
 - **本地诊断**：检查数据库路径、SQLite adapter、缓存、日志和上次异常退出状态。
+- **安装位置发现**：自动从当前进程、Windows 注册表、macOS Spotlight、PATH 和常见目录定位 CodeArts Agent，自定义安装目录无需手动修改路径。
 - **会话导出**：Desktop、VS Code 和 JetBrains 支持跨页多选及批量 JSON、Markdown、真实 XLSX；CLI 支持单会话导出。
 - **导出隐私**：默认脱敏凭据、用户名和本机路径，不包含推理及工具输入输出；可在导出前调整内容范围。
 - **平滑冷启动**：先显示 Summary Skeleton 和核心指标，再在后台补趋势、模型及会话聚合。
 - **开发者工作台界面**：参考 CC Switch 的原生桌面工具感，使用冷灰画布、单一电蓝强调、紧凑分段控件和低动效信息层级；标准、窄屏、宽屏、会话与日期弹层均有视觉回归。
+
+## 1.16.42 更新
+
+- 修复深色模式下 Agent 空闲、缓存分析、统计表格和缓存胶囊被旧浅色渐变覆盖的问题，统一为冷灰语义层级。
+- 修复页面文本误选造成的整页蓝色高亮；输入框和文本域仍保留正常的 Cmd/Ctrl+A 选择行为。
+- 深色主题补齐 `color-scheme`、表格边界和图表/空闲轨道对比度，视觉回归与 Electron E2E 已覆盖。
+
+## 1.16.41 更新
+
+- 稳定实时更新状态，固定顶部状态位宽度，避免后台刷新导致界面闪烁和布局跳动。
+
+## 1.16.40 更新
+
+- 修复 CodeArts Agent 安装位置被固定为 `C:\\Program Files\\CodeArts Agent` 的问题，桌面端打开码道、CLI 诊断和三端共享运行状态检测现已共用同一套自动发现逻辑。
+- Windows 支持从环境变量、当前进程、卸载注册表、App Paths、系统 PATH 和常见目录定位 `codearts-agent.exe`，自定义安装盘无需再手动改路径。
+- macOS 支持通过官方 bundle identifier `com.huawei.codearts.agent` 使用 Spotlight 查找任意已索引位置中的应用，并保留当前进程、PATH、`/Applications` 与 `~/Applications` 回退。
+- 安装位置查询改为按优先级惰性执行并缓存结果；当前 Windows 实机注册表冷检测约 `92ms`，缓存命中约 `0.08ms`。
+- 增加 Windows 自定义注册表目录、macOS 非标准磁盘卷、环境变量、当前进程和未安装场景回归，并固定 Electron 视觉采集缩放因子，避免系统 DPI 改变截图尺寸。
 
 ## 1.16.39 更新
 

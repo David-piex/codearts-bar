@@ -27,7 +27,7 @@ const stdoutPath = path.join(tempDir, 'electron.stdout.log');
 const stderrPath = path.join(tempDir, 'electron.stderr.log');
 const stdoutFd = fs.openSync(stdoutPath, 'w');
 const stderrFd = fs.openSync(stderrPath, 'w');
-const result = spawnSync(electronPath, [path.join(root, 'tests', 'electron-dashboard-e2e-runner.js')], {
+const result = spawnSync(electronPath, ['--force-device-scale-factor=1', path.join(root, 'tests', 'electron-dashboard-e2e-runner.js')], {
   cwd: root,
   timeout: 60000,
   windowsHide: true,

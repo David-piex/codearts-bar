@@ -8,6 +8,7 @@ const { getSnapshotWithCache } = require('./codeartsData');
 const { loadSettings, settingsPath, cachePath, officialStatsCachePath } = require('./settings');
 const { officialStatsCacheStatus } = require('./officialStats');
 const { buildUnifiedDiagnostics, pathSummary, sanitizeText } = require('./diagnostics-report');
+const { findCodeArtsAgentExecutable } = require('./codearts-installation');
 
 function exists(file) { try { return fs.existsSync(file); } catch { return false; } }
 function stat(file) { try { return fs.statSync(file); } catch { return null; } }
@@ -76,7 +77,7 @@ async function diagnose(options = {}) {
   try { snapshot = await getSnapshotWithCache(options.snapshotOptions || settings); }
   catch { snapshotError = true; }
 
-  const agentExe = path.join(process.env.ProgramFiles || 'C:\\Program Files', 'CodeArts Agent', 'codearts-agent.exe');
+  const agentExe = findCodeArtsAgentExecutable();
   const codeartsCli = path.join(os.homedir(), '.codeartsdoer', 'installers', 'codearts.cmd');
   const logRoot = path.join(os.homedir(), '.codeartsdoer', 'codearts-data', 'log');
   const configFile = path.join(os.homedir(), '.codeartsdoer', 'codearts_cli.json');

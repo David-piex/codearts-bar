@@ -96,6 +96,7 @@ assert.ok(fs.statSync(cssBundlePath).size < cssSourceBytes, 'CSS bundle should b
 assert.match(cssBundle, /@media\(min-width:1600px\)/);
 assert.match(cssBundle, /\.diagnostics-notice\{width:100%/);
 assert.match(cssBundle, /\.app-header\{display:grid/);
+assert.match(cssBundle, /\.refresh-state\{[^}]*flex:0 0 84px[^}]*min-width:84px/);
 assert.match(cssBundle, /\.analytics-page-head\{display:grid/);
 assert.match(analyticsResponsiveCss, /\.analytics-page-head \.filters \{[\s\S]*width:100%/);
 assert.doesNotMatch(analyticsResponsiveCss, /width:max-content/);

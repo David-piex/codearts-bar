@@ -47,6 +47,8 @@ assert.equal(runtimeBuild.npmRebuild, false, "runtime builder must not rebuild d
 assert.equal(runtimeBuild.electronVersion, expectedElectronVersion, "runtime builder Electron version must match package.json");
 assert.equal(runtimeBuild.win?.icon, "assets/codearts-logo.ico", "runtime builder should use the staged application icon");
 assert.equal((pkg.build?.extraResources || []).some((item) => String(item?.from || "").replace(/\\/g, "/") === "node_modules/sql.js/dist"), false, "legacy package config must not copy full sql.js/dist");
+assert.equal(fs.existsSync(path.join(root, ".cache", "app-runtime", "assets", "codearts-logo-ui.png")), true, "app runtime should stage the dashboard UI logo");
+assert.equal(fs.existsSync(path.join(root, ".cache", "app-runtime", "src", "dashboard-theme.js")), true, "app runtime should stage the dashboard theme module");
 
 const generatedCliDir = path.join(root, ".cache", "cli-runtime");
 if (fs.existsSync(generatedCliDir)) {

@@ -413,6 +413,11 @@ async function refreshDashboardAggregates(s, token){
 
 
 function setRefreshState(text){ const el = document.getElementById('refreshState'); if(el) el.textContent = text || ''; }
+function markRealtimeUpdated(){
+  const el = document.getElementById('refreshState');
+  if(!el || el.textContent === TXT.realtime) return;
+  setRefreshState(TXT.realtime);
+}
 function rollupStateText(state = {}){
   const phaseLabels = { queued:'排队', opening:'打开数据库', validating:'检查结构', scanning:'扫描请求', enriching:'补全内容时间', normalizing:'归一化', writing:'写入缓存', sessions:'汇总会话', backoff:'等待重试', failed:'构建失败', completed:'构建完成' };
   const status = String(state.status || 'idle');

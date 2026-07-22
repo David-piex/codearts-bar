@@ -66,6 +66,16 @@ document.addEventListener('keydown', (e) => {
   focusables[next]?.focus?.({ preventScroll: true });
 }, true);
 document.addEventListener('keydown', (e) => {
+  if((e.metaKey || e.ctrlKey) && !e.altKey && String(e.key || '').toLowerCase() === 'a' && !e.defaultPrevented){
+    const target = e.target;
+    const editable = target?.matches?.('input,textarea,select,[contenteditable="true"]')
+      || target?.closest?.('input,textarea,select,[contenteditable="true"]');
+    if(!editable && !dashboardDialog?.isConnected){
+      e.preventDefault();
+      try { window.getSelection?.()?.removeAllRanges?.(); } catch {}
+      return;
+    }
+  }
   if(!(e.metaKey || e.ctrlKey) || e.altKey || e.defaultPrevented) return;
   const key = String(e.key || '').toLowerCase();
   if(key === '1' || key === '2'){
@@ -103,12 +113,13 @@ document.addEventListener('visibilitychange', () => {
   if(document.visibilityState !== 'hidden' && snapshot?.ok) refreshNow({ windowLayout: false, instantChart: true, partial: true });
 });
 window.addEventListener('codearts-theme-change', () => {
+  try { window.getSelection?.()?.removeAllRanges?.(); } catch {}
   lastChartDrawSignature = '';
   chartGeometryDirty = true;
   if(snapshot?.ok && workspaceMode === 'analytics' && layoutMode !== 'compact') scheduleChartResizeRedraw('theme');
 });
 document.addEventListener('keydown', async (e) => { if((e.ctrlKey || e.metaKey) && e.shiftKey && String(e.key || '').toLowerCase() === 'p'){ e.preventDefault(); togglePerfPanel(); return; } if(e.key === 'Enter' && e.target.closest('[data-request-page-input]')){ e.preventDefault(); document.querySelector('[data-request-page-go]')?.click?.(); return; } if(e.key === 'Enter' && e.target.closest('[data-session-page-input]')){ e.preventDefault(); document.querySelector('[data-session-page-go]')?.click?.(); return; } if(dateRangeOpen && e.key === 'Escape'){ e.preventDefault(); dateRangeOpen = false; if(!patchDateRangeChrome?.() && snapshot?.ok) render(snapshot, { windowLayout: false, instantChart: true, deferHeavy: true, partial: true }); return; } if(e.key === 'Enter' && e.target.closest('[data-saved-session-name]')){ saveCurrentSessionView(); patchSessionsOrRender({ table: false, toolbar: true, inspector: false, overview: false }); return; } if(bulkMetaOpen && e.key === 'Escape'){ bulkMetaOpen = false; bulkMetaTagsDraft = ''; bulkMetaNoteDraft = ''; patchSessionModalOrRender(); return; } if(!renameSessionKey) return; if(e.key === 'Escape'){ renameSessionKey = ''; renameDraft = ''; patchSessionModalOrRender(); } if(e.key === 'Enter' && e.target.closest('[data-rename-input]')){ await saveRenameSheet(); } });
-ipcRenderer.on('dashboard:snapshot', (_e, s) => { suppressChartIntro = true; applyRealtimeSnapshot(s); suppressChartIntro = false; setRefreshState(TXT.realtime); setTimeout(() => setRefreshState(''), 900); });
+ipcRenderer.on('dashboard:snapshot', (_e, s) => { suppressChartIntro = true; const applied = applyRealtimeSnapshot(s); suppressChartIntro = false; if(applied && !document.body?.classList?.contains?.('is-refreshing')) markRealtimeUpdated(); });
 ipcRenderer.on('dashboard:rollupState', (_e, state) => applyRollupState(state || {}));
 function beginResizePerf(reason = 'resize'){
   const now = perfNow();

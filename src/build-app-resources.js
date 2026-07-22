@@ -57,8 +57,8 @@ function build() {
   fs.mkdirSync(outDir, { recursive: true });
   scan(path.join(srcDir, 'main.js'));
   for (const file of [...required].sort()) copy(file);
-  for (const name of ['dashboard.html', 'dashboard-preload.js', 'dashboard-renderer.js', 'dashboard-bundle.css', 'settings.html', 'settings-preload.js', 'settings-renderer.js']) copy(path.join(srcDir, name));
-  for (const name of ['codearts-logo-source.png', 'codearts-logo.ico', 'codearts-logo.png', 'codearts-tray.png']) copy(path.join(root, 'assets', name), path.join('assets', name));
+  for (const name of ['dashboard.html', 'dashboard-preload.js', 'dashboard-renderer.js', 'dashboard-bundle.css', 'dashboard-theme.js', 'settings.html', 'settings-preload.js', 'settings-renderer.js']) copy(path.join(srcDir, name));
+  for (const name of ['codearts-logo-source.png', 'codearts-logo.ico', 'codearts-logo.png', 'codearts-logo-ui.png', 'codearts-tray.png']) copy(path.join(root, 'assets', name), path.join('assets', name));
   // Keep sql.js as explicit application data instead of relying on electron-builder's
   // node_modules dependency discovery for this intentionally minimal staging tree.
   const sqlDir = path.join(outDir, 'src', 'vendor', 'sql.js');

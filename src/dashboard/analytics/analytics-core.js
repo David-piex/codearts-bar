@@ -262,7 +262,7 @@ function summaryUsageForView(rows, s){
   return sumReq(rows);
 }
 
-function avg(arr){ return arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : null; }
+function avg(arr){ return Array.isArray(arr) && arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : null; }
 
 function groupBy(rows, fn){ const map = new Map(); for(const r of rows){ const k = fn(r) || 'unknown'; const arr = map.get(k) || []; arr.push(r); map.set(k, arr); } return [...map.entries()].map(([key, items]) => ({ key, items, stats: sumReq(items) })).sort((a, b) => b.stats.total - a.stats.total); }
 
