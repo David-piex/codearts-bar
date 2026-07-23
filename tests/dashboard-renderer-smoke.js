@@ -480,6 +480,29 @@ async function main() {
   assert.doesNotMatch(analyticsHtml, /\u73b0\u5728/);
   assert.doesNotMatch(analyticsHtml, /data-date-range-follow/);
   assert.doesNotMatch(analyticsHtml, /data-select="rangeCustom"/);
+  vm.runInContext(`
+    (() => {
+      const slot = document.getElementById('analyticsFiltersSlot');
+      slot.innerHTML = '<select data-select="model"><option>old</option></select>';
+      slotHtmlCache.delete('analyticsFiltersSlot');
+      markAnalyticsFiltersInteraction({ closest(selector){ return selector === '#analyticsFiltersSlot' ? slot : null; } });
+      const preserved = patchHtmlSlot('analyticsFiltersSlot', '<select data-select="model"><option>new</option></select>');
+      const oldHtmlKept = slot.innerHTML.includes('old') && !slot.innerHTML.includes('new');
+      document.activeElement = document.body;
+      analyticsFiltersInteractionUntil = 0;
+      const patched = patchHtmlSlot('analyticsFiltersSlot', '<select data-select="model"><option>new</option></select>');
+      globalThis.__analyticsFilterPatchGuard = {
+        preserved,
+        oldHtmlKept,
+        patched,
+        newHtmlApplied: slot.innerHTML.includes('new')
+      };
+    })();
+  `, context);
+  assert.equal(context.__analyticsFilterPatchGuard.preserved, true, 'analytics filter patch should report success while preserved');
+  assert.equal(context.__analyticsFilterPatchGuard.oldHtmlKept, true, 'analytics filter slot patch must preserve focused select controls');
+  assert.equal(context.__analyticsFilterPatchGuard.patched, true, 'analytics filter patch should resume after interaction ends');
+  assert.equal(context.__analyticsFilterPatchGuard.newHtmlApplied, true, 'analytics filter patch should apply after interaction ends');
 
   await listeners.click({
     target: {
