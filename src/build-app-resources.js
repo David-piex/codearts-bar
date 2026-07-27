@@ -46,6 +46,10 @@ function scan(file) {
     const workerPool = path.join(path.dirname(resolved), 'usage-rollup-worker-pool.js');
     if (fs.existsSync(workerPool)) scan(workerPool);
   }
+  if (path.basename(resolved) === 'pagination.js') {
+    const workerPool = path.join(path.dirname(resolved), 'native-worker-pool.js');
+    if (fs.existsSync(workerPool)) scan(workerPool);
+  }
 }
 function copy(file, relative = path.relative(root, file)) {
   const dest = path.join(outDir, relative);

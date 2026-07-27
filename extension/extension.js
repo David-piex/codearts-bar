@@ -430,6 +430,7 @@ async function deactivate() {
   rollupRecoveryRefreshTimer = null;
   localProvider.setUsageRollupStateListener?.(null);
   await localProvider.closeSqlJsWorker?.();
+  await localProvider.closeNativeWorker?.();
   closeSettingsStore?.();
   dashboardHost = null;
   lastSnapshot = null;

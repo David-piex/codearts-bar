@@ -1,10 +1,11 @@
 'use strict';
 
-const engine = require('./aggregation-engine');
 const usageRollup = require('./usage-rollup');
-const { aggregateCacheStats } = require('./aggregate-cache');
+const aggregateCache = require('./aggregate-cache');
+const { aggregateCacheStats } = aggregateCache;
 const { aggregateError, slowAggregateStats, resetSlowAggregateStats, maybeLogSlowAggregate, sourceList } = require('./aggregation-runtime');
 const { runSqlJsWorker, warmupSqlJsWorker, clearSqlJsWorkerCaches, closeSqlJsWorker, sqlJsWorkerStats } = require('./sqljs-worker-pool');
+const { runNativeWorker, warmupNativeWorker, clearNativeWorkerCaches, closeNativeWorker, nativeWorkerStats } = require('./native-worker-pool');
 
 async function workerAggregate(operation, label, payload = {}) {
   const startedAt = performance.now();
@@ -33,9 +34,45 @@ const getSessionSummarySqlJs = (payload = {}) => workerAggregate('sessionSummary
 const getDashboardAggregatesSqlJs = (payload = {}) => workerAggregate('dashboardAggregates', 'dashboardAggregates', payload);
 const getDatabaseHealthSqlJs = (payload = {}) => workerAggregate('databaseHealth', 'databaseHealth', payload);
 
+async function nativeWorkerAggregate(operation, label, payload = {}) {
+  const startedAt = performance.now();
+  try {
+    const result = await runNativeWorker(operation, { ...payload, slowAggregateMs: -1 });
+    const roundTripMs = performance.now() - startedAt;
+    maybeLogSlowAggregate(label, 'node:sqlite-worker', payload, roundTripMs, false);
+    if (result && typeof result === 'object') {
+      result.perf = {
+        ...(result.perf || {}),
+        aggregateWorker: { thread: 'worker', adapter: 'node:sqlite', operation, roundTripMs: Number(roundTripMs.toFixed(1)) },
+      };
+    }
+    return result;
+  } catch (error) {
+    maybeLogSlowAggregate(label, 'node:sqlite-worker', payload, performance.now() - startedAt, true);
+    throw error;
+  }
+}
+
+const getSummaryNative = (payload = {}) => nativeWorkerAggregate('summary', 'summary', payload);
+const getTrendBucketsNative = (payload = {}) => nativeWorkerAggregate('trendBuckets', 'trendBuckets', payload);
+const getSourceStatsNative = (payload = {}) => nativeWorkerAggregate('sourceStats', 'sourceStats', payload);
+const getModelStatsNative = (payload = {}) => nativeWorkerAggregate('modelStats', 'modelStats', payload);
+const getSessionSummaryNative = (payload = {}) => nativeWorkerAggregate('sessionSummary', 'sessionSummary', payload);
+const getDashboardAggregatesNative = (payload = {}) => nativeWorkerAggregate('dashboardAggregates', 'dashboardAggregates', payload);
+const getDatabaseHealthNative = (payload = {}) => nativeWorkerAggregate('databaseHealth', 'databaseHealth', payload);
+
+function setUsageRollupBuildListener(listener) {
+  return usageRollup.setUsageRollupBuildListener((event) => {
+    aggregateCache.clearAggregateCache();
+    clearSqlJsWorkerCaches().catch(() => {});
+    clearNativeWorkerCaches().catch(() => {});
+    return listener?.(event);
+  });
+}
+
 async function withFallback(payload, nativeFn, sqlJsFn) {
   if (process.env.CODEARTS_BAR_FORCE_SQLJS !== '1') {
-    try { return nativeFn(payload); }
+    try { return await nativeFn(payload); }
     catch (error) { return aggregateError(error, await sqlJsFn(payload)); }
   }
   return aggregateError('CODEARTS_BAR_FORCE_SQLJS=1', await sqlJsFn(payload));
@@ -54,52 +91,54 @@ function scheduleMissingRollups(payload = {}, adapter = 'node:sqlite') {
 }
 
 const getSummary = async (payload = {}) => {
-  const result = await withFallback(payload, engine.getSummaryNative, getSummarySqlJs);
-  if (result?.nativeError || process.env.CODEARTS_BAR_FORCE_SQLJS === '1') {
-    const state = scheduleMissingRollups(payload, 'sql.js');
+  const result = await withFallback(payload, getSummaryNative, getSummarySqlJs);
+  const adapter = process.env.CODEARTS_BAR_FORCE_SQLJS === '1' || result?.nativeError ? 'sql.js' : 'node:sqlite';
+  if (!result?.perf?.usageRollup?.hits || process.env.CODEARTS_BAR_FORCE_SQLJS === '1' || result?.nativeError) {
+    const state = scheduleMissingRollups(payload, adapter);
     if (state) result.rollupState = state;
   }
   return result;
 };
-const getTrendBuckets = (payload = {}) => withFallback(payload, engine.getTrendBucketsNative, getTrendBucketsSqlJs);
-const getSourceStats = (payload = {}) => withFallback(payload, engine.getSourceStatsNative, getSourceStatsSqlJs);
-const getModelStats = (payload = {}) => withFallback(payload, engine.getModelStatsNative, getModelStatsSqlJs);
-const getSessionSummary = (payload = {}) => withFallback(payload, engine.getSessionSummaryNative, getSessionSummarySqlJs);
+const getTrendBuckets = (payload = {}) => withFallback(payload, getTrendBucketsNative, getTrendBucketsSqlJs);
+const getSourceStats = (payload = {}) => withFallback(payload, getSourceStatsNative, getSourceStatsSqlJs);
+const getModelStats = (payload = {}) => withFallback(payload, getModelStatsNative, getModelStatsSqlJs);
+const getSessionSummary = (payload = {}) => withFallback(payload, getSessionSummaryNative, getSessionSummarySqlJs);
 const getDashboardAggregates = async (payload = {}) => {
-  const result = await withFallback(payload, engine.getDashboardAggregatesNative, getDashboardAggregatesSqlJs);
-  if (result?.nativeError || process.env.CODEARTS_BAR_FORCE_SQLJS === '1') {
-    const state = scheduleMissingRollups(payload, 'sql.js');
+  const result = await withFallback(payload, getDashboardAggregatesNative, getDashboardAggregatesSqlJs);
+  const adapter = process.env.CODEARTS_BAR_FORCE_SQLJS === '1' || result?.nativeError ? 'sql.js' : 'node:sqlite';
+  if (!result?.perf?.usageRollup?.hits || process.env.CODEARTS_BAR_FORCE_SQLJS === '1' || result?.nativeError) {
+    const state = scheduleMissingRollups(payload, adapter);
     if (state) result.rollupState = state;
   }
   return result;
 };
-const getDatabaseHealth = (payload = {}) => withFallback(payload, engine.getDatabaseHealthNative, getDatabaseHealthSqlJs);
+const getDatabaseHealth = (payload = {}) => withFallback(payload, getDatabaseHealthNative, getDatabaseHealthSqlJs);
 
 module.exports = {
   getSummary,
-  getSummaryNative: engine.getSummaryNative,
+  getSummaryNative,
   getSummarySqlJs,
   getTrendBuckets,
-  getTrendBucketsNative: engine.getTrendBucketsNative,
+  getTrendBucketsNative,
   getTrendBucketsSqlJs,
   getSourceStats,
-  getSourceStatsNative: engine.getSourceStatsNative,
+  getSourceStatsNative,
   getSourceStatsSqlJs,
   getModelStats,
-  getModelStatsNative: engine.getModelStatsNative,
+  getModelStatsNative,
   getModelStatsSqlJs,
   getSessionSummary,
-  getSessionSummaryNative: engine.getSessionSummaryNative,
+  getSessionSummaryNative,
   getSessionSummarySqlJs,
   getDashboardAggregates,
-  getDashboardAggregatesNative: engine.getDashboardAggregatesNative,
+  getDashboardAggregatesNative,
   getDashboardAggregatesSqlJs,
   getDatabaseHealth,
-  getDatabaseHealthNative: engine.getDatabaseHealthNative,
+  getDatabaseHealthNative,
   getDatabaseHealthSqlJs,
   aggregateCacheStats,
   usageRollupStats: usageRollup.usageRollupStats,
-  setUsageRollupBuildListener: usageRollup.setUsageRollupBuildListener,
+  setUsageRollupBuildListener,
   setUsageRollupStateListener: usageRollup.setUsageRollupStateListener,
   aggregateRollupState: usageRollup.aggregateRollupState,
   slowAggregateStats,
@@ -108,4 +147,8 @@ module.exports = {
   warmupSqlJsWorker,
   clearSqlJsWorkerCaches,
   closeSqlJsWorker,
+  warmupNativeWorker,
+  nativeWorkerStats,
+  closeNativeWorker,
+  clearNativeWorkerCaches,
 };

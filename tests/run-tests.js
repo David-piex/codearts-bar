@@ -86,6 +86,51 @@ async function testExplicitMissingDatabaseDoesNotUseSnapshotCache() {
     fs.rmSync(tmp, { recursive: true, force: true });
   }
 }
+
+async function testSnapshotSingleFlightSeparatesQueryScopes() {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'codearts-bar-snapshot-flight-'));
+  const previousConfigDir = process.env.CODEARTS_BAR_CONFIG_DIR;
+  const originals = {
+    getDashboardAggregates: localProvider.getDashboardAggregates,
+    getRequestsPage: localProvider.getRequestsPage,
+    getSessionsPage: localProvider.getSessionsPage,
+  };
+  process.env.CODEARTS_BAR_CONFIG_DIR = path.join(tmp, 'config');
+  closeSettingsStore();
+  try {
+    localProvider.getDashboardAggregates = async (payload) => {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      const usage = { total: payload.source === 'desktop' ? 1 : 2, input: 0, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0, messages: 1, errors: 0 };
+      return {
+        ok: true,
+        timestamp: payload.timestamp,
+        usage: { today: { ...usage }, window: { ...usage }, week: { ...usage }, all: { ...usage } },
+        sources: [{ id: payload.source, label: payload.source, dbPath: path.join(tmp, `${payload.source}.db`), size: 0 }],
+        modelStats: [], sourceStats: [], buckets: [],
+        sessionSummary: { total: 0, active: 0, archived: 0, recent7d: 0, projects: [] },
+      };
+    };
+    localProvider.getRequestsPage = async () => ({ ok: true, total: 0, items: [] });
+    localProvider.getSessionsPage = async () => ({ ok: true, total: 0, items: [] });
+    const base = { timestamp: FIXTURE_NOW_MS, fixtureMode: true, useSavedSettings: false };
+    const [desktop, cli] = await Promise.all([
+      getSnapshotWithCache({ ...base, source: 'desktop' }),
+      getSnapshotWithCache({ ...base, source: 'cli' }),
+    ]);
+    assert.equal(desktop.sources[0].id, 'desktop');
+    assert.equal(cli.sources[0].id, 'cli');
+    assert.equal(desktop.usage.all.total, 1);
+    assert.equal(cli.usage.all.total, 2);
+  } finally {
+    localProvider.getDashboardAggregates = originals.getDashboardAggregates;
+    localProvider.getRequestsPage = originals.getRequestsPage;
+    localProvider.getSessionsPage = originals.getSessionsPage;
+    closeSettingsStore();
+    if (previousConfigDir == null) delete process.env.CODEARTS_BAR_CONFIG_DIR;
+    else process.env.CODEARTS_BAR_CONFIG_DIR = previousConfigDir;
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+}
 function testQuota() {
   const timestamp = new Date('2026-07-07T06:00:00Z').getTime();
   const snap = { timestamp, config: { dailyLimit: 1000, windowHours: 24 }, usage: { today: { total: 400 }, window: { total: 500 }, week: { total: 2500 } } };
@@ -1164,6 +1209,7 @@ async function testDashboardUsageRollupCache() {
 async function main() {
   testAtomicRenameRetriesTransientWindowsLocks();
   await testExplicitMissingDatabaseDoesNotUseSnapshotCache();
+  await testSnapshotSingleFlightSeparatesQueryScopes();
   testOfficialStatsParser();
   testQuota();
   testProviders();

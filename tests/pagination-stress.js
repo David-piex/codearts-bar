@@ -114,18 +114,46 @@ async function assertPage(runtime, kind, page) {
   if (kind === 'sessions') assert.ok(page.items.every((item) => !item.id.startsWith('internal-')));
 }
 
+async function assertCursorPages(runtime, kind, loadPage) {
+  let cursor = null;
+  const keys = [];
+  for (let pageIndex = 0; pageIndex < 12; pageIndex += 1) {
+    const page = await loadPage({ source: 'all', limit: 20, cursor });
+    assert.equal(page.ok, true);
+    assert.equal(page.strategy, cursor ? 'k-way-keyset' : 'k-way-merge');
+    assert.equal(page.offset, 0);
+    assert.equal(page.items.length, 20);
+    keys.push(...page.items.map((item) => `${item.source}:${item.id}`));
+    assert.ok(page.nextCursor, `${runtime} ${kind} cursor page should return the continuation token`);
+    cursor = page.nextCursor;
+  }
+  assert.deepEqual(keys, expectedKeys(kind, 0, 240), `${runtime} ${kind} cursor chain must match offset ordering`);
+}
+
 async function main() {
   createDb("desktop");
   createDb("cli");
   const pagination = require("../src/providers/codearts/pagination");
+  const aggregation = require("../src/providers/codearts/aggregation");
   const payload = { source: "all", limit: 20, offset: 220 };
   await assertPage("native", "requests", pagination.getRequestsPageNative(payload));
   await assertPage("native", "sessions", pagination.getSessionsPageNative(payload));
   await assertPage("sql.js", "requests", await pagination.getRequestsPageSqlJs(payload));
   await assertPage("sql.js", "sessions", await pagination.getSessionsPageSqlJs(payload));
+  await assertCursorPages('native', 'requests', (next) => pagination.getRequestsPageNative(next));
+  await assertCursorPages('native', 'sessions', (next) => pagination.getSessionsPageNative(next));
+  await assertCursorPages('sql.js', 'requests', (next) => pagination.getRequestsPageSqlJs(next));
+  await assertCursorPages('sql.js', 'sessions', (next) => pagination.getSessionsPageSqlJs(next));
   const cliOnly = pagination.getRequestsPageNative({ source: "cli", limit: 20, offset: 40 });
   assert.equal(cliOnly.strategy, "single-source");
   assert.equal(cliOnly.total, perSource);
+  const workerBefore = aggregation.nativeWorkerStats();
+  const workerPage = await pagination.getRequestsPage({ source: "all", limit: 20, offset: 0 });
+  const workerAfter = aggregation.nativeWorkerStats();
+  assert.equal(workerPage.ok, true);
+  assert.equal(workerPage.strategy, "k-way-merge");
+  assert.ok(workerAfter.requests > workerBefore.requests, "public native pagination must execute through the worker");
+  await aggregation.closeNativeWorker();
   console.log(`ok - pagination k-way stress requests/sessions sources=2 offset=${payload.offset} limit=${payload.limit}`);
 }
 

@@ -12,8 +12,9 @@ const root = path.join(__dirname, "..");
 const source = fs.readFileSync(path.join(root, "src", "extension-data.js"), "utf8");
 assert.doesNotMatch(source, /getSnapshotWithCache|collectRows|loadSettings/);
 assert.match(source, /useSavedSettings: false/);
+assert.match(source, /createQueryService/);
 assert.match(source, /getSummary/);
-assert.match(source, /getDashboardAggregates/);
+assert.match(source, /getAggregates/);
 assert.match(source, /getSessionsPage/);
 
 const data = require(path.join(root, "src", "extension-data.js"));

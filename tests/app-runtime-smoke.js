@@ -7,11 +7,11 @@ const root = path.resolve(__dirname, '..');
 const runtime = path.join(root, '.cache', 'app-runtime');
 build();
 function exists(rel) { return fs.existsSync(path.join(runtime, ...rel.split('/'))); }
-for (const rel of ['src/main.js','src/dashboard-renderer.js','src/dashboard-bundle.css','src/providers/codearts/sqljs-worker.js','src/providers/codearts/usage-rollup-worker.js','src/vendor/sql.js/sql-wasm.js','src/vendor/sql.js/sql-wasm.wasm','APP_RUNTIME_MANIFEST.json']) assert.equal(exists(rel), true, `app runtime should include ${rel}`);
+for (const rel of ['src/main.js','src/dashboard-renderer.js','src/dashboard-bundle.css','src/providers/codearts/sqljs-worker.js','src/providers/codearts/sqljs-worker-pool.js','src/providers/codearts/native-worker.js','src/providers/codearts/native-worker-pool.js','src/providers/codearts/usage-rollup-worker.js','src/vendor/sql.js/sql-wasm.js','src/vendor/sql.js/sql-wasm.wasm','APP_RUNTIME_MANIFEST.json']) assert.equal(exists(rel), true, `app runtime should include ${rel}`);
 for (const rel of ['src/build-dashboard-renderer.js','src/build-extension.js','src/prepare-extension.js','src/release.js','src/dashboard/renderer-entry.js','src/dashboard.css','node_modules/sql.js/dist/sql-asm-debug.js']) assert.equal(exists(rel), false, `app runtime should exclude ${rel}`);
 const runtimeFiles = [];
 (function walk(dir) { for (const entry of fs.readdirSync(dir, { withFileTypes: true })) { const file=path.join(dir,entry.name); if(entry.isDirectory()) walk(file); else runtimeFiles.push(path.relative(runtime,file).replace(/\\/g,'/')); } })(runtime);
-assert.ok(runtimeFiles.length < 80, `app runtime should stay narrow, got ${runtimeFiles.length} files`);
+assert.ok(runtimeFiles.length <= 81, `app runtime should stay narrow, got ${runtimeFiles.length} files`);
 assert.equal(runtimeFiles.filter((file) => /sql-wasm\.(?:js|wasm)$/.test(file)).length, 2, 'app runtime should contain exactly two sql.js runtime files');
 const bytes = runtimeFiles.reduce((sum, rel) => sum + fs.statSync(path.join(runtime, ...rel.split('/'))).size, 0);
 assert.ok(bytes < 3 * 1024 * 1024, `app runtime should stay below 3 MiB, got ${bytes}`);

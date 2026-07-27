@@ -3,6 +3,7 @@
 const { sqliteRuntimeStatus } = require('../providers/codearts/sqlite');
 const { paginateSnapshotList, createSnapshotFallback, decorateWithRuntimeDiagnostics, buildDiagnosticsSummary } = require('./ipc-dashboard-support');
 const { buildUnifiedDiagnostics } = require('../diagnostics-report');
+const { createQueryService } = require('../query-service');
 
 function registerDashboardIpc({
   ipcMain,
@@ -34,6 +35,7 @@ function registerDashboardIpc({
   const snapshotUsageFallback = (scope, payload = {}) => createSnapshotFallback(
     () => getDashboardSnapshotForPayload?.(payload) || null
   )(scope);
+  const queryService = createQueryService({ provider: localProvider, normalizeAggregatePayload: dashboardAggregatePayload });
   const withRuntimeDiagnostics = (snap) => decorateWithRuntimeDiagnostics(snap, getCrashState?.());
   const fallbackPage = (list, payload, snapshotTimestamp = 0) => paginateSnapshotList(list, payload, {
     pageBounds,
@@ -67,7 +69,7 @@ function registerDashboardIpc({
     return withRuntimeDiagnostics(lastDashboardSnapshot || buildDashboardPreviewSnapshot(lastSnapshot));
   });
   ipcMain.handle('dashboard:getRequestsPage', async (_event, payload = {}) => {
-    try { return await localProvider.getRequestsPage(payload); }
+    try { return await queryService.getRequestsPage(payload); }
     catch (error) {
       appendLog('warn', 'dashboard:getRequestsPage', error.message, { payload });
       const fallback = getDashboardSnapshotForPayload?.(payload) || null;
@@ -79,7 +81,7 @@ function registerDashboardIpc({
     }
   });
   ipcMain.handle('dashboard:getSessionRequestsPage', async (_event, payload = {}) => {
-    try { return await localProvider.getSessionRequestsPage(payload); }
+    try { return await queryService.getSessionRequestsPage(payload); }
     catch (error) {
       appendLog('warn', 'dashboard:getSessionRequestsPage', error.message, { payload });
       const sessionId = String(payload.sessionId || '').trim();
@@ -98,7 +100,7 @@ function registerDashboardIpc({
     }
   });
   ipcMain.handle('dashboard:getSessionsPage', async (_event, payload = {}) => {
-    try { return await localProvider.getSessionsPage(payload); }
+    try { return await queryService.getSessionsPage(payload); }
     catch (error) {
       appendLog('warn', 'dashboard:getSessionsPage', error.message, { payload });
       const fallback = getDashboardSnapshotForPayload?.(payload) || null;
@@ -110,42 +112,42 @@ function registerDashboardIpc({
     }
   });
   ipcMain.handle('dashboard:getSummary', async (_event, payload = {}) => {
-    try { return await localProvider.getSummary(dashboardAggregatePayload(payload)); }
+    try { return await queryService.getSummary(payload); }
     catch (error) {
       appendLog('warn', 'dashboard:getSummary', error.message, { payload });
       return snapshotUsageFallback('summary', payload) || { ok: false, error: '读取摘要失败' };
     }
   });
   ipcMain.handle('dashboard:getTrendBuckets', async (_event, payload = {}) => {
-    try { return await localProvider.getTrendBuckets(dashboardAggregatePayload(payload)); }
+    try { return await queryService.getTrend(payload); }
     catch (error) {
       appendLog('warn', 'dashboard:getTrendBuckets', error.message, { payload });
       return snapshotUsageFallback('trend', payload) || { ok: false, error: '读取趋势失败' };
     }
   });
   ipcMain.handle('dashboard:getSourceStats', async (_event, payload = {}) => {
-    try { return await localProvider.getSourceStats(dashboardAggregatePayload(payload)); }
+    try { return await queryService.getSources(payload); }
     catch (error) {
       appendLog('warn', 'dashboard:getSourceStats', error.message, { payload });
       return snapshotUsageFallback('source', payload) || { ok: false, error: '读取来源统计失败' };
     }
   });
   ipcMain.handle('dashboard:getModelStats', async (_event, payload = {}) => {
-    try { return await localProvider.getModelStats(dashboardAggregatePayload(payload)); }
+    try { return await queryService.getModels(payload); }
     catch (error) {
       appendLog('warn', 'dashboard:getModelStats', error.message, { payload });
       return snapshotUsageFallback('model', payload) || { ok: false, error: '读取模型统计失败' };
     }
   });
   ipcMain.handle('dashboard:getSessionSummary', async (_event, payload = {}) => {
-    try { return await localProvider.getSessionSummary(dashboardAggregatePayload({ ...payload, query: payload.sessionQuery || '' })); }
+    try { return await queryService.getSessionSummary({ ...payload, query: payload.sessionQuery || '' }); }
     catch (error) {
       appendLog('warn', 'dashboard:getSessionSummary', error.message, { payload });
       return snapshotUsageFallback('session', payload) || { ok: false, error: '读取会话统计失败' };
     }
   });
   ipcMain.handle('dashboard:getAggregates', async (_event, payload = {}) => {
-    try { return await localProvider.getDashboardAggregates(dashboardAggregatePayload(payload)); }
+    try { return await queryService.getAggregates(payload); }
     catch (error) {
       appendLog('warn', 'dashboard:getAggregates', error.message, { payload });
       const summary = snapshotUsageFallback('summary', payload);
@@ -168,7 +170,7 @@ function registerDashboardIpc({
     }
   });
   ipcMain.handle('dashboard:getDatabaseHealth', async (_event, payload = {}) => {
-    try { return await localProvider.getDatabaseHealth(dashboardAggregatePayload(payload)); }
+    try { return await queryService.getDatabaseHealth(payload); }
     catch (error) {
       appendLog('warn', 'dashboard:getDatabaseHealth', error.message, { payload });
       return { ok: false, error: '读取数据库健康状态失败' };
@@ -181,8 +183,8 @@ function registerDashboardIpc({
     try {
       const range = { start: since || 0, end: Date.now() };
       const [requests, sessions] = await Promise.all([
-        localProvider.getRequestsPage({ limit: 100, offset: 0, source: payload.source || 'all', model: payload.model || 'all', project: payload.project || 'all', range, query: payload.query || '' }),
-        localProvider.getSessionsPage({ limit: SESSION_PAGE_SIZE, offset: 0, source: payload.source || 'all', status: payload.status || 'active', project: payload.project || 'all', range, query: payload.sessionQuery || '' }),
+        queryService.getRequestsPage({ limit: 100, offset: 0, source: payload.source || 'all', model: payload.model || 'all', project: payload.project || 'all', range, query: payload.query || '' }),
+        queryService.getSessionsPage({ limit: SESSION_PAGE_SIZE, offset: 0, source: payload.source || 'all', status: payload.status || 'active', project: payload.project || 'all', range, query: payload.sessionQuery || '' }),
       ]);
       return { ok: true, timestamp: Date.now(), changed: Boolean((requests.items || []).length || (sessions.items || []).length), requests: requests.items || [], sessions: sessions.items || [], requestTotal: requests.total || 0, sessionTotal: sessions.total || 0, source: 'db-page' };
     } catch (error) {
@@ -209,7 +211,7 @@ function registerDashboardIpc({
   });
   ipcMain.handle('dashboard:getDiagnostics', async () => {
     let database = null;
-    try { database = await localProvider.getDatabaseHealth(dashboardAggregatePayload({ timestamp: Date.now() })); }
+    try { database = await queryService.getDatabaseHealth({ timestamp: Date.now() }); }
     catch (error) {
       appendLog('warn', 'dashboard:getDiagnostics:database', error.message);
       try { database = { ok: false, error: '数据库健康检查失败', diagnostics: localProvider.getDatabaseDiagnostics({ timestamp: Date.now() }) }; }
@@ -226,6 +228,10 @@ function registerDashboardIpc({
             : null,
         } : null,
         slowAggregates: typeof localProvider.slowAggregateStats === 'function' ? localProvider.slowAggregateStats() : null,
+        workers: {
+          native: typeof localProvider.nativeWorkerStats === 'function' ? localProvider.nativeWorkerStats() : null,
+          sqljs: typeof localProvider.sqlJsWorkerStats === 'function' ? localProvider.sqlJsWorkerStats() : null,
+        },
       };
     } catch (error) {
       performance = { error: '读取性能诊断失败' };

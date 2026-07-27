@@ -59,6 +59,10 @@ function scan(file) {
     const workerPool = path.join(path.dirname(resolved), 'usage-rollup-worker-pool.js');
     if (fs.existsSync(workerPool)) scan(workerPool);
   }
+  if (path.basename(resolved) === 'pagination.js') {
+    const workerPool = path.join(path.dirname(resolved), 'native-worker-pool.js');
+    if (fs.existsSync(workerPool)) scan(workerPool);
+  }
 }
 
 function copyFilePreserveRoot(file) {
@@ -117,6 +121,18 @@ function prepareBundleEntry() {
     fs.mkdirSync(path.dirname(staged), { recursive: true });
     fs.copyFileSync(file, staged);
   }
+  const stagedPagination = path.join(stageRoot, 'src', 'providers', 'codearts', 'pagination.js');
+  if (fs.existsSync(stagedPagination)) {
+    const source = readUtf8(stagedPagination);
+    fs.writeFileSync(
+      stagedPagination,
+      source.replace(
+        "const ONE_SHOT_RUNTIME = typeof CODEARTS_BAR_ONE_SHOT_RUNTIME !== 'undefined' && CODEARTS_BAR_ONE_SHOT_RUNTIME;",
+        'const ONE_SHOT_RUNTIME = true;',
+      ),
+      'utf8',
+    );
+  }
   const slimDiagnostics = path.join(srcDir, 'providers', 'codearts', 'jetbrains-diagnostics.js');
   fs.copyFileSync(slimDiagnostics, path.join(stageRoot, 'src', 'providers', 'codearts', 'diagnostics.js'));
   const slimBestEffort = path.join(srcDir, 'core', 'jetbrains-best-effort.js');
@@ -146,7 +162,7 @@ function build() {
         platform: 'node',
         target: 'node18',
         format: 'cjs',
-        external: ['sql.js', ...(jetbrainsEntry ? ['../../protocol/query-results'] : [])],
+        external: ['sql.js', ...(jetbrainsEntry ? ['../../protocol/query-results', '../../query-service', './aggregation-sql', './sources', '../../core/aggregator'] : [])],
         define: jetbrainsEntry ? { CODEARTS_BAR_ONE_SHOT_RUNTIME: 'true' } : {},
         minify: true,
         charset: 'utf8',
@@ -169,6 +185,38 @@ function build() {
       });
       files.push(protocolTarget);
       packagedFiles.push({ rel: protocolRelative, file: protocolTarget });
+      const queryServiceEntry = path.join(srcDir, 'query-service.js');
+      const queryServiceRelative = path.relative(root, queryServiceEntry).replace(/\\/g, '/');
+      const queryServiceTarget = path.join(outDir, ...queryServiceRelative.split('/'));
+      require('esbuild').buildSync({
+        entryPoints: [queryServiceEntry], outfile: queryServiceTarget, bundle: true, platform: 'node', target: 'node18',
+        format: 'cjs', minify: true, charset: 'utf8', legalComments: 'none', sourcemap: false,
+      });
+      files.push(queryServiceTarget);
+      packagedFiles.push({ rel: queryServiceRelative, file: queryServiceTarget });
+      const coldAggregationEntry = path.join(srcDir, 'providers', 'codearts', 'aggregation-sql.js');
+      const coldAggregationRelative = path.relative(root, coldAggregationEntry).replace(/\\/g, '/');
+      const coldAggregationTarget = path.join(outDir, ...coldAggregationRelative.split('/'));
+      require('esbuild').buildSync({
+        entryPoints: [coldAggregationEntry], outfile: coldAggregationTarget, bundle: true, platform: 'node', target: 'node18',
+        external: ['./sources', '../../core/aggregator'],
+        format: 'cjs', minify: true, charset: 'utf8', legalComments: 'none', sourcemap: false,
+      });
+      files.push(coldAggregationTarget);
+      packagedFiles.push({ rel: coldAggregationRelative, file: coldAggregationTarget });
+      for (const shared of [
+        ['src/providers/codearts/sources.js', './sources'],
+        ['src/core/aggregator.js', '../../core/aggregator'],
+      ]) {
+        const sharedEntry = path.join(root, shared[0]);
+        const sharedTarget = path.join(outDir, ...shared[0].split('/'));
+        require('esbuild').buildSync({
+          entryPoints: [sharedEntry], outfile: sharedTarget, bundle: true, platform: 'node', target: 'node18',
+          format: 'cjs', minify: true, charset: 'utf8', legalComments: 'none', sourcemap: false,
+        });
+        files.push(sharedTarget);
+        packagedFiles.push({ rel: shared[0], file: sharedTarget });
+      }
       const exportEntry = path.join(srcDir, 'providers', 'codearts', 'session-export-cli.js');
       const exportRelative = path.relative(root, exportEntry).replace(/\\/g, '/');
       const exportBundle = path.join(outDir, ...exportRelative.split('/'));

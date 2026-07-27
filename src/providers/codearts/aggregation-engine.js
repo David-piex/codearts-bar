@@ -195,6 +195,46 @@ async function getSessionSummary(payload = {}) {
   }
   return aggregateError('CODEARTS_BAR_FORCE_SQLJS=1', await getSessionSummarySqlJs(payload));
 }
+function mergeAggregatePerformances(parts = []) {
+  if (!parts.length) return null;
+  const latencyValues = [];
+  const firstContentValues = [];
+  const outputTokensPerSecValues = [];
+  let samples = 0;
+  let completed = 0;
+  let errors = 0;
+  for (const part of parts) {
+    samples += Number(part.samples || 0);
+    completed += Number(part.completed || 0);
+    errors += Number(part.errors || 0);
+    if (Array.isArray(part._latencyValues)) latencyValues.push(...part._latencyValues);
+    if (Array.isArray(part._firstContentValues)) firstContentValues.push(...part._firstContentValues);
+    if (Array.isArray(part._outputTokensPerSecValues)) outputTokensPerSecValues.push(...part._outputTokensPerSecValues);
+  }
+  const performance = {
+    samples,
+    completed,
+    errors,
+    errorRate: samples ? errors / samples : 0,
+    latency: agg.summarize(latencyValues),
+    ttft: agg.summarize([]),
+    firstContentApprox: agg.summarize(firstContentValues),
+    outputTokensPerSec: agg.summarize(outputTokensPerSecValues),
+    totalTokensPerSec: agg.summarize([]),
+  };
+  performance.complete = completed === samples;
+  performance.metricCompleteness = {
+    latency: performance.complete,
+    firstContentApprox: performance.firstContentApprox.count === samples,
+    outputTokensPerSec: performance.outputTokensPerSec.count === completed,
+    ttft: false,
+  };
+  Object.defineProperty(performance, '_latencyValues', { value: latencyValues, enumerable: false, configurable: true });
+  Object.defineProperty(performance, '_firstContentValues', { value: firstContentValues, enumerable: false, configurable: true });
+  Object.defineProperty(performance, '_outputTokensPerSecValues', { value: outputTokensPerSecValues, enumerable: false, configurable: true });
+  return performance;
+}
+
 function mergeDashboardAggregateBundle(items = [], payload = {}, errors = []) {
   const trendRange = normalizeTrendRange(payload);
   const expectedSources = sourceList(payload).map((source) => source.id);
@@ -225,16 +265,19 @@ function mergeDashboardAggregateBundle(items = [], payload = {}, errors = []) {
       return agg.cacheMetrics.withCacheHitMetrics({ ...model, sources: source ? [source] : [] });
     }).sort((a, b) => b.total - a.total)
     : mergeModelStats(items.map((x) => x.modelStats || []));
+  const performanceParts = items.map((item) => item.performance).filter(Boolean);
   const performanceRows = items.flatMap((item) => item.performanceRows || []);
-  const performance = {
-    samples: performanceRows.length,
-    completed: performanceRows.filter((row) => Number.isFinite(Number(row.latencyMs))).length,
-    errors: performanceRows.filter((row) => Number(row.errors || 0) > 0).length,
-    latency: agg.summarize(performanceRows.map((row) => row.latencyMs)),
-    ttft: agg.summarize([]),
-    firstContentApprox: agg.summarize(performanceRows.map((row) => row.firstContentMs)),
-    outputTokensPerSec: agg.summarize(performanceRows.map((row) => row.outputTokensPerSec)),
-  };
+  const performance = performanceParts.length
+    ? mergeAggregatePerformances(performanceParts)
+    : {
+      samples: performanceRows.length,
+      completed: performanceRows.filter((row) => Number.isFinite(Number(row.latencyMs))).length,
+      errors: performanceRows.filter((row) => Number(row.errors || 0) > 0).length,
+      latency: agg.summarize(performanceRows.map((row) => row.latencyMs)),
+      ttft: agg.summarize([]),
+      firstContentApprox: agg.summarize(performanceRows.map((row) => row.firstContentMs)),
+      outputTokensPerSec: agg.summarize(performanceRows.map((row) => row.outputTokensPerSec)),
+    };
   performance.errorRate = performance.samples ? performance.errors / performance.samples : 0;
   performance.complete = performance.completed === performance.samples;
   performance.metricCompleteness = {

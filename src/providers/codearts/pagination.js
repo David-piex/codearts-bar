@@ -5,9 +5,40 @@ const { safeDbError } = require('./diagnostics');
 const { openNativeDbReadonly, openSqlJsDbReadonly, nativeAll, nativeAllParams, sqlJsAll, sqlJsAllParams, closeDb } = require('./sqlite');
 const { requestRowsFromMessages, sessionsFromRows, queryPartsForMessages, querySessionsByIds, queryMessagesForSessions } = require('./collect');
 
+const ONE_SHOT_RUNTIME = typeof CODEARTS_BAR_ONE_SHOT_RUNTIME !== 'undefined' && CODEARTS_BAR_ONE_SHOT_RUNTIME;
+function runNativePageWorker(operation, payload) {
+  const moduleName = './native-' + 'worker-pool';
+  return require(moduleName).runNativeWorker(operation, payload);
+}
+
+function decodeCursor(value) {
+  if (!value) return null;
+  if (value && typeof value === 'object') {
+    const sortValue = Number(value.sortValue ?? value.time ?? value.updatedAt ?? value.createdAt);
+    return Number.isFinite(sortValue) && value.id ? { sortValue, source: String(value.source || ''), id: String(value.id) } : null;
+  }
+  try {
+    const parsed = JSON.parse(Buffer.from(String(value), 'base64url').toString('utf8'));
+    return decodeCursor(parsed);
+  } catch { return null; }
+}
+function encodeCursor(row, sortKey) {
+  if (!row) return null;
+  return Buffer.from(JSON.stringify({ sortValue: Number(row[sortKey] || 0), source: String(row.source || ''), id: String(row.id || '') }), 'utf8').toString('base64url');
+}
+function cursorWhere(where, params, source, cursor, sortColumn) {
+  if (!cursor) return { where, params };
+  const sourceOrder = String(source.id || '').localeCompare(cursor.source);
+  if (sourceOrder < 0) return { where: `(${where}) and ${sortColumn} < ?`, params: [...params, cursor.sortValue] };
+  if (sourceOrder > 0) return { where: `(${where}) and ${sortColumn} <= ?`, params: [...params, cursor.sortValue] };
+  return {
+    where: `(${where}) and (${sortColumn} < ? or (${sortColumn} = ? and id < ?))`,
+    params: [...params, cursor.sortValue, cursor.sortValue, cursor.id],
+  };
+}
 function pageResult(items, total, payload, defaultLimit, extra = {}) {
   const { limit, offset } = pageBounds(payload, defaultLimit);
-  return { ok: true, limit, offset, total, hasMore: offset + items.length < total, items, ...extra };
+  return { ok: true, limit, offset: decodeCursor(payload.cursor) ? 0 : offset, total, hasMore: offset + items.length < total, items, ...extra };
 }
 function paginationBatchSize(limit) {
   return Math.max(80, Math.min(500, Number(limit || 100) * 2));
@@ -49,8 +80,9 @@ function closeContexts(contexts = []) {
 }
 function makeRequestState(ctx, payload, queryAll, batchSize) {
   const { source, db, tables } = ctx;
-  const { where, params } = assistantWhere(payload, { hasPart: tables.includes('part'), excludePlaceholders: true, outerAlias: 'message' });
-  const total = Number(queryAll(db, `select count(*) as count from message where ${where}`, params)[0]?.count || 0);
+  const base = assistantWhere(payload, { hasPart: tables.includes('part'), excludePlaceholders: true, outerAlias: 'message' });
+  const total = Number(queryAll(db, `select count(*) as count from message where ${base.where}`, base.params)[0]?.count || 0);
+  const { where, params } = cursorWhere(base.where, base.params, source, decodeCursor(payload.cursor), 'time_created');
   return {
     payload,
     total,
@@ -70,8 +102,9 @@ function makeRequestState(ctx, payload, queryAll, batchSize) {
 }
 function makeSessionState(ctx, payload, queryAll, batchSize) {
   const { source, db, tables, sessionColumns } = ctx;
-  const { where, params } = sessionWhere(payload, { sessionColumns });
-  const total = Number(queryAll(db, `select count(*) as count from session where ${where}`, params)[0]?.count || 0);
+  const base = sessionWhere(payload, { sessionColumns });
+  const total = Number(queryAll(db, `select count(*) as count from session where ${base.where}`, base.params)[0]?.count || 0);
+  const { where, params } = cursorWhere(base.where, base.params, source, decodeCursor(payload.cursor), 'time_updated');
   return {
     payload,
     total,
@@ -183,29 +216,41 @@ function hydrateSessionPageItems(rawItems, states, queryAll) {
 }
 function directRequestsPage(ctx, payload, queryAll, limit, offset) {
   const { source, db, tables } = ctx;
-  const { where, params } = assistantWhere(payload, { hasPart: tables.includes('part'), excludePlaceholders: true, outerAlias: 'message' });
-  const total = Number(queryAll(db, `select count(*) as count from message where ${where}`, params)[0]?.count || 0);
-  const rawMessages = queryAll(db, `select id, session_id, time_created, time_updated, data from message where ${where} order by time_created desc, id desc limit ? offset ?`, [...params, limit, offset]);
+  const base = assistantWhere(payload, { hasPart: tables.includes('part'), excludePlaceholders: true, outerAlias: 'message' });
+  const total = Number(queryAll(db, `select count(*) as count from message where ${base.where}`, base.params)[0]?.count || 0);
+  const cursor = decodeCursor(payload.cursor);
+  const { where, params } = cursorWhere(base.where, base.params, source, cursor, 'time_created');
+  const rawMessages = queryAll(db, `select id, session_id, time_created, time_updated, data from message where ${where} order by time_created desc, id desc limit ? offset ?`, [...params, cursor ? limit + 1 : limit, cursor ? 0 : offset]);
   const messages = tagRows(rawMessages, source);
   const sessions = querySessionsByIds(queryAll, db, source, messages.map((m) => m.session_id));
   const parts = tables.includes('part') ? queryPartsForMessages(queryAll, db, source, messages.map((m) => m.id)) : [];
-  return { total, items: requestRowsFromMessages(messages, sessions, parts) };
+  const items = requestRowsFromMessages(messages, sessions, parts);
+  return { total, items: cursor ? items.slice(0, limit) : items, cursorHasMore: cursor ? items.length > limit : null };
 }
 function directSessionsPage(ctx, payload, queryAll, limit, offset) {
   const { source, db, tables, sessionColumns } = ctx;
-  const { where, params } = sessionWhere(payload, { sessionColumns });
-  const total = Number(queryAll(db, `select count(*) as count from session where ${where}`, params)[0]?.count || 0);
-  const rawSessions = queryAll(db, `select id, title, directory, version, time_created, time_updated, time_archived from session where ${where} order by time_updated desc, id desc limit ? offset ?`, [...params, limit, offset]);
+  const base = sessionWhere(payload, { sessionColumns });
+  const total = Number(queryAll(db, `select count(*) as count from session where ${base.where}`, base.params)[0]?.count || 0);
+  const cursor = decodeCursor(payload.cursor);
+  const { where, params } = cursorWhere(base.where, base.params, source, cursor, 'time_updated');
+  const rawSessions = queryAll(db, `select id, title, directory, version, time_created, time_updated, time_archived from session where ${where} order by time_updated desc, id desc limit ? offset ?`, [...params, cursor ? limit + 1 : limit, cursor ? 0 : offset]);
   const sessions = tagRows(rawSessions, source);
   const messages = queryMessagesForSessions(queryAll, db, source, sessions.map((s) => s.id), payload);
   const parts = tables.includes('part') ? queryPartsForMessages(queryAll, db, source, messages.map((m) => m.id)) : [];
-  return { total, items: sessionsFromRows(sessions, messages, parts, Date.now()) };
+  const items = sessionsFromRows(sessions, messages, parts, Date.now());
+  return { total, items: cursor ? items.slice(0, limit) : items, cursorHasMore: cursor ? items.length > limit : null };
 }
 function pageFromContexts(contexts, payload, queryAll, defaultLimit, directPage, makeState, sortKey, hydratePageItems) {
   const { limit, offset } = pageBounds(payload, defaultLimit);
+  const cursor = decodeCursor(payload.cursor);
   if (contexts.length <= 1) {
     const page = contexts[0] ? directPage(contexts[0], payload, queryAll, limit, offset) : { total: 0, items: [] };
-    return pageResult(page.items, page.total, payload, defaultLimit, { strategy: 'single-source' });
+    const last = page.items.at(-1);
+    return pageResult(page.items, page.total, payload, defaultLimit, {
+      strategy: cursor ? 'single-source-keyset' : 'single-source',
+      hasMore: cursor ? Boolean(page.cursorHasMore) : offset + page.items.length < page.total,
+      nextCursor: last ? encodeCursor(last, sortKey === 'time_created' ? 'time' : 'updatedAt') : null,
+    });
   }
   const batchSize = paginationBatchSize(limit);
   const states = contexts.map((ctx, index) => {
@@ -215,10 +260,13 @@ function pageFromContexts(contexts, payload, queryAll, defaultLimit, directPage,
     return state;
   });
   const total = states.reduce((sum, state) => sum + state.total, 0);
-  const { items: rawItems, scanned } = kWayMergePage(states, limit, offset, sortKey);
+  const { items: mergedItems, scanned } = kWayMergePage(states, cursor ? limit + 1 : limit, cursor ? 0 : offset, sortKey);
+  const hasMore = cursor ? mergedItems.length > limit : offset + mergedItems.length < total;
+  const rawItems = cursor ? mergedItems.slice(0, limit) : mergedItems;
   const hydrated = hydratePageItems(rawItems, states, queryAll);
   const fetched = states.reduce((sum, state) => sum + state.fetched, 0);
-  return pageResult(hydrated.items, total, payload, defaultLimit, { strategy: 'k-way-merge', batchSize, scanned, fetched, hydrated: hydrated.hydrated, hydrateGroups: hydrated.hydrateGroups, hydrationMs: hydrated.hydrationMs });
+  const last = hydrated.items.at(-1);
+  return pageResult(hydrated.items, total, payload, defaultLimit, { strategy: cursor ? 'k-way-keyset' : 'k-way-merge', hasMore, nextCursor: last ? encodeCursor(last, sortKey === 'time_created' ? 'time' : 'updatedAt') : null, batchSize, scanned, fetched, hydrated: hydrated.hydrated, hydrateGroups: hydrated.hydrateGroups, hydrationMs: hydrated.hydrationMs });
 }
 function getRequestsPageNative(payload = {}) {
   const contexts = sourceContexts(payload, openNativeDbReadonly, (db) => nativeAll(db, "select name from sqlite_master where type='table'"), nativeAllParams);
@@ -232,7 +280,10 @@ async function getRequestsPageSqlJs(payload = {}) {
 }
 async function getRequestsPage(payload = {}) {
   if (process.env.CODEARTS_BAR_FORCE_SQLJS !== '1') {
-    try { return getRequestsPageNative(payload); }
+    try {
+      if (ONE_SHOT_RUNTIME) return getRequestsPageNative(payload);
+      return await runNativePageWorker('requestsPage', payload);
+    }
     catch (error) {
       const page = await getRequestsPageSqlJs(payload);
       page.nativeError = safeDbError(error);
@@ -250,7 +301,17 @@ function sessionRequestsPayload(payload = {}) {
 }
 function getSessionRequestsPageNative(payload = {}) { return getRequestsPageNative(sessionRequestsPayload(payload)); }
 async function getSessionRequestsPageSqlJs(payload = {}) { return getRequestsPageSqlJs(sessionRequestsPayload(payload)); }
-async function getSessionRequestsPage(payload = {}) { return getRequestsPage(sessionRequestsPayload(payload)); }
+async function getSessionRequestsPage(payload = {}) {
+  const normalized = sessionRequestsPayload(payload);
+  if (process.env.CODEARTS_BAR_FORCE_SQLJS === '1' || ONE_SHOT_RUNTIME) return getRequestsPage(normalized);
+  try {
+    return await runNativePageWorker('sessionRequestsPage', normalized);
+  } catch (error) {
+    const page = await getRequestsPageSqlJs(normalized);
+    page.nativeError = safeDbError(error);
+    return page;
+  }
+}
 function getSessionsPageNative(payload = {}) {
   const contexts = sourceContexts(payload, openNativeDbReadonly, (db) => nativeAll(db, "select name from sqlite_master where type='table'"), nativeAllParams);
   try { return pageFromContexts(contexts, payload, nativeAllParams, 80, directSessionsPage, makeSessionState, 'time_updated', hydrateSessionPageItems); }
@@ -263,7 +324,10 @@ async function getSessionsPageSqlJs(payload = {}) {
 }
 async function getSessionsPage(payload = {}) {
   if (process.env.CODEARTS_BAR_FORCE_SQLJS !== '1') {
-    try { return getSessionsPageNative(payload); }
+    try {
+      if (ONE_SHOT_RUNTIME) return getSessionsPageNative(payload);
+      return await runNativePageWorker('sessionsPage', payload);
+    }
     catch (error) {
       const page = await getSessionsPageSqlJs(payload);
       page.nativeError = safeDbError(error);
@@ -275,4 +339,4 @@ async function getSessionsPage(payload = {}) {
   return page;
 }
 
-module.exports = { getRequestsPageNative, getRequestsPageSqlJs, getRequestsPage, getSessionRequestsPageNative, getSessionRequestsPageSqlJs, getSessionRequestsPage, getSessionsPageNative, getSessionsPageSqlJs, getSessionsPage };
+module.exports = { decodeCursor, encodeCursor, getRequestsPageNative, getRequestsPageSqlJs, getRequestsPage, getSessionRequestsPageNative, getSessionRequestsPageSqlJs, getSessionRequestsPage, getSessionsPageNative, getSessionsPageSqlJs, getSessionsPage };

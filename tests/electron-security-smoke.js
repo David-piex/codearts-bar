@@ -34,6 +34,7 @@ assert.doesNotMatch(settingsRenderer, /require\(['"]electron['"]\)/);
 assert.match(dashboardEntry, /window\.codeartsApi/);
 assert.match(settingsRenderer, /window\.codeartsApi/);
 assert.match(mainSource, /closeSqlJsWorker/);
+assert.match(mainSource, /closeNativeWorker/);
 assert.match(mainSource, /disableHardwareAcceleration\(\)/);
 assert.match(mainSource, /crashReporter: electronCrashReporter/);
 assert.match(mainSource, /clearDisposableRendererCaches/);

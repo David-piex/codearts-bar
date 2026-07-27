@@ -8,6 +8,7 @@ const fs = require('fs');
 const path = require('path');
 const cacheMetrics = require('./core/cacheMetrics');
 const { redactSensitiveText } = require('./core/sensitive-text');
+const { createQueryService } = require('./query-service');
 const {
   safeIdeText,
   usageFromBuckets,
@@ -18,6 +19,7 @@ const {
 
 const HOUR_MS = 3600000;
 const DAY_MS = 24 * HOUR_MS;
+const queryService = createQueryService({ provider: localProvider });
 
 function extensionRange(options = {}, timestamp = Date.now()) {
   const preset = String(options.rangePreset || options.range?.preset || 'week');
@@ -108,7 +110,7 @@ function applyDerived(snapshot, config) {
 async function getExtensionSummary(options = {}) {
   const config = extensionConfig(options);
   const timestamp = Date.now();
-  const summary = await localProvider.getSummary({ ...config, timestamp });
+  const summary = await queryService.getSummary({ ...config, timestamp });
   if (!summary?.ok || !summary.usage) throw new Error(summary?.error || '无法读取 CodeArts 使用摘要');
   return applyDerived({
     ok: true,
@@ -157,14 +159,14 @@ async function getExtensionDetails(options = {}) {
   const rangePayload = { start: selectedRange.start, endExclusive: selectedRange.endExclusive };
   const filterScope = { ...config, source: 'all', model: 'all', project: 'all', timestamp };
   const [currentSummary, aggregates, sessionsPage, requestsPage, databaseHealth, filterOptions] = await Promise.all([
-    localProvider.getSummary(currentUsageOptions(config, timestamp)),
-    localProvider.getDashboardAggregates({ ...config, ...scope, timestamp, range: rangePayload, bucketMs: selectedRange.bucketMs, disableUsageRollup: true }),
-    localProvider.getSessionsPage({ ...config, limit: 12, offset: 0, ...scope, status: 'active', range: rangePayload }),
-    localProvider.getRequestsPage({ ...config, ...scope, limit: 40, offset: 0, range: rangePayload }),
-    localProvider.getDatabaseHealth({ ...config, source: scope.source, timestamp }),
+    queryService.getSummary(currentUsageOptions(config, timestamp)),
+    queryService.getAggregates({ ...config, ...scope, timestamp, range: rangePayload, bucketMs: selectedRange.bucketMs, disableUsageRollup: true }),
+    queryService.getSessionsPage({ ...config, limit: 12, offset: 0, ...scope, status: 'active', range: rangePayload }),
+    queryService.getRequestsPage({ ...config, ...scope, limit: 40, offset: 0, range: rangePayload }),
+    queryService.getDatabaseHealth({ ...config, source: scope.source, timestamp }),
     Promise.all([
-      localProvider.getModelStats(filterScope),
-      localProvider.getSessionSummary(filterScope),
+      queryService.getModels(filterScope),
+      queryService.getSessionSummary(filterScope),
     ]),
   ]);
   const [filterModels, filterProjects] = filterOptions;

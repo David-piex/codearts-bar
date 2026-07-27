@@ -221,6 +221,7 @@ async function runSize(messageCount) {
     assert.equal(built.value.usageRollup.rowCount, messageCount, "sidecar rollup should cover all assistant messages");
     aggregateCache.clearAggregateCache();
     usageRollup.resetUsageRollupStats();
+    await aggregation.clearNativeWorkerCaches();
     await aggregation.clearSqlJsWorkerCaches();
     const nativeHot = await runRuntime("native", dbPath, payload, { expectRollup: true });
     aggregateCache.clearAggregateCache();

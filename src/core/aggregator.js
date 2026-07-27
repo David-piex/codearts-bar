@@ -44,17 +44,98 @@ function partsForMessage(row, partMap = new Map()) {
   const key = messagePartKey(row.source, row.id);
   return partMap.get(key) || partMap.get(row.id) || [];
 }
-function partTokensForMessage(row, partMap = new Map()) {
-  const parts = partsForMessage(row, partMap);
-  const total = zeroToken();
-  let count = 0;
-  for (const part of parts) {
-    const data = parseJsonSafe(part.data, {});
-    if (data.type !== 'step-finish' || (!data.tokens && !data.usage)) continue;
-    addToken(total, pickToken(data));
-    count += 1;
+const messageAnalysisCaches = new WeakMap();
+function analyzeMessage(row, partMap = new Map()) {
+  if (!row || typeof row !== 'object') {
+    return {
+      data: {}, token: zeroToken(), meaningful: false, placeholder: false,
+      partToken: null, hasError: false, hasStepFinish: false,
+      model: 'unknown', provider: 'unknown', performance: null, error: null,
+    };
   }
-  return count ? total : null;
+  let cache = messageAnalysisCaches.get(partMap);
+  if (!cache) { cache = new WeakMap(); messageAnalysisCaches.set(partMap, cache); }
+  const cached = cache.get(row);
+  if (cached) return cached;
+
+  const data = parseJsonSafe(row.data, {});
+  const parts = partsForMessage(row, partMap);
+  const partToken = zeroToken();
+  let partTokenCount = 0;
+  let hasStepFinish = false;
+  let firstEventMs = null;
+  let firstContentMs = null;
+  for (const part of parts) {
+    const partData = parseJsonSafe(part.data, {});
+    const type = partData.type || '';
+    if (type === 'step-finish') {
+      hasStepFinish = true;
+      if (partData.tokens || partData.usage) {
+        addToken(partToken, pickToken(partData));
+        partTokenCount += 1;
+      }
+    }
+    if (part.time_created >= row.time_created) {
+      const latency = part.time_created - row.time_created;
+      if (firstEventMs == null) firstEventMs = latency;
+      if (!['step-start', 'step-finish'].includes(type) && firstContentMs == null) firstContentMs = latency;
+    }
+  }
+  const token = partTokenCount ? partToken : pickToken(data);
+  const hasError = hasMessageError(data);
+  const completed = hasCompletedTime(data);
+  const placeholder = data.role === 'assistant'
+    && ['total', 'input', 'output', 'reasoning', 'cacheRead', 'cacheWrite']
+      .every((key) => !(Number(token?.[key]) > 0))
+    && !hasError && !completed && !hasStepFinish;
+  const meaningful = data.role === 'assistant' && !placeholder;
+  const model = data.modelID || data.model?.modelID || 'unknown';
+  const provider = data.providerID || data.model?.providerID || 'unknown';
+  let performance = null;
+  if (meaningful) {
+    const time = data.time || {};
+    const created = Number(time.created || row.time_created || 0);
+    const completedAt = Number(time.completed || row.time_updated || 0);
+    const latencyMs = created && completedAt && completedAt >= created ? completedAt - created : null;
+    performance = {
+      id: row.id,
+      sessionId: row.session_id,
+      model,
+      provider,
+      created,
+      completed: completedAt,
+      latencyMs,
+      firstEventMs,
+      firstContentMs,
+      ttftMs: null,
+      ttftEvent: null,
+      outputTokensPerSec: latencyMs && latencyMs > 0 ? token.output / (latencyMs / 1000) : null,
+      totalTokensPerSec: latencyMs && latencyMs > 0 ? token.total / (latencyMs / 1000) : null,
+      finish: data.finish || null,
+      error: Boolean(data.error),
+      tokens: token,
+    };
+  }
+  const result = {
+    data,
+    token,
+    partToken: partTokenCount ? partToken : null,
+    meaningful,
+    placeholder,
+    hasError,
+    hasStepFinish,
+    firstEventMs,
+    firstContentMs,
+    model,
+    provider,
+    performance,
+    error: extractError(data),
+  };
+  cache.set(row, result);
+  return result;
+}
+function partTokensForMessage(row, partMap = new Map()) {
+  return analyzeMessage(row, partMap).partToken;
 }
 function hasMessageError(data = {}) {
   const value = data?.error;
@@ -69,32 +150,25 @@ function hasCompletedTime(data = {}) {
   return Number.isFinite(value) && value > 0;
 }
 function hasStepFinishForMessage(row, partMap = new Map()) {
-  return partsForMessage(row, partMap).some((part) => parseJsonSafe(part.data, {})?.type === 'step-finish');
+  return analyzeMessage(row, partMap).hasStepFinish;
 }
 function isPlaceholderAssistant(row, partMap = new Map()) {
-  const data = parseJsonSafe(row?.data, {});
-  if (data.role !== 'assistant') return false;
-  const token = tokenForMessage(row, partMap);
-  const zeroTokens = ['total', 'input', 'output', 'reasoning', 'cacheRead', 'cacheWrite']
-    .every((key) => !(Number(token?.[key]) > 0));
-  return zeroTokens && !hasMessageError(data) && !hasCompletedTime(data) && !hasStepFinishForMessage(row, partMap);
+  return analyzeMessage(row, partMap).placeholder;
 }
 function isMeaningfulAssistant(row, partMap = new Map()) {
-  const data = parseJsonSafe(row?.data, {});
-  return data.role === 'assistant' && !isPlaceholderAssistant(row, partMap);
+  return analyzeMessage(row, partMap).meaningful;
 }
 function tokenForMessage(row, partMap = new Map()) {
-  return partTokensForMessage(row, partMap) || pickToken(parseJsonSafe(row.data, {}));
+  return analyzeMessage(row, partMap).token;
 }
 function sumTokens(rows, partMap = new Map()) {
   const acc = { total: 0, input: 0, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0, messages: 0, errors: 0 };
   for (const row of rows) {
-    const data = parseJsonSafe(row.data, {});
-    if (!isMeaningfulAssistant(row, partMap)) continue;
-    const token = tokenForMessage(row, partMap);
-    addToken(acc, token);
+    const analysis = analyzeMessage(row, partMap);
+    if (!analysis.meaningful) continue;
+    addToken(acc, analysis.token);
     acc.messages += 1;
-    if (hasMessageError(data)) acc.errors += 1;
+    if (analysis.hasError) acc.errors += 1;
   }
   return cacheMetrics.withCacheHitMetrics(acc);
 }
@@ -139,7 +213,8 @@ function buildSessionUsageMap(messages, partMap = new Map(), since = 0) {
   const map = new Map();
   for (const row of messages || []) {
     if (row.time_created < since) continue;
-    const data = parseJsonSafe(row.data, {});
+    const analysis = analyzeMessage(row, partMap);
+    const data = analysis.data;
     const key = rowSessionKey(row);
     const prev = map.get(key) || {
       total: 0, input: 0, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0,
@@ -151,18 +226,17 @@ function buildSessionUsageMap(messages, partMap = new Map(), since = 0) {
     if (data.role === 'user') {
       prev.userTurns += 1;
     } else if (data.role === 'assistant') {
-      if (!isMeaningfulAssistant(row, partMap)) { map.set(key, prev); continue; }
-      const token = tokenForMessage(row, partMap);
-      addToken(prev, token);
+      if (!analysis.meaningful) { map.set(key, prev); continue; }
+      addToken(prev, analysis.token);
       prev.modelCalls += 1;
-      if (hasMessageError(data)) prev.errors += 1;
-      const model = data.modelID || data.model?.modelID || 'unknown';
-      const provider = data.providerID || data.model?.providerID || 'unknown';
+      if (analysis.hasError) prev.errors += 1;
+      const model = analysis.model;
+      const provider = analysis.provider;
       const modelKey = `${provider} / ${model}`;
       const modelPrev = prev.byModel.get(modelKey) || { provider, model, total: 0, input: 0, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0, calls: 0, errors: 0 };
-      addToken(modelPrev, token);
+      addToken(modelPrev, analysis.token);
       modelPrev.calls += 1;
-      if (hasMessageError(data)) modelPrev.errors += 1;
+      if (analysis.hasError) modelPrev.errors += 1;
       prev.byModel.set(modelKey, modelPrev);
     }
     map.set(key, prev);
@@ -199,53 +273,66 @@ function toolStats(parts, since = 0) {
 }
 function buildTtftMap(messages, ttftEvents, partMap = new Map()) {
   const map = new Map();
-  const assistants = messages.map((row) => ({ row, data: parseJsonSafe(row.data, {}) })).filter((x) => isMeaningfulAssistant(x.row, partMap));
+  const assistantsBySession = new Map();
+  for (let index = 0; index < (messages || []).length; index += 1) {
+    const row = messages[index];
+    const analysis = analyzeMessage(row, partMap);
+    if (!analysis.meaningful) continue;
+    const created = Number(analysis.data.time?.created || row.time_created || 0);
+    const list = assistantsBySession.get(row.session_id) || [];
+    list.push({ row, created, index });
+    assistantsBySession.set(row.session_id, list);
+  }
+  for (const list of assistantsBySession.values()) list.sort((a, b) => a.created - b.created || a.index - b.index);
+  const nearestAssistant = (list, target) => {
+    let low = 0;
+    let high = list.length;
+    while (low < high) {
+      const middle = low + Math.floor((high - low) / 2);
+      if (list[middle].created < target) low = middle + 1;
+      else high = middle;
+    }
+    const candidates = [list[low - 1], list[low]].filter(Boolean);
+    return candidates.reduce((best, candidate) => {
+      const distance = Math.abs(target - candidate.created);
+      if (distance >= 10 * 60 * 1000) return best;
+      if (!best || distance < best.distance || (distance === best.distance && candidate.index < best.item.index)) {
+        return { item: candidate, distance };
+      }
+      return best;
+    }, null)?.item || null;
+  };
   for (const e of ttftEvents) {
-    const candidates = assistants.filter((x) => x.row.session_id === e.sessionId && Math.abs((e.firstTokenAt || 0) - (x.data.time?.created || x.row.time_created || 0)) < 10 * 60 * 1000);
-    candidates.sort((a, b) => Math.abs((e.firstTokenAt || 0) - (a.data.time?.created || a.row.time_created || 0)) - Math.abs((e.firstTokenAt || 0) - (b.data.time?.created || b.row.time_created || 0)));
-    if (candidates[0] && !map.has(candidates[0].row.id)) map.set(candidates[0].row.id, e);
+    const target = Number(e.firstTokenAt || 0);
+    const candidate = Number.isFinite(target) ? nearestAssistant(assistantsBySession.get(e.sessionId) || [], target) : null;
+    if (candidate && !map.has(candidate.row.id)) map.set(candidate.row.id, e);
   }
   return map;
 }
 function firstPartLatency(row, partMap, mode = 'any') {
-  const arr = partsForMessage(row, partMap);
-  for (const part of arr) {
-    const data = parseJsonSafe(part.data, {});
-    const type = data.type || '';
-    if (mode === 'content' && ['step-start', 'step-finish'].includes(type)) continue;
-    if (part.time_created >= row.time_created) return part.time_created - row.time_created;
-  }
-  return null;
+  const analysis = analyzeMessage(row, partMap);
+  return mode === 'content' ? analysis.firstContentMs : analysis.firstEventMs;
 }
 function messagePerf(row, partMap, ttftMap = new Map()) {
-  const data = parseJsonSafe(row.data, {});
-  if (!isMeaningfulAssistant(row, partMap)) return null;
-  const time = data.time || {};
-  const created = Number(time.created || row.time_created || 0);
-  const completed = Number(time.completed || row.time_updated || 0);
-  const latencyMs = created && completed && completed >= created ? completed - created : null;
-  const tokens = tokenForMessage(row, partMap);
-  const outputTokensPerSec = latencyMs && latencyMs > 0 ? tokens.output / (latencyMs / 1000) : null;
-  const totalTokensPerSec = latencyMs && latencyMs > 0 ? tokens.total / (latencyMs / 1000) : null;
+  const analysis = analyzeMessage(row, partMap);
+  if (!analysis.meaningful) return null;
   const firstEventMs = firstPartLatency(row, partMap, 'any');
   const firstContentMs = firstPartLatency(row, partMap, 'content');
   const ttftEvent = ttftMap.get(row.id) || null;
-  const ttftMs = ttftEvent ? ttftEvent.ttftMs : null;
-  return { id: row.id, sessionId: row.session_id, model: data.modelID || data.model?.modelID || 'unknown', provider: data.providerID || data.model?.providerID || 'unknown', created, completed, latencyMs, firstEventMs, firstContentMs, ttftMs, ttftEvent, outputTokensPerSec, totalTokensPerSec, finish: data.finish || null, error: Boolean(data.error), tokens };
+  return { ...analysis.performance, firstEventMs, firstContentMs, ttftMs: ttftEvent ? ttftEvent.ttftMs : null, ttftEvent };
 }
 function modelStats(rows, since = 0, partMap = new Map(), ttftMap = new Map()) {
   const map = new Map();
   for (const row of rows) {
     if (row.time_created < since) continue;
-    const data = parseJsonSafe(row.data, {});
-    if (!isMeaningfulAssistant(row, partMap)) continue;
-    const model = data.modelID || data.model?.modelID || 'unknown';
-    const provider = data.providerID || data.model?.providerID || 'unknown';
+    const analysis = analyzeMessage(row, partMap);
+    if (!analysis.meaningful) continue;
+    const model = analysis.model;
+    const provider = analysis.provider;
     const key = `${provider} / ${model}`;
     const prev = map.get(key) || { provider, model, total: 0, input: 0, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0, messages: 0, errors: 0, _latencies: [], _firstContent: [], _outTps: [], _totalTps: [], _ttft: [] };
-    const t = tokenForMessage(row, partMap);
-    addToken(prev, t); prev.messages += 1;
-    if (hasMessageError(data)) prev.errors += 1;
+    addToken(prev, analysis.token); prev.messages += 1;
+    if (analysis.hasError) prev.errors += 1;
     const perf = messagePerf(row, partMap, ttftMap);
     if (perf) {
       if (Number.isFinite(perf.latencyMs)) prev._latencies.push(perf.latencyMs);
@@ -350,13 +437,12 @@ function trendStats(messages, partMap, since, bucketMs, bucketOffsetMs = 0) {
   const buckets = new Map();
   for (const row of messages) {
     if (row.time_created < since) continue;
-    const data = parseJsonSafe(row.data, {});
-    if (!isMeaningfulAssistant(row, partMap)) continue;
+    const analysis = analyzeMessage(row, partMap);
+    if (!analysis.meaningful) continue;
     const key = bucketStart(row.time_created, bucketMs, bucketOffsetMs);
     const b = buckets.get(key) || { start: key, end: key + bucketMs, total: 0, input: 0, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0, messages: 0, errors: 0, latencies: [] };
-    const t = tokenForMessage(row, partMap);
-    addToken(b, t); b.messages += 1;
-    if (hasMessageError(data)) b.errors += 1;
+    addToken(b, analysis.token); b.messages += 1;
+    if (analysis.hasError) b.errors += 1;
     const perf = messagePerf(row, partMap);
     if (perf && Number.isFinite(perf.latencyMs)) b.latencies.push(perf.latencyMs);
     buckets.set(key, b);
@@ -373,4 +459,4 @@ function buildQueueTrends(events, timestamp) {
   const day = 24 * hour;
   return { hourly24h: queueTrendStats(events, timestamp - 24 * hour, hour), daily14d: queueTrendStats(events, timestamp - 14 * day, day) };
 }
-module.exports = { parseJsonSafe, pickToken, partTokensForMessage, tokenForMessage, isMeaningfulAssistant, sumTokens, percentile, percentileSorted, summarize, buildPartMap, buildSessionUsageMap, toolStats, buildTtftMap, firstPartLatency, messagePerf, modelStats, performanceStats, queueStats, extractError, latestErrors, inferBalance, queueTrendStats, trendStats, buildTrends, buildQueueTrends, cacheMetrics };
+module.exports = { parseJsonSafe, pickToken, analyzeMessage, partTokensForMessage, tokenForMessage, isMeaningfulAssistant, sumTokens, percentile, percentileSorted, summarize, buildPartMap, buildSessionUsageMap, toolStats, buildTtftMap, firstPartLatency, messagePerf, modelStats, performanceStats, queueStats, extractError, latestErrors, inferBalance, queueTrendStats, trendStats, buildTrends, buildQueueTrends, cacheMetrics };

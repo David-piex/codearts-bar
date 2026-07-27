@@ -10,44 +10,13 @@ const {
   usageColumns,
   usageSelect,
   usageFromRow,
+  usageFromAggregateRow,
   rowUsage,
 } = require('./aggregation-sql-expressions');
 
-function latencyValuesByKey(rows = [], keyOf) {
-  const values = new Map();
-  for (const row of rows || []) {
-    if (row.latency == null || row.latency === '') continue;
-    const value = Number(row.latency);
-    if (!Number.isFinite(value)) continue;
-    const key = keyOf(row);
-    const list = values.get(key) || [];
-    list.push(value);
-    values.set(key, list);
-  }
-  return values;
-}
-
-function percentilesForValues(values = new Map()) {
-  return new Map([...values.entries()].map(([key, list]) => [key, agg.percentile(list, 95)]));
-}
-
-function latencyRowsForSource({ db, tables, queryAll, where, params, keySql }) {
-  const sql = `${assistantTokenCtes(tables, where, { materialized: true, excludePlaceholders: true })}
-    select ${keySql} as key,
-      case when message_completed >= message_created and message_created > 0 then message_completed - message_created else null end as latency
-    from assistant_tokens`;
-  return queryAll(db, sql, params);
-}
-
-function latencyRowsForBundle({ db, tables, queryAll, where, params, bucketExpression }) {
-  const sql = `${assistantTokenCtes(tables, where, { materialized: true, excludePlaceholders: true })}
-    select provider,
-      model,
-      time_created as timeCreated,
-      ${bucketExpression} as bucket,
-      case when message_completed >= message_created and message_created > 0 then message_completed - message_created else null end as latency
-    from assistant_tokens`;
-  return queryAll(db, sql, params);
+function latencyValues(value) {
+  if (value == null || value === '') return [];
+  return String(value).split(',').map(Number).filter(Number.isFinite);
 }
 
 function summaryForSourceSql({ source, db, tables, queryAll, payload, windows }) {
@@ -96,28 +65,30 @@ function trendForSourceSql({ db, tables, queryAll, payload, trendRange }) {
       count(*) as messages,
       sum(error) as errors,
       avg(latency) as latencyAvg,
-      null as latencyP95
+      group_concat(latency) as latencyValues
     from bucketed
     group by bucket
     order by bucket asc`;
-  const latencyValues = latencyValuesByKey(latencyRowsForSource({ db, tables, queryAll, where, params, keySql: bucketExpression }), (row) => Number(row.key));
-  const p95 = percentilesForValues(latencyValues);
-  return queryAll(db, sql, params).map((row) => agg.cacheMetrics.withCacheHitMetrics({
-    start: sqlNumber(row.start),
-    end: sqlNumber(row.end),
-    total: sqlNumber(row.total),
-    input: sqlNumber(row.input),
-    output: sqlNumber(row.output),
-    reasoning: sqlNumber(row.reasoning),
-    cacheRead: sqlNumber(row.cacheRead),
-    cacheWrite: sqlNumber(row.cacheWrite),
-    messages: sqlNumber(row.messages),
-    errors: sqlNumber(row.errors),
-    latencyAvg: row.latencyAvg == null ? null : Number(row.latencyAvg),
-    latencyP95: p95.get(sqlNumber(row.start)) ?? null,
-    _latencyValues: latencyValues.get(sqlNumber(row.start)) || [],
-    label: new Date(sqlNumber(row.start)).toLocaleString('zh-CN', { hour12: false }),
-  }));
+  return queryAll(db, sql, params).map((row) => {
+    const values = latencyValues(row.latencyValues);
+    const start = sqlNumber(row.start);
+    return agg.cacheMetrics.withCacheHitMetrics({
+      start,
+      end: sqlNumber(row.end),
+      total: sqlNumber(row.total),
+      input: sqlNumber(row.input),
+      output: sqlNumber(row.output),
+      reasoning: sqlNumber(row.reasoning),
+      cacheRead: sqlNumber(row.cacheRead),
+      cacheWrite: sqlNumber(row.cacheWrite),
+      messages: sqlNumber(row.messages),
+      errors: sqlNumber(row.errors),
+      latencyAvg: row.latencyAvg == null ? null : Number(row.latencyAvg),
+      latencyP95: agg.percentile(values, 95),
+      _latencyValues: values,
+      label: new Date(start).toLocaleString('zh-CN', { hour12: false }),
+    });
+  });
 }
 
 function sourceStatForSourceSql({ source, db, tables, queryAll, payload }) {
@@ -163,22 +134,22 @@ function modelStatsForSourceSql({ source, db, tables, queryAll, payload }) {
       count(latency) as latencyCount,
       min(latency) as latencyMin,
       avg(latency) as latencyAvg,
-      max(latency) as latencyMax
+      max(latency) as latencyMax,
+      group_concat(latency) as latencyValues
     from model_rows
     group by provider, model
     order by total desc`;
-  const latencyValues = latencyValuesByKey(latencyRowsForSource({ db, tables, queryAll, where, params, keySql: "provider || char(0) || model" }), (row) => String(row.key || ''));
-  const p95 = percentilesForValues(latencyValues);
   return queryAll(db, sql, params).map((row) => {
     const provider = row.provider || 'unknown';
     const model = row.model || 'unknown';
+    const values = latencyValues(row.latencyValues);
     const latency = {
       count: sqlNumber(row.latencyCount),
       min: row.latencyMin == null ? null : Number(row.latencyMin),
       avg: row.latencyAvg == null ? null : Number(row.latencyAvg),
       p50: null,
       p90: null,
-      p95: p95.get(`${provider}\u0000${model}`) ?? null,
+      p95: agg.percentile(values, 95),
       p99: null,
       max: row.latencyMax == null ? null : Number(row.latencyMax),
     };
@@ -189,7 +160,7 @@ function modelStatsForSourceSql({ source, db, tables, queryAll, payload }) {
       ...rowUsage(row),
       source: source.id,
       sourceLabel: source.label,
-      _latencyValues: latencyValues.get(`${provider}\u0000${model}`) || [],
+      _latencyValues: values,
       performance: {
         latency,
         ttft: agg.summarize([]),
@@ -262,247 +233,142 @@ function sessionRowsForSourceSql({ db, queryAll, sessionColumns }) {
 }
 
 function aggregateBundleRowsForSourceSql({ db, tables, queryAll, payload, windows, trendRange }) {
+  const includeExtendedPerformance = payload.includeExtendedPerformance !== false;
   const bucketMs = Math.max(60000, safeNumber(trendRange.bucketMs, 3600000));
   const bucketOffsetMs = safeNumber(trendRange.bucketOffsetMs, 0);
   const bucketExpression = `cast((time_created + ${bucketOffsetMs}) / ${bucketMs} as integer) * ${bucketMs} - ${bucketOffsetMs}`;
   const trendStart = safeNumber(trendRange.start);
-  const trendEnd = safeNumber(trendRange.end);
+  const trendEnd = safeNumber(trendRange.endExclusive ?? trendRange.end);
   const { where, params } = assistantWhere(payload);
-  const metricColumns = `
-      null as key,
-      null as label,
-      null as provider,
-      null as model,
-      null as start,
-      null as end`;
-  const sql = `${assistantTokenCtes(tables, where, { materialized: true, excludePlaceholders: true })},
+  const metricColumns = `null as key, null as label, null as provider, null as model, null as start, null as end`;
+  const nullLatency = 'null as latencyCount, null as latencyMin, null as latencyAvg, null as latencyMax, null as latencyValues, null as firstContentValues, null as outputTokensPerSecValues';
+  const firstContentCte = includeExtendedPerformance && tables.includes('part') ? `,
+    first_content as (
+      select p.message_id, min(p.time_created) as firstCreated
+      from part p join assistant_tokens at on at.id = p.message_id
+      where coalesce(${jsonExtractExpr('p.data', '$.type')}, '') not in ('step-start', 'step-finish')
+      group by p.message_id
+    )` : '';
+  const firstContentJoin = includeExtendedPerformance && tables.includes('part') ? 'left join first_content fc on fc.message_id = at.id' : '';
+  const firstContentColumn = includeExtendedPerformance && tables.includes('part')
+    ? 'case when fc.firstCreated is not null then max(0, fc.firstCreated - at.message_created) else null end'
+    : 'null';
+  const outputSpeedColumn = includeExtendedPerformance
+    ? 'case when at.message_completed > at.message_created then at.output / ((at.message_completed - at.message_created) / 1000.0) else null end'
+    : 'null';
+  const sql = `${assistantTokenCtes(tables, where, { materialized: true, excludePlaceholders: true })}${firstContentCte},
     token_rows as materialized (
-      select
-        *,
-        case when message_completed >= message_created and message_created > 0 then message_completed - message_created else null end as latency
-      from assistant_tokens
+      select at.*,
+        case when at.message_completed >= at.message_created and at.message_created > 0 then at.message_completed - at.message_created else null end as latency,
+        ${firstContentColumn} as firstContentMs,
+        ${outputSpeedColumn} as outputTokensPerSec
+      from assistant_tokens at ${firstContentJoin}
     )
-    select
-      'summary_today' as kind,
-      ${metricColumns},
-      ${usageColumns(`time_created >= ${safeNumber(windows.dayStartMs)}`)},
-      null as latencyCount,
-      null as latencyMin,
-      null as latencyAvg,
-      null as latencyMax,
-      null as latencyP95
-    from token_rows
+    select 'summary_today' as kind, ${metricColumns}, ${usageColumns(`time_created >= ${safeNumber(windows.dayStartMs)}`)}, ${nullLatency} from token_rows
     union all
-    select
-      'summary_window' as kind,
-      ${metricColumns},
-      ${usageColumns(`time_created >= ${safeNumber(windows.windowStartMs)}`)},
-      null as latencyCount,
-      null as latencyMin,
-      null as latencyAvg,
-      null as latencyMax,
-      null as latencyP95
-    from token_rows
+    select 'summary_window' as kind, ${metricColumns}, ${usageColumns(`time_created >= ${safeNumber(windows.windowStartMs)}`)}, ${nullLatency} from token_rows
     union all
-    select
-      'summary_week' as kind,
-      ${metricColumns},
-      ${usageColumns(`time_created >= ${safeNumber(windows.weekStartMs)}`)},
-      null as latencyCount,
-      null as latencyMin,
-      null as latencyAvg,
-      null as latencyMax,
-      null as latencyP95
-    from token_rows
+    select 'summary_week' as kind, ${metricColumns}, ${usageColumns(`time_created >= ${safeNumber(windows.weekStartMs)}`)}, ${nullLatency} from token_rows
     union all
-    select
-      'summary_all' as kind,
-      ${metricColumns},
-      ${usageColumns('1=1')},
-      null as latencyCount,
-      null as latencyMin,
-      null as latencyAvg,
-      null as latencyMax,
-      null as latencyP95
-    from token_rows
+    select 'summary_all' as kind, ${metricColumns}, ${usageColumns('1=1')}, ${nullLatency} from token_rows
     union all
-    select
-      'sourceStat' as kind,
-      ${metricColumns},
-      ${usageColumns('1=1')},
-      null as latencyCount,
-      null as latencyMin,
-      null as latencyAvg,
-      null as latencyMax,
-      null as latencyP95
-    from token_rows
+    select 'sourceStat' as kind, ${metricColumns}, ${usageColumns('1=1')}, ${nullLatency} from token_rows
     union all
-    select
-      'model' as kind,
-      provider || ' / ' || model as key,
-      null as label,
-      provider,
-      model,
-      null as start,
-      null as end,
-      sum(total) as total,
-      sum(input) as input,
-      sum(output) as output,
-      sum(reasoning) as reasoning,
-      sum(cacheRead) as cacheRead,
-      sum(cacheWrite) as cacheWrite,
-      count(*) as messages,
-      sum(error) as errors,
-      count(latency) as latencyCount,
-      min(latency) as latencyMin,
-      avg(latency) as latencyAvg,
-      max(latency) as latencyMax,
-      null as latencyP95
-    from token_rows
-    group by provider, model
+    select 'model' as kind,
+      provider || ' / ' || model as key, null as label, provider, model, null as start, null as end,
+      sum(total) as total, sum(input) as input, sum(output) as output, sum(reasoning) as reasoning, sum(cacheRead) as cacheRead, sum(cacheWrite) as cacheWrite, count(*) as messages, sum(error) as errors,
+      count(latency) as latencyCount, min(latency) as latencyMin, avg(latency) as latencyAvg, max(latency) as latencyMax, group_concat(latency) as latencyValues, group_concat(firstContentMs) as firstContentValues, group_concat(outputTokensPerSec) as outputTokensPerSecValues
+    from token_rows group by provider, model
     union all
-    select
-      'trend' as kind,
-      ${bucketExpression} as key,
-      null as label,
-      null as provider,
-      null as model,
-      ${bucketExpression} as start,
-      ${bucketExpression} + ${bucketMs} as end,
-      sum(total) as total,
-      sum(input) as input,
-      sum(output) as output,
-      sum(reasoning) as reasoning,
-      sum(cacheRead) as cacheRead,
-      sum(cacheWrite) as cacheWrite,
-      count(*) as messages,
-      sum(error) as errors,
-      count(latency) as latencyCount,
-      null as latencyMin,
-      avg(latency) as latencyAvg,
-      null as latencyMax,
-      null as latencyP95
+    select 'trend' as kind,
+      ${bucketExpression} as key, null as label, null as provider, null as model,
+      ${bucketExpression} as start, ${bucketExpression} + ${bucketMs} as end,
+      sum(total) as total, sum(input) as input, sum(output) as output, sum(reasoning) as reasoning, sum(cacheRead) as cacheRead, sum(cacheWrite) as cacheWrite, count(*) as messages, sum(error) as errors,
+      count(latency) as latencyCount, null as latencyMin, avg(latency) as latencyAvg, null as latencyMax, group_concat(latency) as latencyValues, group_concat(firstContentMs) as firstContentValues, group_concat(outputTokensPerSec) as outputTokensPerSecValues
     from token_rows
     where time_created >= ${trendStart} and time_created < ${trendEnd}
-    group by ${bucketExpression}`;
+    group by ${bucketExpression}
+    union all
+    select 'performance' as kind, ${metricColumns}, ${usageColumns('1=1')},
+      count(latency) as latencyCount, min(latency) as latencyMin, avg(latency) as latencyAvg, max(latency) as latencyMax, group_concat(latency) as latencyValues, group_concat(firstContentMs) as firstContentValues, group_concat(outputTokensPerSec) as outputTokensPerSecValues
+    from token_rows`;
   return queryAll(db, sql, params);
 }
 
-function aggregateBundleForSourceSql(args) {
-  // The previous cold path ran the materialized token CTE once for the UNION
-  // bundle and once again for every latency percentile. Querying normalized
-  // token rows once keeps the exact SQL filtering/part-token semantics while
-  // doing summaries, models, buckets, and percentiles in one JS pass.
-  const { source, db, tables, queryAll, payload, sessionPayload = { ...payload, query: payload.sessionQuery || '' }, windows, trendRange } = args;
-  const includeExtendedPerformance = payload.includeExtendedPerformance !== false;
-  const tokenRows = messageTokenRowsForSourceSql({ db, tables, queryAll, payload });
-  const bucketMs = Math.max(60000, safeNumber(trendRange.bucketMs, 3600000));
-  const bucketOffsetMs = safeNumber(trendRange.bucketOffsetMs, 0);
-  const trendStart = safeNumber(trendRange.start);
-  const trendEnd = safeNumber(trendRange.endExclusive ?? trendRange.end);
-  const inTrend = (row) => (!trendStart || row.timeCreated >= trendStart) && (!trendEnd || row.timeCreated < trendEnd);
-  const usageFor = (items) => {
-    const usage = { total: 0, input: 0, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0, messages: 0, errors: 0 };
-    for (const row of items) {
-      usage.total += Number(row.total || 0);
-      usage.input += Number(row.input || 0);
-      usage.output += Number(row.output || 0);
-      usage.reasoning += Number(row.reasoning || 0);
-      usage.cacheRead += Number(row.cacheRead || 0);
-      usage.cacheWrite += Number(row.cacheWrite || 0);
-      usage.messages += Number(row.messages || 1);
-      usage.errors += Number(row.errors || 0);
-    }
-    return agg.cacheMetrics.withCacheHitMetrics(usage);
+function samplesFromRow(row, field) {
+  return latencyValues(row?.[field]);
+}
+
+function performanceFromAggregateRow(row) {
+  if (!row) return null;
+  const latencySamples = samplesFromRow(row, 'latencyValues');
+  const firstContentSamples = samplesFromRow(row, 'firstContentValues');
+  const outputSpeedSamples = samplesFromRow(row, 'outputTokensPerSecValues');
+  const performance = {
+    samples: sqlNumber(row.messages),
+    completed: sqlNumber(row.latencyCount),
+    errors: sqlNumber(row.errors),
+    errorRate: sqlNumber(row.messages) ? sqlNumber(row.errors) / sqlNumber(row.messages) : 0,
+    latency: agg.summarize(latencySamples),
+    ttft: agg.summarize([]),
+    firstContentApprox: agg.summarize(firstContentSamples),
+    outputTokensPerSec: agg.summarize(outputSpeedSamples),
+    totalTokensPerSec: agg.summarize([]),
   };
-  const dayRows = [];
-  const windowRows = [];
-  const weekRows = [];
-  for (const row of tokenRows) {
-    if (row.timeCreated >= Number(windows.dayStartMs || 0)) dayRows.push(row);
-    if (row.timeCreated >= Number(windows.windowStartMs || 0)) windowRows.push(row);
-    if (row.timeCreated >= Number(windows.weekStartMs || 0)) weekRows.push(row);
-  }
-  const allUsage = usageFor(tokenRows);
-  const sourceStatUsage = allUsage;
-  const modelMap = new Map();
-  for (const row of tokenRows) {
-    const provider = row.provider || 'unknown';
-    const model = row.model || 'unknown';
-    const key = `${provider}\u0000${model}`;
-    const item = modelMap.get(key) || { provider, model, rows: [], latencyValues: [] };
-    item.rows.push(row);
-    if (row.latencyMs != null && Number.isFinite(Number(row.latencyMs))) item.latencyValues.push(Number(row.latencyMs));
-    modelMap.set(key, item);
-  }
-  const modelStats = [...modelMap.values()].map((modelRows) => {
-    const provider = modelRows.provider || 'unknown';
-    const model = modelRows.model || 'unknown';
-    const usage = usageFor(modelRows.rows);
-    const latencyValues = modelRows.latencyValues;
-    const latency = agg.summarize(latencyValues);
-    const firstContent = includeExtendedPerformance ? agg.summarize(modelRows.rows.map((row) => row.firstContentMs)) : agg.summarize([]);
-    const outputTokensPerSec = includeExtendedPerformance ? agg.summarize(modelRows.rows.map((row) => row.outputTokensPerSec)) : agg.summarize([]);
-    return {
-      name: `${provider} / ${model}`,
-      provider,
-      model,
-      ...usage,
-      source: source.id,
-      sourceLabel: source.label,
-      _latencyValues: latencyValues,
+  performance.complete = performance.completed === performance.samples;
+  performance.metricCompleteness = {
+    latency: performance.complete,
+    firstContentApprox: performance.firstContentApprox.count === performance.samples,
+    outputTokensPerSec: performance.outputTokensPerSec.count === performance.completed,
+    ttft: false,
+  };
+  Object.defineProperty(performance, '_latencyValues', { value: latencySamples, enumerable: false, configurable: true });
+  Object.defineProperty(performance, '_firstContentValues', { value: firstContentSamples, enumerable: false, configurable: true });
+  Object.defineProperty(performance, '_outputTokensPerSecValues', { value: outputSpeedSamples, enumerable: false, configurable: true });
+  return performance;
+}
+
+function aggregateBundleForSourceSql(args) {
+  const { source, db, tables, queryAll, payload, sessionPayload = { ...payload, query: payload.sessionQuery || '' }, windows, trendRange } = args;
+  const rows = aggregateBundleRowsForSourceSql(args);
+  const byKind = new Map();
+  for (const row of rows) byKind.set(row.kind === 'model' || row.kind === 'trend' ? `${row.kind}:${row.key}` : row.kind, row);
+  const sourceInfo = { id: source.id, label: source.label, dbPath: source.dbPath };
+  const summary = (kind) => usageFromAggregateRow(byKind.get(kind) || {});
+  const modelStats = rows.filter((row) => row.kind === 'model').map((row) => {
+    const latency = agg.summarize(samplesFromRow(row, 'latencyValues'));
+    const item = {
+      name: row.key, provider: row.provider || 'unknown', model: row.model || 'unknown', ...rowUsage(row),
+      source: source.id, sourceLabel: source.label,
       performance: {
-        latency,
+        latency: { ...latency, count: sqlNumber(row.latencyCount) },
         ttft: agg.summarize([]),
-        firstContentApprox: firstContent,
-        outputTokensPerSec,
+        firstContentApprox: agg.summarize(samplesFromRow(row, 'firstContentValues')),
+        outputTokensPerSec: agg.summarize(samplesFromRow(row, 'outputTokensPerSecValues')),
         totalTokensPerSec: agg.summarize([]),
       },
     };
+    Object.defineProperty(item, '_latencyValues', { value: samplesFromRow(row, 'latencyValues'), enumerable: false, configurable: true });
+    return item;
   }).sort((a, b) => b.total - a.total);
-  const trendMap = new Map();
-  for (const row of tokenRows) {
-    if (!inTrend(row)) continue;
-    const start = Math.floor((row.timeCreated + bucketOffsetMs) / bucketMs) * bucketMs - bucketOffsetMs;
-    const bucket = trendMap.get(start) || { start, end: start + bucketMs, rows: [], latencyValues: [] };
-    bucket.rows.push(row);
-    if (row.latencyMs != null && Number.isFinite(Number(row.latencyMs))) bucket.latencyValues.push(Number(row.latencyMs));
-    trendMap.set(start, bucket);
-  }
-  const trendBuckets = [...trendMap.values()].sort((a, b) => a.start - b.start).map((bucket) => {
-    const usage = usageFor(bucket.rows);
-    const latencyValues = bucket.latencyValues;
-    return {
-      ...usage,
-      start: bucket.start,
-      end: bucket.end,
-      latencyAvg: latencyValues.length ? latencyValues.reduce((sum, value) => sum + value, 0) / latencyValues.length : null,
-      latencyP95: latencyValues.length ? agg.percentile(latencyValues, 95) : null,
-      _latencyValues: latencyValues,
-      label: new Date(bucket.start).toLocaleString('zh-CN', { hour12: false }),
+  const trendBuckets = rows.filter((row) => row.kind === 'trend').map((row) => {
+    const samples = samplesFromRow(row, 'latencyValues');
+    const item = {
+      ...rowUsage(row), start: sqlNumber(row.start), end: sqlNumber(row.end),
+      latencyAvg: row.latencyAvg == null ? null : Number(row.latencyAvg),
+      latencyP95: samples.length ? agg.percentile(samples, 95) : null,
+      label: new Date(Number(row.start || 0)).toLocaleString('zh-CN', { hour12: false }),
     };
-  });
+    Object.defineProperty(item, '_latencyValues', { value: samples, enumerable: false, configurable: true });
+    return item;
+  }).sort((a, b) => a.start - b.start);
   return {
-    source: { id: source.id, label: source.label, dbPath: source.dbPath },
-    summary: {
-      source: { id: source.id, label: source.label, dbPath: source.dbPath },
-      usage: {
-        today: usageFor(dayRows),
-        window: usageFor(windowRows),
-        week: usageFor(weekRows),
-        all: allUsage,
-      },
-    },
-    sourceStat: {
-      key: source.id,
-      source: source.id,
-      label: source.label,
-      requests: sourceStatUsage.messages,
-      ...sourceStatUsage,
-    },
+    source: sourceInfo,
+    summary: { source: sourceInfo, usage: { today: summary('summary_today'), window: summary('summary_window'), week: summary('summary_week'), all: summary('summary_all') } },
+    sourceStat: { key: source.id, source: source.id, label: source.label, requests: summary('sourceStat').messages, ...summary('sourceStat') },
     modelStats,
     trendBuckets,
-    performanceRows: tokenRows,
+    performance: performanceFromAggregateRow(byKind.get('performance')),
     sessionSummary: sessionSummaryForSourceSql({ ...args, payload: sessionPayload }),
   };
 }

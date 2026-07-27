@@ -215,6 +215,7 @@ function cleanupRuntime() {
   stopSettingsWatch?.();
   closeSettingsStore();
   Promise.resolve(localProvider.closeSqlJsWorker?.()).catch((error) => appendLog('warn', 'cleanup', 'sql.js worker close failed', { message: error.message }));
+  Promise.resolve(localProvider.closeNativeWorker?.()).catch((error) => appendLog('warn', 'cleanup', 'native worker close failed', { message: error.message }));
   if (tray) {
     try { tray.destroy(); } catch {}
     tray = null;
@@ -423,6 +424,13 @@ function warmupSqlJsFallback() {
   Promise.resolve(localProvider.warmupSqlJsWorker?.({ timeoutMs: 30000 }))
     .catch((error) => appendLog('warn', 'sqljs:warmup', error.message));
 }
+function warmupAggregationWorkers() {
+  if (process.env.CODEARTS_BAR_FORCE_SQLJS !== '1' && nativeSqliteStatus().available) {
+    Promise.resolve(localProvider.warmupNativeWorker?.({ timeoutMs: 30000 }))
+      .catch((error) => appendLog('warn', 'native:warmup', error.message));
+  }
+  warmupSqlJsFallback();
+}
 function openSettingsWindow() {
   if (settingsWindow && !settingsWindow.isDestroyed()) { settingsWindow.focus(); return; }
   settingsWindow = mainWindow.createSettingsWindow({ appDir: __dirname, appendLog, onClosed: () => { settingsWindow = null; } });
@@ -620,7 +628,7 @@ if (lifecycle.requestSingleInstance(app, { refreshLight, openDashboardWindow }))
     tray.on('double-click', () => restoreDashboardWindow());
     tray.on('right-click', () => showTrayMenu());
     refreshTrayMenu();
-    warmupSqlJsFallback();
+    warmupAggregationWorkers();
     prewarmAfterRefresh(refreshLight({ summaryOnly: true, reason: 'startup' }), usageRollupPrewarmer);
     scheduleRefresh();
     scheduleDbWatch();

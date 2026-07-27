@@ -144,6 +144,7 @@ async function applyDateRangeAndPatchView(opts = {}){
     syncDateRangeErrorChrome();
     return false;
   }
+  patchDateRangeChrome();
   const scrollState = dateRangeScrollState || captureDateRangeScrollState();
   dateRangeScrollState = null;
   resetIncrementalRenderLimits('all');

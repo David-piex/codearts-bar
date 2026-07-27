@@ -11,11 +11,14 @@ const localProvider = require('./providers/codeartsLocal');
 const agg = require('./core/aggregator');
 const { clamp, fmtInt, fmtDuration, fmtTime, fmtMs } = require('./core/format');
 const path = require('node:path');
+const { createQueryService } = require('./query-service');
+const { PerformanceObserver } = require('node:perf_hooks');
 
 const DEFAULT_DB_PATH = localProvider.DEFAULT_DB_PATH;
 const DEFAULT_DAILY_LIMIT = 200_000;
 const DEFAULT_WINDOW_HOURS = 24;
 const REQUEST_LOG_SAMPLE_LIMIT = 2000;
+const queryService = createQueryService({ provider: localProvider });
 
 const resolveNow = localProvider.resolveTimestamp;
 function nowMs() { return resolveNow(); }
@@ -39,12 +42,13 @@ function buildRequestRows(messages, sessions, partMap, ttftMap, limit = REQUEST_
   const sessionMap = new Map((sessions || []).map((s) => [`${s.source || ''}:${s.id || ''}`, s]));
   const rows = (messages || [])
     .map((row) => {
-      const data = agg.parseJsonSafe(row.data, {});
-      if (!agg.isMeaningfulAssistant(row, partMap)) return null;
-      const token = agg.tokenForMessage(row, partMap);
+      const analysis = agg.analyzeMessage(row, partMap);
+      if (!analysis.meaningful) return null;
+      const data = analysis.data;
+      const token = analysis.token;
       const perf = agg.messagePerf(row, partMap, ttftMap) || {};
       const session = sessionMap.get(`${row.source || ''}:${row.session_id || ''}`) || {};
-      const error = agg.extractError(data);
+      const error = analysis.error;
       return {
         id: row.id,
         sessionId: row.session_id,
@@ -208,6 +212,176 @@ function snapshotOptions(options = {}) {
   };
 }
 
+function emptyPerformance() {
+  return {
+    samples: 0,
+    completed: 0,
+    errors: 0,
+    errorRate: 0,
+    latency: agg.summarize([]),
+    ttft: agg.summarize([]),
+    firstEventApprox: agg.summarize([]),
+    firstContentApprox: agg.summarize([]),
+    outputTokensPerSec: agg.summarize([]),
+    totalTokensPerSec: agg.summarize([]),
+    slowest: [],
+    fastest: [],
+  };
+}
+
+function providerStatsFromModels(models = []) {
+  const map = new Map();
+  for (const model of models) {
+    const key = model.provider || 'unknown';
+    const prev = map.get(key) || { key, provider: key, total: 0, input: 0, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0, requests: 0, errors: 0 };
+    for (const field of ['total', 'input', 'output', 'reasoning', 'cacheRead', 'cacheWrite']) prev[field] += Number(model[field] || 0);
+    prev.requests += Number(model.messages || model.requests || 0);
+    prev.errors += Number(model.errors || 0);
+    map.set(key, prev);
+  }
+  return [...map.values()].sort((a, b) => b.total - a.total);
+}
+
+async function getSnapshotSummaryAsync(options = {}) {
+  const opts = snapshotOptions(options);
+  const beforeMemory = process.memoryUsage?.() || {};
+  let heapPeak = Number(beforeMemory.heapUsed || 0);
+  let rssPeak = Number(beforeMemory.rss || 0);
+  let gcCount = 0;
+  let gcDurationMs = 0;
+  const memorySampler = setInterval(() => {
+    const current = process.memoryUsage?.() || {};
+    heapPeak = Math.max(heapPeak, Number(current.heapUsed || 0));
+    rssPeak = Math.max(rssPeak, Number(current.rss || 0));
+  }, 10);
+  memorySampler.unref?.();
+  let gcObserver = null;
+  try {
+    gcObserver = new PerformanceObserver((list) => {
+      for (const entry of list.getEntries()) { gcCount += 1; gcDurationMs += Number(entry.duration || 0); }
+    });
+    gcObserver.observe({ entryTypes: ['gc'] });
+  } catch { gcObserver = null; }
+  const aggregatePayload = {
+    ...options,
+    timestamp: opts.timestamp,
+    windowHours: opts.windowHours,
+    source: options.source || 'all',
+    model: options.model || 'all',
+    project: options.project || 'all',
+    range: options.range || {},
+    bucketMs: Number(options.bucketMs || 3600000),
+    includeExtendedPerformance: options.includeExtendedPerformance !== false,
+  };
+  let aggregates;
+  let requestsPage;
+  let sessionsPage;
+  try {
+    [aggregates, requestsPage, sessionsPage] = await Promise.all([
+      queryService.getAggregates(aggregatePayload),
+      queryService.getRequestsPage({ ...options, source: 'all', model: 'all', project: 'all', range: {}, query: '', limit: REQUEST_LOG_SAMPLE_LIMIT, offset: 0 }),
+      queryService.getSessionsPage({ ...options, source: 'all', status: 'all', project: 'all', range: {}, query: '', limit: 80, offset: 0 }),
+    ]);
+  } finally {
+    clearInterval(memorySampler);
+    gcObserver?.disconnect();
+  }
+  if (!aggregates?.ok || !aggregates.usage) throw new Error(aggregates?.error || 'Unable to read CodeArts usage aggregates');
+  const perfLogs = opts.disableUsageLogs
+    ? { ttftEvents: [], queueEvents: [] }
+    : typeof localProvider.scanUsageLogs === 'function'
+      ? localProvider.scanUsageLogs()
+      : { ttftEvents: localProvider.scanTtftLogs(), queueEvents: localProvider.scanQueueLogs() };
+  const queueEvents = perfLogs.queueEvents || [];
+  const dayStart = new Date(opts.timestamp); dayStart.setHours(0, 0, 0, 0);
+  const dayStartMs = dayStart.getTime();
+  const windowStartMs = opts.timestamp - opts.windowHours * 3600000;
+  const weekStartMs = opts.timestamp - 7 * 86400000;
+  const models = aggregates.modelStats || [];
+  const requests = requestsPage?.items || [];
+  const sessions = sessionsPage?.items || [];
+  const requestTotal = Number(requestsPage?.total || requests.length);
+  const allPerformance = aggregates.performance || emptyPerformance();
+  const sourceStats = aggregates.sourceStats || [];
+  const sources = aggregates.sources || [];
+  const usagePercent = opts.dailyLimit > 0 ? clamp((Number(aggregates.usage.today?.total || 0) / opts.dailyLimit) * 100, 0, 999) : 0;
+  const afterMemory = process.memoryUsage?.() || {};
+  const snap = {
+    ok: true,
+    app: '码道 Bar',
+    timestamp: opts.timestamp,
+    updatedAt: fmtTime(opts.timestamp),
+    dbPath: sources[0]?.dbPath || resolveDbPath(options),
+    dbSize: sources.reduce((sum, source) => sum + Number(source.size || 0), 0),
+    sources,
+    config: { dailyLimit: opts.dailyLimit, windowHours: opts.windowHours },
+    status: { label: `${Math.round(usagePercent)}%`, usagePercent, level: usagePercent >= 90 ? 'danger' : usagePercent >= 70 ? 'warning' : 'ok' },
+    usage: aggregates.usage,
+    models,
+    modelsScope: { rangeKey: 'all', start: 0, endExclusive: 0, complete: true },
+    performance: {
+      ttftEvents: Number((perfLogs.ttftEvents || []).length),
+      ttftMatched: 0,
+      today: emptyPerformance(),
+      window: allPerformance,
+      week: allPerformance,
+      all: allPerformance,
+    },
+    queue: {
+      events: queueEvents.length,
+      today: agg.queueStats(queueEvents, dayStartMs),
+      window: agg.queueStats(queueEvents, windowStartMs),
+      week: agg.queueStats(queueEvents, weekStartMs),
+      all: agg.queueStats(queueEvents, 0),
+      trends: agg.buildQueueTrends(queueEvents, opts.timestamp),
+    },
+    requestLog: requests,
+    requestTotal,
+    requestLogComplete: requests.length >= requestTotal,
+    requestLogSampled: requests.length < requestTotal,
+    requestLogSampleLimit: REQUEST_LOG_SAMPLE_LIMIT,
+    sourceStats,
+    providerStats: providerStatsFromModels(models),
+    sourceStatsScope: { source: 'all', model: 'all', rangeKey: 'all', start: 0, endExclusive: 0, complete: true },
+    providerStatsScope: { source: 'all', model: 'all', rangeKey: 'all', start: 0, endExclusive: 0, complete: true },
+    tools: { today: agg.toolStats([], dayStartMs), window: agg.toolStats([], windowStartMs), week: agg.toolStats([], weekStartMs), all: agg.toolStats([], 0) },
+    trends: { hourly24h: aggregates.buckets || [], daily14d: [] },
+    sessions,
+    sessionSummary: { ...(aggregates.sessionSummary || {}), visible: sessions.length },
+    errors: [],
+    balance: null,
+    process: opts.disableEnvironmentProbes ? {} : localProvider.detectProcesses(),
+    codeartsConfig: opts.disableEnvironmentProbes
+      ? { exists: false, enabledProviders: [], plugins: [], providers: [], officialQuota: { available: false, source: 'disabled', status: 'environment_probes_disabled' } }
+      : localProvider.readCodeArtsConfig(),
+    providers: listProviders(),
+    freshness: { stale: false, source: 'aggregate-page', ageMs: 0 },
+    adapter: aggregates.nativeError ? 'sql.js' : 'node:sqlite',
+    perf: {
+      ...(aggregates.perf || {}),
+      snapshotMemory: {
+        heapBefore: Number(beforeMemory.heapUsed || 0),
+        heapAfter: Number(afterMemory.heapUsed || 0),
+        heapDelta: Number(afterMemory.heapUsed || 0) - Number(beforeMemory.heapUsed || 0),
+        heapPeak,
+        rssBefore: Number(beforeMemory.rss || 0),
+        rssAfter: Number(afterMemory.rss || 0),
+        rssPeak,
+        gcCount,
+        gcDurationMs: Number(gcDurationMs.toFixed(3)),
+      },
+    },
+    rollupState: aggregates.rollupState || aggregates.perf?.usageRollup?.current || null,
+  };
+  if (aggregates.sourceErrors?.length) snap.sourceErrors = aggregates.sourceErrors;
+  if (aggregates.nativeError) snap.nativeError = aggregates.nativeError;
+  snap.quota = buildQuota(snap, { timestamp: opts.timestamp, dailyLimit: opts.dailyLimit, windowHours: opts.windowHours });
+  snap.health = buildHealth(snap, loadSettings());
+  snap.status = { ...snap.status, resetAt: snap.quota.primary.resetAt, resetInMs: snap.quota.primary.resetInMs, remaining: snap.quota.primary.remaining };
+  writeCache(snap);
+  return snap;
+}
+
 function getSnapshot(options = {}) {
   const opts = snapshotOptions(options);
   const rows = localProvider.collectRowsNative(options);
@@ -227,6 +401,38 @@ async function getSnapshotAsync(options = {}) {
   return snap;
 }
 
+function snapshotFlightKey(options, timestamp, injectedClock) {
+  const range = options.range || {};
+  return JSON.stringify({
+    mode: options.fullSnapshot === true ? 'full' : 'summary',
+    dbPath: options.dbPath || '',
+    useSavedSettings: options.useSavedSettings !== false,
+    dailyLimit: options.dailyLimit || '',
+    windowHours: options.windowHours || '',
+    timestamp: injectedClock ? timestamp : 0,
+    disableUsageLogs: options.disableUsageLogs === true || options.fixtureMode === true,
+    disableEnvironmentProbes: options.disableEnvironmentProbes === true || options.fixtureMode === true,
+    source: options.source ?? 'all',
+    model: options.model ?? 'all',
+    project: options.project ?? 'all',
+    query: options.query || '',
+    sessionQuery: options.sessionQuery || '',
+    start: Number(options.start || 0),
+    end: Number(options.endExclusive ?? options.end ?? 0),
+    range: {
+      start: Number(range.start || 0),
+      end: Number(range.endExclusive ?? range.end ?? 0),
+    },
+    bucketMs: Number(options.bucketMs || 3600000),
+    bucketOffsetMs: Number.isFinite(Number(options.bucketOffsetMs)) ? Number(options.bucketOffsetMs) : null,
+    includeExtendedPerformance: options.includeExtendedPerformance !== false,
+    includeInternalSessions: options.includeInternalSessions === true,
+    updatedSince: Number(options.updatedSince || 0),
+    error: options.error ?? options.hasError ?? options.errorsOnly ?? null,
+    disableUsageRollup: options.disableUsageRollup === true,
+  });
+}
+
 async function getSnapshotWithCache(options = {}) {
   const timestamp = resolveNow(options);
   const scopedOptions = { ...options, timestamp };
@@ -234,10 +440,12 @@ async function getSnapshotWithCache(options = {}) {
     || typeof options.clock === 'function'
     || Boolean(options.clock && typeof options.clock.now === 'function')
     || (Number.isFinite(Number(process.env.CODEARTS_BAR_NOW_MS)) && Number(process.env.CODEARTS_BAR_NOW_MS) > 0);
-  const key = JSON.stringify({ dbPath: options.dbPath || '', dailyLimit: options.dailyLimit || '', windowHours: options.windowHours || '', timestamp: injectedClock ? timestamp : 0, disableUsageLogs: options.disableUsageLogs === true || options.fixtureMode === true, disableEnvironmentProbes: options.disableEnvironmentProbes === true || options.fixtureMode === true });
+  const key = snapshotFlightKey(options, timestamp, injectedClock);
   return snapshotFlights.run(key, async () => {
   try {
-    return await getSnapshotAsync(scopedOptions);
+    return options.fullSnapshot === true
+      ? await getSnapshotAsync(scopedOptions)
+      : await getSnapshotSummaryAsync(scopedOptions);
   } catch (error) {
     if (!allowsSnapshotCacheFallback(options)) throw error;
     try {
@@ -301,5 +509,5 @@ function errorSnapshot(error, dbPath = resolveDbPath(), options = {}) {
   return { ok: false, app: '码道 Bar', timestamp, updatedAt: fmtTime(timestamp), dbPath, error: localProvider.safeDbError(error) };
 }
 
-module.exports = { DEFAULT_DB_PATH, REQUEST_LOG_SAMPLE_LIMIT, getSnapshot, getSnapshotAsync, getSnapshotWithCache, snapshotToText, errorSnapshot, resolveNow, fmtInt, fmtDuration, fmtTime, fmtMs };
+module.exports = { DEFAULT_DB_PATH, REQUEST_LOG_SAMPLE_LIMIT, getSnapshot, getSnapshotAsync, getSnapshotSummaryAsync, getSnapshotWithCache, snapshotToText, errorSnapshot, resolveNow, fmtInt, fmtDuration, fmtTime, fmtMs };
 

@@ -1337,7 +1337,19 @@ async function main() {
   });
   await waitFor(win, () => !document.querySelector("[data-date-range-confirm]")?.disabled);
   await click(win, "[data-date-range-confirm]");
-  await waitFor(win, () => !document.querySelector(".date-range-popover") && localStorage.getItem("statsRange") === "customTime" && localStorage.getItem("requestTablePage") === "0");
+  try {
+    await waitFor(win, () => !document.querySelector(".date-range-popover") && localStorage.getItem("statsRange") === "customTime" && localStorage.getItem("requestTablePage") === "0");
+  } catch (error) {
+    const state = await evalIn(win, () => ({
+      popover: Boolean(document.querySelector('.date-range-popover')),
+      range: localStorage.getItem('statsRange'),
+      requestPage: localStorage.getItem('requestTablePage'),
+      dateError: String(dateRangeError || ''),
+      draftStart: Number(dateRangeDraftStart || 0),
+      draftEnd: Number(dateRangeDraftEnd || 0),
+    }));
+    throw new Error(`${error.message} state=${JSON.stringify(state)}`);
+  }
   const dateState = await evalIn(win, () => ({
     range: localStorage.getItem("statsRange"),
     requestPage: localStorage.getItem("requestTablePage"),

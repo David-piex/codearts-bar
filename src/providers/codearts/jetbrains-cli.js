@@ -8,6 +8,8 @@ const { sourceList } = require('./aggregation-runtime');
 const { nativeSqliteStatus } = require('./sqlite');
 const { writeRollupState } = require('./rollup-state');
 const pagination = require('./pagination');
+const { createQueryService } = require('../../query-service');
+const queryService = createQueryService({ provider: { ...aggregation, ...pagination } });
 
 function readOption(args, name, multiple = false, fallback = null) {
   const values = [];
@@ -83,11 +85,11 @@ async function query(resource, args = []) {
     const bucketMs = Math.max(60000, Number(readOption(args, '--bucket-ms', false, 3600000)) || 3600000);
     const offsetValue = readOption(args, '--bucket-offset-ms');
     const bucketOffsetMs = offsetValue == null ? undefined : Number(offsetValue);
-    const result = requireResult(await aggregation.getDashboardAggregates({ source, model, project, range, timestamp: end || Date.now(), bucketMs, bucketOffsetMs, disableUsageRollup: true }));
+    const result = requireResult(await queryService.getAggregates({ source, model, project, range, timestamp: end || Date.now(), bucketMs, bucketOffsetMs, disableUsageRollup: true }));
     return analyticsPayload(result, { ...pageOptions, bucketMs, bucketOffsetMs });
   }
   if (resource === 'filters') {
-    const result = requireResult(await aggregation.getDashboardAggregates({ source, range, timestamp: end || Date.now(), bucketMs: 86400000, disableUsageRollup: true }));
+    const result = requireResult(await queryService.getAggregates({ source, range, timestamp: end || Date.now(), bucketMs: 86400000, disableUsageRollup: true }));
     return envelope({
       models: result.modelStats || [],
       projects: (result.sessionSummary?.projects || []).map((item) => ({
@@ -95,7 +97,7 @@ async function query(resource, args = []) {
       })),
     }, pageOptions);
   }
-  if (resource === 'diagnostics') return envelope(sanitizeIdeValue(await aggregation.getDatabaseHealth({ source })));
+  if (resource === 'diagnostics') return envelope(sanitizeIdeValue(await queryService.getDatabaseHealth({ source })));
   if (resource === 'rollup') {
     const adapter = process.env.CODEARTS_BAR_FORCE_SQLJS === '1' || !nativeSqliteStatus().available ? 'sql.js' : 'node:sqlite';
     const selected = sourceList({ source });
@@ -124,10 +126,10 @@ async function query(resource, args = []) {
   if (resource === 'sessions' || resource === 'requests') {
     const payload = { limit: pageSize, offset: (page - 1) * pageSize, query: search, source, model, project, range };
     const result = resource === 'sessions'
-      ? await pagination.getSessionsPage({ ...payload, status: 'active' })
+      ? await queryService.getSessionsPage({ ...payload, status: 'active' })
       : sessionId
-        ? await pagination.getSessionRequestsPage({ ...payload, sessionId })
-        : await pagination.getRequestsPage(payload);
+        ? await queryService.getSessionRequestsPage({ ...payload, sessionId })
+        : await queryService.getRequestsPage(payload);
     return databasePagePayload(result, pageOptions);
   }
   if (resource === 'dashboard') {
@@ -137,7 +139,7 @@ async function query(resource, args = []) {
       dailyLimit: positiveNumber(process.env.CODEARTS_BAR_DAILY_LIMIT, 200000),
       windowHours: Math.min(8760, positiveNumber(process.env.CODEARTS_BAR_WINDOW_HOURS, 24)),
     };
-    const result = requireResult(await aggregation.getDashboardAggregates({ source, timestamp, windowHours: settings.windowHours, bucketMs: 3600000 }));
+    const result = requireResult(await queryService.getAggregates({ source, timestamp, windowHours: settings.windowHours, bucketMs: 3600000 }));
     return ideDashboardPayload(dashboardSnapshot(result, result.timestamp || timestamp, settings), pageOptions);
   }
   throw new Error(`Unknown query resource: ${resource}`);

@@ -97,30 +97,7 @@ let refreshInFlightScope = '';
 let dashboardRequestGeneration = 0;
 let dashboardScopeTimestamp = rendererNow();
 let lastRealtimeSnapshotTimestamp = 0;
-let sourceFilter = initialStateValue('statsSource', 'all') || 'all';
-let modelFilter = initialStateValue('statsModel', 'all') || 'all';
-let analyticsProjectFilter = initialStateValue('statsProject', 'all') || 'all';
-let rangeFilter = initialStateValue('statsRange', 'today') || 'today';
-let customRangeDays = Math.max(2, Math.min(365, Number(initialStateValue('customRangeDays', '60')) || 60));
-let customDateStart = Number(initialStateValue('customDateStart', 0)) || (rendererNow() - 86400000);
-let customDateEnd = Number(initialStateValue('customDateEnd', 0)) || rendererNow();
-let dateRangeOpen = false;
-let dateRangeDraftStart = 0;
-let dateRangeDraftEnd = 0;
-let dateRangeError = '';
-let dateRangeFocus = 'start';
-let dateRangeMonth = Number(initialStateValue('dateRangeMonth', 0)) || 0;
-let tableTab = initialStateValue('statsTableTab', 'requests') || 'requests';
-let workspaceMode = 'analytics';
-writeInitialStateValue('workspaceMode', workspaceMode);
-let analyticsQuery = initialStateValue('statsAnalyticsQuery') || initialStateValue('statsQuery') || '';
-let sessionQuery = initialStateValue('statsSessionQuery', '') || '';
-let sessionStatusFilter = initialStateValue('sessionStatusFilter', 'active') || 'active';
-let sessionSort = initialStateValue('sessionSort', 'updated') || 'updated';
-let sessionTagFilter = initialStateValue('sessionTagFilter', 'all') || 'all';
-let sessionQuickFilter = initialStateValue('sessionQuickFilter', 'all') || 'all';
-let sessionProjectFilter = initialStateValue('sessionProjectFilter', 'all') || 'all';
-let analyticsAdvancedOpen = initialStateValue('analyticsAdvancedOpen') === '1';
+/* @dashboard-include dashboard/filter-state.js */
 let selectedSessionId = initialStateValue('selectedSessionId', '') || '';
 let selectedSessionKeys = new Set((initialStateValue('selectedSessionKeys', '') || '').split('|').filter(Boolean));
 let selectedSessionRecords = new Map();
@@ -140,13 +117,7 @@ let zoom = Number(initialStateValue('uiZoom', '1'));
 let compactPane = initialStateValue('compactPane', 'overview') || 'overview';
 let compactPinned = initialStateValue('compactPinned') === '1';
 removeInitialStateValue('compactOpacity');
-let chartPoints = [];
-let chartAnimationFrame = null;
-let chartHoverFrame = null;
-let chartHover = { idx: -1, x: NaN, y: NaN, tx: NaN, ty: NaN, focusKey: '', pulse: 0 };
-let chartPinnedIndex = -1;
-let lastChartTipKey = '';
-let lastChartHoverKey = '';
+/* @dashboard-include dashboard/chart-state.js */
 let sessionTableItems = [];
 let lastToastTimer = null;
 let lastWindowLayoutApplied = '';
@@ -159,43 +130,7 @@ let resizePerfSession = null;
 let resizePerfLogTimer = null;
 let queryRenderTimer = null;
 let analyticsDeferredToken = 0;
-const TABLE_PAGE_SIZE_OPTIONS = [10, 20, 50, 100];
-function normalizeTablePageSize(value, fallback = 50){
-  const n = Number(value);
-  return TABLE_PAGE_SIZE_OPTIONS.includes(n) ? n : fallback;
-}
-function maxTablePageIndex(total, pageSize){
-  return Math.max(0, Math.ceil(Math.max(0, Number(total || 0)) / Math.max(1, Number(pageSize || 1))) - 1);
-}
-function normalizePageInputToIndex(value, total, pageSize, fallback = 0){
-  const raw = String(value ?? '').trim();
-  if(!raw) return Math.max(0, Math.min(maxTablePageIndex(total, pageSize), Number(fallback || 0)));
-  const n = Math.floor(Number(raw));
-  if(!Number.isFinite(n)) return Math.max(0, Math.min(maxTablePageIndex(total, pageSize), Number(fallback || 0)));
-  if(n < 1) return 0;
-  return Math.max(0, Math.min(maxTablePageIndex(total, pageSize), n - 1));
-}
-function clampTablePageIndex(value, total, pageSize){
-  const n = Math.floor(Number(value));
-  return Math.max(0, Math.min(maxTablePageIndex(total, pageSize), Number.isFinite(n) ? n : 0));
-}
-let SESSION_PAGE_SIZE = normalizeTablePageSize(initialStateValue('sessionPageSize'), 50);
-let REQUEST_PAGE_SIZE = normalizeTablePageSize(initialStateValue('requestPageSize'), 100);
-let requestTableRenderLimit = REQUEST_PAGE_SIZE;
-let sessionTableRenderLimit = SESSION_PAGE_SIZE;
-let requestTablePage = Math.max(0, Number(initialStateValue('requestTablePage', '0')) || 0);
-let sessionTablePage = Math.max(0, Number(initialStateValue('sessionTablePage', '0')) || 0);
-let requestPageLoading = false;
-let sessionPageLoading = false;
-let requestPageLoadToken = 0;
-let sessionPageLoadToken = 0;
-let requestPageCache = { key: '', items: null, total: 0, page: 0, timestamp: 0 };
-let sessionPageCache = { key: '', items: null, total: 0, page: 0, timestamp: 0 };
-let pagedTableFeedback = { requests: '', sessions: '' };
-let pagedTableFeedbackTimers = { requests: null, sessions: null };
-let sessionRequestPageCache = new Map();
-let sessionRequestPageInflight = new Map();
-let sessionPageRefreshTimer = null;
+/* @dashboard-include dashboard/pagination-state.js */
 let lastRenderPerf = null;
 let currentRenderPerf = null;
 let tableScrollBindFrame = null;
@@ -218,22 +153,7 @@ let lastFilteredRows = [];
 let lastFilteredSnapshot = null;
 let lastFilteredModeKey = '';
 let slotHtmlCache = new Map();
-let chartResizeObserver = null;
-let chartResizeObservedCanvas = null;
-let chartResizeSizeKey = '';
 let zoomInteractionUntil = 0;
-let chartCanvasBoxCache = { width: 0, height: 0, dpr: 0, key: '', timestamp: 0, source: '' };
-let chartGeometryDirty = false;
-let chartBindTimer = null;
-let chartBindFrame = null;
-let chartBindIdle = null;
-let chartBindFallbackTimer = null;
-let chartBindToken = 0;
-let chartZoomSettleTimer = null;
-let chartResizeSettleTimer = null;
-let chartResizeQuietUntil = 0;
-let lastChartDrawSignature = '';
-let chartStableBucketCache = new Map();
 let sessionHydrationItems = [];
 let sessionHydrationToken = 0;
 let sessionBulkPatchFrame = null;
@@ -241,29 +161,6 @@ let sessionInspectorPatchToken = 0;
 let sessionInspectorPatchTimer = null;
 let analyticsDeferredTasks = new Set();
 let lastSessionSelectedRowKey = '';
-let storedChartSeries = initialStateValue('chartSeries', '') || '';
-if(initialStateValue('chartSeriesLeanMigrated') !== '1'){
-  if(!storedChartSeries || storedChartSeries === 'total,input,output,cacheHitRate') storedChartSeries = 'total,input,output,cacheRead';
-  writeInitialStateValue('chartSeries', storedChartSeries);
-  writeInitialStateValue('chartSeriesLeanMigrated', '1');
-}
-if(initialStateValue('chartSeriesMinimalMigrated') !== '1'){
-  const chosen = new Set(String(storedChartSeries || '').split(',').filter(Boolean));
-  if(!chosen.size || chosen.has('cacheHitRate') || chosen.has('cacheWrite') || chosen.has('ttftMs') || chosen.has('waitMs') || chosen.has('queueMs')){
-    storedChartSeries = 'total,input,output,cacheRead';
-    writeInitialStateValue('chartSeries', storedChartSeries);
-  }
-  writeInitialStateValue('chartSeriesMinimalMigrated', '1');
-}
-if(initialStateValue('chartSeriesTokenOnlyMigrated') !== '1'){
-  const chosen = new Set(String(storedChartSeries || '').split(',').filter(Boolean));
-  if(!chosen.size || chosen.has('cacheHitRate') || !chosen.has('cacheRead')){
-    storedChartSeries = 'total,input,output,cacheRead';
-    writeInitialStateValue('chartSeries', storedChartSeries);
-  }
-  writeInitialStateValue('chartSeriesTokenOnlyMigrated', '1');
-}
-let visibleSeries = new Set((storedChartSeries || 'total,input,output,cacheRead').split(',').filter(Boolean));
 let sessionMeta = {};
 const prefersReducedMotion = Boolean(window.matchMedia?.('(prefers-reduced-motion: reduce)').matches);
 if(workspaceMode === 'analytics' && tableTab === 'sessions'){

@@ -68,14 +68,19 @@ try {
   const manifest = JSON.parse(fs.readFileSync(path.join(runtimeDir, 'CLI_RUNTIME_MANIFEST.json'), 'utf8'));
   assert.equal(manifest.entry, 'src/providers/codearts/jetbrains-cli.js');
   assert.deepEqual(manifest.files, [
+    'src/core/aggregator.js',
     'src/protocol/query-results.js',
+    'src/providers/codearts/aggregation-sql.js',
     'src/providers/codearts/jetbrains-cli.js',
     'src/providers/codearts/session-export-cli.js',
+    'src/providers/codearts/sources.js',
+    'src/query-service.js',
   ]);
   assert.equal(fs.existsSync(path.join(runtimeDir, '.bundle-src')), false);
   const entry = path.join(runtimeDir, ...manifest.entry.split('/'));
   const entrySource = fs.readFileSync(entry, 'utf8');
   assert.match(entrySource, /require\(["']sql\.js["']\)/, 'bundled CLI must load the packaged sql.js runtime as an external dependency');
+  assert.match(entrySource, /require\(["']\.\.\/\.\.\/query-service["']\)/, 'bundled CLI must load the shared query service as an external runtime module');
   assert.equal(entrySource.includes('sql.js is a port of SQLite'), false, 'bundled CLI must not embed the sql.js implementation');
   assert.equal(entrySource.includes('usage-rollup-worker-pool.js'), false, 'one-shot JetBrains CLI must not package the desktop rollup scheduler');
   assert.ok(

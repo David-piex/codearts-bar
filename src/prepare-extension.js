@@ -58,6 +58,7 @@ const runtimeFiles = [
   "health.js",
   "quota.js",
   "extension-data.js",
+  "query-service.js",
   "codearts-installation.js",
   "providers/index.js",
   "providers/codeartsLocal.js",
@@ -105,6 +106,7 @@ for (const file of [
   "quota.js",
   "health.js",
   "extension-data.js",
+  "query-service.js",
   "codearts-installation.js",
 ])
   fs.copyFileSync(path.join(root, "src", file), path.join(extDir, file));

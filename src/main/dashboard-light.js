@@ -4,8 +4,10 @@ const { buildQuota } = require('../quota');
 const { loadSettings } = require('../settings');
 const { buildHealth } = require('../health');
 const localProvider = require('../providers/codeartsLocal');
+const { createQueryService } = require('../query-service');
 
 const SESSION_PAGE_SIZE = 50;
+const queryService = createQueryService({ provider: localProvider });
 
 function usageStatusFromSummary(usage = {}, settings = loadSettings()) {
   const dailyLimit = Number(settings.dailyLimit || process.env.CODEARTS_BAR_DAILY_LIMIT || 200000);
@@ -328,7 +330,7 @@ function makeLightSnapshotFromAggregates(aggregates = {}, payload = {}, options 
 async function buildInitialSummarySnapshot(payload = {}, canonicalSnapshot = null) {
   const timestamp = Number(payload.timestamp || Date.now());
   const basePayload = dashboardAggregatePayload({ ...payload, timestamp, includeExtendedPerformance: false });
-  const summary = await localProvider.getSummary(basePayload);
+  const summary = await queryService.getSummary(basePayload);
   if (!summary?.ok || !summary.usage) throw new Error(summary?.error || '\u65e0\u6cd5\u8bfb\u53d6 CodeArts \u4f7f\u7528\u6458\u8981');
   const snap = makeLightSnapshotFromAggregates({
     usage: summary.usage,
@@ -353,9 +355,9 @@ async function buildInitialLightSnapshot(payload = {}, canonicalSnapshot = null)
   const requestPayload = defaultRequestPagePayload(payload);
   const sessionPayload = defaultSessionPagePayload(payload);
   const [aggregates, requestsPage, sessionsPage] = await Promise.all([
-    localProvider.getDashboardAggregates(basePayload).catch((error) => ({ ok: false, error: error.message })),
-    localProvider.getRequestsPage(requestPayload).catch((error) => ({ ok: false, error: error.message })),
-    localProvider.getSessionsPage(sessionPayload).catch((error) => ({ ok: false, error: error.message })),
+    queryService.getAggregates(basePayload).catch((error) => ({ ok: false, error: error.message })),
+    queryService.getRequestsPage(requestPayload).catch((error) => ({ ok: false, error: error.message })),
+    queryService.getSessionsPage(sessionPayload).catch((error) => ({ ok: false, error: error.message })),
   ]);
   if (!aggregates?.ok) throw new Error(aggregates?.error || '无法读取 CodeArts 聚合数据');
   const snap = makeLightSnapshotFromAggregates(aggregates, { ...basePayload, bucketMs }, { canonicalSnapshot });
@@ -375,9 +377,9 @@ async function buildDashboardLightPair(fullBase, payload = {}, canonicalSnapshot
   const requestPayload = defaultRequestPagePayload(payload);
   const sessionPayload = defaultSessionPagePayload(payload);
   const [aggregates, requestsPage, sessionsPage] = await Promise.all([
-    localProvider.getDashboardAggregates(basePayload).catch((error) => ({ ok: false, error: error.message })),
-    localProvider.getRequestsPage(requestPayload).catch((error) => ({ ok: false, error: error.message })),
-    localProvider.getSessionsPage(sessionPayload).catch((error) => ({ ok: false, error: error.message })),
+    queryService.getAggregates(basePayload).catch((error) => ({ ok: false, error: error.message })),
+    queryService.getRequestsPage(requestPayload).catch((error) => ({ ok: false, error: error.message })),
+    queryService.getSessionsPage(sessionPayload).catch((error) => ({ ok: false, error: error.message })),
   ]);
   const settings = loadSettings();
   const preserveCompleteAggregate = shouldPreserveCompleteAggregate(fullBase, aggregates, basePayload);

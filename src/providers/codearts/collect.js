@@ -78,12 +78,13 @@ function requestRowsFromMessages(messages, sessions, parts) {
   const sessionMap = new Map((sessions || []).map((s) => [`${s.source || ''}:${s.id || ''}`, s]));
   return (messages || [])
     .map((row) => {
-      const data = agg.parseJsonSafe(row.data, {});
-      if (!agg.isMeaningfulAssistant(row, partMap)) return null;
-      const token = agg.tokenForMessage(row, partMap);
+      const analysis = agg.analyzeMessage(row, partMap);
+      if (!analysis.meaningful) return null;
+      const data = analysis.data;
+      const token = analysis.token;
       const perf = agg.messagePerf(row, partMap, new Map()) || {};
       const session = sessionMap.get(`${row.source || ''}:${row.session_id || ''}`) || {};
-      const error = agg.extractError(data);
+      const error = analysis.error;
       return {
         id: row.id,
         sessionId: row.session_id,

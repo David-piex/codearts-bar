@@ -452,6 +452,7 @@ assert.equal(
 
 assert.match(extensionSource, /async function deactivate/);
 assert.match(extensionSource, /closeSqlJsWorker/);
+assert.match(extensionSource, /closeNativeWorker/);
 assert.match(extensionSource, /closeSettingsStore/);
 assert.equal((extensionSource.match(/context\.subscriptions\.push\(\{ dispose:/g) || []).length, 1, "refresh rescheduling should not accumulate disposables");
 
