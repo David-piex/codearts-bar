@@ -1,8 +1,8 @@
 # CodeArts Bar 优化路线图
 
-最后更新：2026-07-19
+最后更新：2026-07-27
 
-适用版本：`1.16.37`
+适用版本：`1.16.43`
 
 项目定位：本地优先的开发者使用分析工具，覆盖 Electron、VS Code、JetBrains 和 CLI。
 
@@ -15,7 +15,7 @@
 下一阶段不优先增加图表或管理功能，重点是：
 
 1. 用真实数据库持续对账统计口径。
-2. 继续降低大数据库无 sidecar 时的首次聚合成本。
+2. 继续降低大数据库无 sidecar 时必要的 O(N) 首次扫描成本。
 3. 守住跨端筛选、刷新稳定性和隐私边界。
 4. 用视觉基线守住开发者工作台的密度、对比度和多视口稳定性。
 
@@ -30,14 +30,17 @@
 | 时间范围 | 已完成 | 统一使用 `[start, endExclusive)`，本地日历日和 DST 由统一范围逻辑处理 |
 | Canonical quota | 已完成 | 顶层 `status`/`quota` 始终描述当前全来源、全模型本地视图，不随历史/来源/模型筛选变化 |
 | 跨端筛选 | 已完成 | Electron、VS Code、JetBrains 和 CLI 分离“当前状态”与“筛选区间统计”；来源、模型和项目支持多选 |
-| 请求/会话分页 | 已完成 | 数据库分页为历史明细主路径；支持 `10 / 20 / 50 / 100`、页码跳转和范围摘要，多源使用 k-way merge |
+| 请求/会话分页 | 已完成 | public 分页统一进入 native/sql.js Worker Pool；支持 `10 / 20 / 50 / 100`、页码跳转和范围摘要，多源使用 k-way merge 且只 hydrate 当前页 |
 | 跨端会话导出 | 已完成 | Desktop、VS Code 和 JetBrains 支持跨页多选与批量 Excel/Markdown/JSON，并统一过滤内置子任务 |
 | Snapshot 语义 | 已完成 | 截断列表显式携带 complete/sampled、历史总数和 scope，不能冒充完整历史 |
 | 隐私与只读 | 已完成 | SQL.js 只读、诊断脱敏、协议不暴露数据库路径或原始异常 |
-| JetBrains runtime | 已完成 | native/sql.js 查询契约一致，query bundle 受 `136000` 字节、runtime JS 受 `1250000` 字节门禁约束 |
+| QueryService | 已完成 | 四端通过共享服务调用聚合、诊断和分页，不直接耦合 adapter/provider 方法名 |
+| JetBrains runtime | 已完成 | 7 文件 manifest 与哈希校验；查询入口 `99952B`、runtime JS `1260935B`，受 `138000B / 1275000B` 门禁约束 |
 | 跨平台 CI | 已配置 | macOS/Linux 执行测试、无签名构建、资源 smoke 和 artifact 上传；仍需持续获得真实绿灯 |
-| 100k 热路径 | 已完成 | sidecar 解析与规范化进程内复用，2026-07-19 native/sql.js 热路径最大值分别为 `69.1ms / 90.4ms` |
+| 100k 热路径 | 已完成 | sidecar 解析与规范化进程内复用，`1.16.43` dashboard 热路径约 `70ms` |
 | Electron lean dashboard | 已完成 | 首屏跳过未消费的 `part` 扩展性能；rollup miss 构建一次并复用，完整命中在开库前返回 |
+| 冷聚合对象化 | 已完成 | Worker 直接消费 SQL 汇总与有限性能样本，不再返回完整 `performanceRows` 对象集合；首次扫描仍为 O(N) |
+| Renderer 开发构建 | 已完成 | ESM、外部 Source Map、无 CommonJS wrapper；筛选、分页和图表状态按源模块维护 |
 | 模型筛选 session rollup | 已完成 | token sidecar 先限定匹配 session，再与 session sidecar 合并，不以未筛选总数换性能 |
 | Desktop 视觉工作台 | 已完成 | 参考 CC Switch 的原生工具感，以冷灰、单一电蓝、紧凑控件和低动效完成校准；七场景视觉回归受 CI 保护 |
 
@@ -50,9 +53,9 @@ source discovery + meaningful assistant filtering
         ↓
 message / part Token 归一化
         ↓
-SQL 聚合 / usage rollup / P95 / k-way pagination
+SQL 聚合 / usage rollup / P95 / worker k-way pagination
         ↓
-query protocol
+QueryService / query protocol
         ↓
 Electron / VS Code / JetBrains / CLI
 ```
@@ -75,8 +78,8 @@ Electron / VS Code / JetBrains / CLI
 ### P1：首次聚合体验
 
 - 已提供首次 rollup 的排队、扫描、写入、失败退避和跨进程恢复状态；继续补充真实失败样本。
-- 保证冷路径不阻塞窗口交互；失败后可退回直接 SQL 并后台重建。
-- 继续缩短 50k/100k 首次 SQL.js JSON 提取；当前 Electron lean dashboard 已避免未使用的 `part` enrichment，脱敏多版本真实样本仍需扩充。
+- 保证冷路径不阻塞窗口交互；`1.16.43` 已将 native 分页和无 rollup 聚合迁移到 Worker，失败后仍可退回直接 SQL 并后台重建。
+- 继续缩短 50k/100k 首次 SQL.js 提取和必要的 O(N) 扫描；当前 Worker 已避免完整 token row 对象化，脱敏多版本真实样本仍需扩充。
 
 验收：热路径继续受门禁保护；冷路径有进度、有诊断、可恢复。
 

@@ -1,8 +1,8 @@
 # CodeArts Bar 优化执行计划
 
-最后更新：2026-07-15
+最后更新：2026-07-27
 
-执行基线：`1.16.34`
+执行基线：`1.16.43`
 
 ## 本轮完成状态
 
@@ -14,10 +14,14 @@
 | Canonical quota | 完成 | 筛选仅改变分析数据，不改变当前本地状态 |
 | 四端筛选协议 | 完成 | Electron、VS Code、JetBrains、CLI 使用相同范围语义 |
 | JetBrains 请求契约 | 完成 | `cacheWrite` 保留，非数字 status 不显示“错误 0” |
-| JetBrains bundle | 完成 | `<127000` 字节门禁，native/sql.js、多选筛选与脱敏失败路径均验证 |
+| QueryService | 完成 | 四端共享聚合、诊断和分页方法映射 |
+| Native 分页 Worker | 完成 | public 请求/会话分页不在调用线程同步执行 SQLite |
+| 冷聚合对象化 | 完成 | SQL 汇总替代完整 `performanceRows` 对象集合，首次扫描仍为 O(N) |
+| Renderer ESM 开发构建 | 完成 | ESM、外部 Source Map、独立状态源模块与生产单文件构建均验证 |
+| JetBrains bundle | 完成 | 查询入口 `99952B`、runtime JS `1260935B`，低于 `138000B / 1275000B` 门禁 |
 | 跨平台 CI | 已配置 | macOS/Linux 测试、构建、资源 smoke、artifact 上传 |
 | 真实库对账 | 完成 | all/30d、桌面/CLI、native/sql.js、rollup/no-rollup 数字一致 |
-| 100k 性能基线 | 完成 | 热路径 native/sql.js 最大值 140.2ms/165.2ms，冷路径单独记录 |
+| 100k 性能基线 | 完成 | `1.16.43` native/SQL.js 冷 dashboard 约 `3.7s / 5.7s`，sidecar 热路径约 `70ms` |
 
 ## 下一轮执行顺序
 
@@ -32,9 +36,9 @@
 
 ### 阶段 2：冷路径体验
 
-1. 以已记录的 10k/50k/100k 基线继续降低首次聚合耗时。
+1. 以已记录的 10k/50k/100k 基线继续降低首次 O(N) 聚合耗时，不以 Worker 隔离代替算法和 I/O 优化。
 2. 为 rollup 首次构建补充阶段、行数、耗时和失败诊断。
-3. 验证 fallback 不阻塞 UI，后台重建不会覆盖新筛选 generation。
+3. 验证 fallback、native 分页和后台重建不阻塞 UI，旧任务不会覆盖新筛选 generation。
 4. 只有新基线稳定后，才调整性能预算。
 
 完成条件：首开状态可解释、失败可恢复、热路径门禁不回退。

@@ -1,8 +1,8 @@
 # CodeArts Bar 优化 Backlog
 
-最后更新：2026-07-16
+最后更新：2026-07-27
 
-当前版本：`1.16.37`
+当前版本：`1.16.43`
 
 本清单只保留尚未完成或需要长期守护的事项。已经落地的统计、筛选和稳定性修复不再重复列为“下一步”。
 
@@ -16,7 +16,11 @@
 - [x] canonical `status`/`quota` 不受历史、来源和模型筛选覆盖。
 - [x] Request/Session 数据库分页与多源 k-way merge。
 - [x] Electron、VS Code、JetBrains、CLI 查询协议对齐。
-- [x] JetBrains 查询 bundle `<=136000` 字节与 runtime JS `<=1250000` 字节门禁；首次 rollup 跨进程进度与恢复加入后当前分别为 `135187` / `1244611` 字节。
+- [x] 共享 `QueryService` 统一摘要、聚合、诊断和分页调用，四端不再分别绑定 provider 方法名。
+- [x] Native Request/Session 分页进入 Worker Pool，多源 k-way merge 只 hydrate 当前页。
+- [x] 冷聚合返回 SQL 汇总与必要性能样本，不再创建完整 `performanceRows` JavaScript 对象集合。
+- [x] Dashboard 开发构建使用 ESM 与外部 Source Map，筛选、分页和图表状态拆为独立源模块。
+- [x] JetBrains 查询入口 `99952` 字节与 runtime JS `1260935` 字节，低于 `138000` / `1275000` 字节门禁。
 - [x] Desktop `1.3.17`、CLI `26.5.4` / `26.5.6` 脱敏真实结构 fixture 与确定性重建检查。
 - [x] Desktop、VS Code、JetBrains、CLI 在 native/sql.js 下的四端自动对账矩阵。
 - [x] 质量指标绑定 package 版本、commit、质量基线和 renderer/CSS 产物 SHA256。
@@ -55,12 +59,15 @@
 
 ### PERF-1 首次 rollup 构建
 
-状态：已完成第一阶段，持续优化冷路径耗时。
+状态：已完成调用线程隔离和对象化缩减，持续优化必要的首次扫描耗时。
 
 - [x] 展示排队、打开、结构检查、扫描、内容补全、归一化、写入、会话汇总和完成阶段，以及扫描行数、百分比与失败原因。
 - [x] 构建失败时保留直接 SQL fallback，按指数退避后台重试，恢复后自动刷新。
 - [x] Electron、VS Code 使用 Worker 与轻量状态事件；JetBrains 使用独立后台 CLI 任务，不阻塞 IDE UI 线程。
+- [x] Native 分页与无 rollup 聚合均进入 Worker；超大 session 不再同步加载全部消息。
+- [x] SQL 冷聚合直接返回汇总与有限性能样本，不再生成全量 token row 对象。
 - [ ] 继续缩短 50k/100k SQL.js 冷路径本身的绝对耗时。
+- [ ] 评估可增量维护的更细粒度 rollup，减少首次 O(N) 扫描；任何方案必须保持完整统计与筛选语义。
 
 ### PERF-2 当前版本重新基线
 
@@ -68,13 +75,13 @@
 
 - 使用 10k/50k/100k 合成数据和脱敏真实样本重新采样。
 - 分开记录 native/sql.js、冷路径、sidecar 构建和热路径。
-- `1.16.33` 的 10k/50k/100k 冷/热结果已记录在性能文档；后续硬件或口径变化必须重新采样。
+- `1.16.33` 历史结果和 `1.16.43` 增量结果均已记录在性能文档；后续硬件或口径变化必须重新采样。
 
 ### PERF-3 Bundle 余量
 
 状态：持续守护。
 
-- renderer、CSS 和 JetBrains CLI 保持现有门禁。
+- renderer、CSS 和 JetBrains CLI 保持 `330000`、`206848`、`138000` 字节门禁，JetBrains runtime JS 总量保持 `1275000` 字节门禁。
 - JetBrains 专用瘦身不得削弱脱敏、native/sql.js fallback 或协议字段。
 
 ## P2：发布与平台

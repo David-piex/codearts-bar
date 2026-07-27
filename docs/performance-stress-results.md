@@ -1,10 +1,10 @@
 # CodeArts Bar 性能压测结果
 
-文档更新：2026-07-19
+文档更新：2026-07-27
 
 历史性能基线版本：`1.16.33`
 
-下列聚合耗时和交互数字采自 `1.16.33`，保留作为历史基线；`1.16.36` 只补充与本次功能变更直接相关的增量验证，不用新功能验证结果覆盖旧性能采样。
+下列早期聚合耗时和交互数字采自 `1.16.33`，保留作为历史基线；后续章节分别记录 `1.16.36` 和 `1.16.43` 增量验证，不用不同硬件、实现或统计口径的数字互相覆盖。
 
 ## 采样环境
 
@@ -143,3 +143,23 @@ Desktop 前端按本地开发者分析工作台校准，参考 CC Switch 的浅�
 最终质量采样：冷聚合 `58.2ms`、热聚合中位数 `8.9ms`；core coverage lines/functions/branches 为 `84.20% / 81.64% / 68.57%`，全仓为 `29.83% / 69.04% / 64.98%`。Electron E2E 为 resize `78ms`、来源切换 `3ms`、请求分页 `3ms`、会话分页 `1ms`；VS Code 1.129.1 扩展宿主激活 `472ms`、刷新 `2ms`。
 
 标准、窄屏、宽屏、会话管理、日期弹层、VS Code tooltip 和空态共 7 个视觉基线已更新，重跑像素回归差异为 0。`npm test`、`metrics:check -- --skip-jetbrains`、全量聚合压力、Electron E2E、VS Code E2E 和视觉回归均通过。
+
+## 1.16.43 Worker 与冷聚合增量验证
+
+2026-07-27 在当前 Windows 环境完成 `npm test`、`npm run stress:pagination`、`npm run stress:aggregation:full`、Electron E2E、VS Code E2E 和正式 release 编排。该轮变更将 native 分页与冷聚合隔离到 Worker，并把冷聚合从完整 token row 对象集合改为 SQL 汇总与有限性能样本。
+
+| 场景 | 结果 |
+|---|---:|
+| 100k native 无 rollup dashboard 冷路径 | 约 `3.7s` |
+| 100k SQL.js 无 rollup dashboard 冷路径 | 约 `5.7s` |
+| sidecar dashboard 热路径 | 约 `70ms` |
+| quality snapshot 冷路径 | 约 `133ms` |
+| quality snapshot warm 中位数 | 约 `12ms` |
+| Electron resize / 来源切换 / 请求分页 | `73ms / 3ms / 2ms` |
+| VS Code Extension Host 激活 / 刷新 | `1212ms / 158ms` |
+
+首次无 rollup 聚合仍需 O(N) 扫描数据库。`1.16.43` 的结论是该扫描不再同步阻塞 Electron/VS Code 调用线程，也不再构造完整 `performanceRows` JavaScript 对象集合；不能把 Worker 隔离描述为算法复杂度已经消失。
+
+分页压力测试验证 public Request、Session 和单会话 Request 分页均经过 Worker，多来源深分页继续使用 k-way merge 并只 hydrate 当前页。Dashboard 开发构建 smoke 同时验证 ESM、外部 Source Map 和无 CommonJS wrapper。
+
+JetBrains 内嵌 runtime manifest 当前包含 7 个 JavaScript 文件：查询入口 `99952B`，runtime JS 合计 `1260935B`，分别低于 `138000B / 1275000B` 门禁；正式插件 ZIP 为 `904695B`，低于 `950000B` 门禁。`1.16.43` release 的 Desktop、CLI、npm、VSIX 和 JetBrains ZIP 均通过对应 package smoke，并由 `latest.json` 与 `SHA256SUMS.txt` 记录源提交和哈希。

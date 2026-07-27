@@ -22,6 +22,14 @@ Pagination options use one-based pages:
 
 `analytics` accepts `--start <milliseconds>`, `--end <milliseconds>`, and `--bucket-ms <milliseconds>`. Clients may pass `--bucket-offset-ms <milliseconds>` to align daily buckets with the user's local midnight. When omitted, the CLI derives the offset from the runtime time zone at the range midpoint.
 
+`analytics`, `sessions`, and `requests` accept repeated `--source`, `--model`, and `--project` options where supported. Repeated values use OR semantics within one dimension; different dimensions are combined as the same filtered scope.
+
+## Implementation boundary
+
+`src/query-service.js` is the shared application boundary behind the protocol. It maps summary, trend, model, source, session summary, aggregate, diagnostics, sessions page, requests page, and session requests page operations to the active provider. Desktop, VS Code, JetBrains, and CLI consumers should call this boundary instead of binding directly to adapter-specific functions.
+
+Native and SQL.js pagination execute through Worker Pools. The protocol does not expose worker details, but implementations must preserve the same ordering, total, scope, and empty-page semantics while hydrating only the requested page. Direct synchronous native pagination functions are internal Worker/one-shot APIs, not client integration points.
+
 ## Envelope
 
 Every command writes one JSON object to stdout:
@@ -44,7 +52,7 @@ Failures retain the same envelope, set `ok` to `false`, include a machine-readab
 
 ## Pagination contract
 
-Paged resources return `page`, `pageSize`, `total`, `hasMore`, and `items`. Page size is bounded by the provider to protect IDE processes from unexpectedly large payloads. An empty page is successful and returns an empty `items` array.
+Paged resources return `page`, `pageSize`, `total`, `hasMore`, and `items`. Page size is bounded by the provider to protect IDE processes from unexpectedly large payloads. An empty page is successful and returns an empty `items` array. Multi-source implementations may use k-way merge internally, but the result must remain globally sorted and source-qualified.
 
 ## Compatibility
 

@@ -1,6 +1,6 @@
 # CodeArts Bar 开源发布检查清单
 
-最后更新：2026-07-16
+最后更新：2026-07-27
 定位：本地开源开发者工具，类似 CodexBar。优先保障本地体验、性能、诊断、可维护和可发布；商业化能力后置。
 
 ---
@@ -81,6 +81,7 @@ release/RELEASE_NOTES.md
 建议验收命令：
 
 ```powershell
+npm run release
 npm run build:app
 npm run e2e:vscode
 npm run verify:jetbrains
@@ -91,6 +92,9 @@ npm run smoke:package-resources
 
 发布编排还需验证：
 
+- `latest.json` 中的版本、源 commit、clean 状态和产物列表与 tag 一致，`SHA256SUMS.txt` 覆盖全部 8 个二进制/压缩产物。
+- GitHub Release 必须同时上传 Desktop、两种 CLI、npm、VSIX、JetBrains ZIP、blockmap、`latest.json` 和 `SHA256SUMS.txt`；不能只发布桌面安装包。
+- VS Code/CodeArts 插件固定为 `codearts-bar-status.vsix`，JetBrains 插件固定为 `codearts-bar-jetbrains-<version>.zip`，两者都必须通过 package smoke。
 - Windows 发布目录被索引器或杀毒软件短暂占用时，原子重命名会重试并最终成功或安全回滚。
 - Desktop、VS Code 和 JetBrains 的批量 Excel/Markdown/JSON 导出使用同一隐私选项和结构。
 - 内置子任务不会进入单会话或批量导出文件。

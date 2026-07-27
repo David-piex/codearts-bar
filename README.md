@@ -35,6 +35,15 @@ CodeArts Bar 在本机读取 CodeArts Agent 生成的 SQLite 数据，提供 **W
 - **平滑冷启动**：先显示 Summary Skeleton 和核心指标，再在后台补趋势、模型及会话聚合。
 - **开发者工作台界面**：参考 CC Switch 的原生桌面工具感，使用冷灰画布、单一电蓝强调、紧凑分段控件和低动效信息层级；标准、窄屏、宽屏、会话与日期弹层均有视觉回归。
 
+## 1.16.43 更新
+
+- Native SQLite 的请求、单会话请求和会话分页全部迁移到 Worker Pool；Electron、VS Code 和 CLI 调用线程不再同步执行大历史库分页，多来源仍使用 k-way merge 且只 hydrate 当前页。
+- 无 rollup 的首次聚合改为在 Worker 中直接消费 SQL 聚合结果，不再构造完整 `performanceRows` JavaScript 对象集合；首次全库统计仍需 O(N) 扫描，但主线程阻塞和峰值对象数量均已降低。
+- 新增共享 `QueryService`，统一摘要、趋势、模型、来源、会话汇总、数据库诊断和分页方法映射；Desktop、VS Code、JetBrains 与 CLI 继续使用同一筛选和完整性语义。
+- Dashboard 开发构建改为 ESM 并生成外部 Source Map，浏览器产物移除 CommonJS wrapper；筛选、分页和图表状态拆分为独立源模块，生产构建仍保持单文件交付。
+- JetBrains 内嵌 CLI runtime 拆为 7 个受 manifest 哈希保护的 JavaScript 文件；查询入口为 `99,952B`，runtime JS 合计 `1,260,935B`，分别低于 `138,000B / 1,275,000B` 门禁。
+- 完整发布产物包含 Windows 安装版/便携版、普通/独立 CLI、npm 包、VS Code/CodeArts VSIX、JetBrains 插件 ZIP、版本 manifest、SHA256 和 release notes。
+
 ## 1.16.42 更新
 
 - 修复深色模式下 Agent 空闲、缓存分析、统计表格和缓存胶囊被旧浅色渐变覆盖的问题，统一为冷灰语义层级。
@@ -275,15 +284,17 @@ CodeArts Bar 不估算或反向推测 token。它读取本地 `opencode.db` 中 
 3. 趋势、模型、来源和会话统计在后台补齐。
 4. `sql.js + wasm` 冷路径超过 300ms 时显示“正在建立缓存...”。
 
-Electron 首屏 dashboard 只请求当前界面消费的 token、趋势、模型延迟和会话统计，不扫描未使用的首内容时间与输出速度 `part` 数据。完整 sidecar 缺失时，同一次冷扫描会同时生成可复用 rollup；命中后 native 与 SQL.js 都可在开库前完成 dashboard 聚合。模型筛选仍会按匹配消息限定会话，不会退化成未筛选的会话总数。
+Electron 首屏 dashboard 只请求当前界面消费的 token、趋势、模型延迟和会话统计，不扫描未使用的首内容时间与输出速度 `part` 数据。完整 sidecar 缺失时，聚合在 Worker 中执行，并直接消费 SQL 汇总与必要的性能样本，不再把全量消息 hydrate 成 JavaScript 对象；同一次冷扫描仍会生成可复用 rollup。命中后 native 与 SQL.js 都可在开库前完成 dashboard 聚合。模型筛选仍会按匹配消息限定会话，不会退化成未筛选的会话总数。
+
+请求、单会话请求和会话分页同样通过 Worker Pool 执行。多来源查询按源分批读取、k-way merge 并只 hydrate 当前页；超大 session 不再把全部消息同步加载到 Electron 或 VS Code 调用线程。
 
 数据库监听覆盖主数据库、WAL、SHM、touch 文件与相关目录。Dashboard 可见时默认每 4 秒兜底检查；隐藏到托盘后 watcher 只维护变化指纹，主进程摘要调度默认每 60 秒更新一次，renderer 不再后台轮询。
 
 ## 已知限制
 
-- 大型数据库第一次聚合可能较慢，缓存建立后会明显加快。
+- 无 rollup 的大型数据库第一次聚合仍需 O(N) 扫描，耗时取决于数据库规模、磁盘和 SQLite adapter；该工作已移出主线程，缓存建立后会明显加快。
 - 优先使用 `node:sqlite`；运行环境不支持时自动回退到 `sql.js + wasm`，功能保持可用，但冷启动成本更高。
-- 极大的历史数据库可能需要等待后台 rollup / sidecar 缓存完成。
+- 极大的历史数据库可能需要等待后台 rollup / sidecar 缓存完成，但窗口交互和当前页分页不应等待全量 hydrate。
 - 数据准确性取决于本地数据库结构以及 CodeArts Agent 已写入记录的完整性。
 - 当前正式桌面产物为 Windows x64；macOS / Linux 需要额外实机回归与打包适配。
 - VS Code 与 JetBrains 提供只读查看、筛选、分页、诊断和导出，不包含桌面端的会话重命名、固定、归档与恢复等写能力。

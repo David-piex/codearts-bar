@@ -1,8 +1,8 @@
 # CodeArts Bar 性能架构
 
-最后更新：2026-07-15
+最后更新：2026-07-27
 
-适用版本：`1.16.34`
+适用版本：`1.16.43`
 
 ## 目标
 
@@ -19,9 +19,9 @@ meaningful assistant filtering
         ↓
 message/part Token normalization
         ↓
-SQL aggregate / usage rollup / pagination
+SQL aggregate / usage rollup / worker pagination
         ↓
-query protocol
+QueryService / Query Protocol v1
         ↓
 Electron / VS Code / JetBrains / CLI
 ```
@@ -66,16 +66,19 @@ Electron / VS Code / JetBrains / CLI
 
 - `node:sqlite` 是可用时的首选只读 adapter，`sql.js` 是兼容 fallback。
 - SQL 路径负责 summary、趋势、模型、来源和 session summary。
+- 无 rollup 的冷路径在聚合 Worker 中执行 SQL 汇总，只返回合并统计与 latency/首内容/输出速度所需样本，不再构造完整 `performanceRows` 对象集合。
 - usage rollup 保存完整 Token/session 汇总和紧凑小时 bucket。
 - rollup miss 可直查 SQL，并在后台重建；缓存命中不能改变 scope 或完整性。
 - sidecar 文件按文件签名在进程内复用解析结果；数据库指纹或 sidecar 变化会立即使缓存失效。
 - 纯 token 摘要不复制延迟样本；趋势与模型仍保留原始样本并计算精确 P95。
 - 慢查询和 fallback 只记录脱敏诊断。
+- 首次全库统计仍需要 O(N) 扫描；当前优化目标是隔离调用线程、降低对象化和复用 sidecar，而不是声称消除必要扫描。
 
 ## 分页
 
-- 单源分页直接在数据库执行 `limit/offset`。
-- 多源分页使用 k-way merge，每个源分批读取，跳过 offset 后只 hydrate 当前页。
+- public Request、Session 和单会话 Request 分页统一进入 native/sql.js Worker Pool，调用线程不直接执行同步 SQLite 查询。
+- 单源分页在 Worker 内执行 `limit/offset`；direct native API 仅供 Worker 与一次性 CLI 调用。
+- 多源分页使用 k-way merge，每个源分批读取，跳过 offset 后只 hydrate 当前页，不把超大 session 全部加载到调用进程。
 - Request 和 Session 都返回 total、hasMore、strategy 和必要诊断。
 - 完整历史分页不依赖 snapshot 列表长度。
 
@@ -85,12 +88,14 @@ Electron / VS Code / JetBrains / CLI
 - 固定 slot 局部更新，避免筛选或实时刷新重建整个界面。
 - generation/scope key 阻止旧请求覆盖新筛选。
 - resize、zoom 和视图切换期间降低 blur、阴影和动画成本，canvas 尺寸不变时跳过重绘。
+- 开发构建使用 ESM 与外部 Source Map，筛选、分页和图表状态位于独立源模块；生产构建保持单文件资源，避免 Electron/VS Code 运行时增加模块加载请求。
 
 ## IDE 与 CLI runtime
 
 - VS Code 详情查询同时保留 canonical 当前摘要和 filtered range。
 - JetBrains 将 dashboard 当前状态与 analytics 历史查询分开。
-- JetBrains 单文件 CLI 使用精简但等价的协议、脱敏与多选筛选路径，并由 `<127000` 字节门禁保护。
+- `QueryService` 统一聚合、诊断和分页方法映射，客户端不直接绑定具体 SQLite adapter。
+- JetBrains 内嵌 CLI runtime 由 7 个 manifest 校验的 JavaScript 文件组成；查询入口受 `138000` 字节门禁、runtime JS 总量受 `1275000` 字节门禁保护。
 - Query Protocol v1 是跨端稳定边界；客户端应忽略新增字段，但不能忽略 scope 和完整性语义。
 
 ## 跨平台构建
@@ -116,4 +121,4 @@ npm run e2e:vscode
 node tests/jetbrains-cli-runtime-smoke.js
 ```
 
-当前剩余的主要性能风险是首次大数据库聚合和 rollup 构建，而不是热路径分页或局部渲染。`1.16.33` 的新基线见 `performance-stress-results.md`，后续结论不能沿用更早版本数字。
+当前剩余的主要性能风险是无 rollup 时首次 O(N) 数据库扫描和 SQL.js 冷启动，而不是同步分页、热路径或局部渲染。历史与 `1.16.43` 增量基线见 `performance-stress-results.md`；比较结果时必须区分版本、adapter、冷热状态和硬件环境。
