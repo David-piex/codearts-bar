@@ -128,7 +128,7 @@ assert.match(dashboardSource, /chooseSessionBatchExport[\s\S]*--session-id[\s\S]
 assert.match(dashboardSource, /PAGE_SIZES = \{10, 20, 50, 100\}[\s\S]*sessionPageSizeControl[\s\S]*requestPageSizeControl/, 'session and request pages must expose supported page sizes');
 assert.match(dashboardSource, /sessionPageJump[\s\S]*requestPageJump[\s\S]*boundedPage/, 'session and request pages must expose bounded page jumps');
 assert.match(dashboardSource, /appendMultiArgs\(args, "--source", sessionSource\.selectedValues\(\)\)[\s\S]*appendMultiArgs\(args, "--model", sessionModel\.selectedValues\(\)\)[\s\S]*appendMultiArgs\(args, "--project", sessionProject\.selectedValues\(\)\)/, 'session multi-select filters must reach the database query');
-assert.match(jetbrainsCliSource, /getDashboardAggregates\(\{ source, model, project, range,/, 'analytics project filters must reach the shared aggregation query');
+assert.match(jetbrainsCliSource, /queryService\.getAggregates\(\{ source, model, project, range,/, 'analytics project filters must reach the shared aggregation query');
 assert.match(dashboardSource, /service\.query\("filters", List\.of\(\)[\s\S]*UsageSnapshot\.filterModels\(data\)[\s\S]*UsageSnapshot\.filterProjects\(data\)/, 'filter menus must use the unfiltered CLI resource rather than the current analytics result');
 assert.doesNotMatch(dashboardSource, /updateFilterOptions\(data\.models\(\), data\.projects\(\)\)/, 'filtered analytics results must not replace the authoritative filter menu options');
 assert.match(dashboardSource, /deck\.add\(tableSurface\(providerGrid\), "providers"\)[\s\S]*fillProviders\(data\.providers\(\)\)/, 'provider analytics must have a populated native table');
