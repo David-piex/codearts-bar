@@ -8,7 +8,7 @@ const { getExtensionSummary, getExtensionDetails } = require("./extension-data")
 const { DashboardHost, OverviewViewProvider } = require("./dashboard");
 const localProvider = require("./providers/codeartsLocal");
 const { databaseFingerprint } = require("./core/source-fingerprint");
-const { closeSettingsStore } = require("./settings");
+const { closeSettingsStore, loadSettings } = require("./settings");
 const { databasePagePayload } = require("./protocol/query-results");
 const { redactSensitiveText } = require("./core/sensitive-text");
 const { exportSessionWithPrivacy, exportSessionsWithPrivacy } = require("./session-export");
@@ -55,8 +55,19 @@ const T = {
 
 function config() {
   const c = vscode.workspace.getConfiguration("codeartsBar");
+  const configuredDbPath = c.get("dbPath");
+  let sharedDbPath;
+  if (!configuredDbPath) {
+    try {
+      sharedDbPath = loadSettings()?.dbPath || undefined;
+    } catch {
+      sharedDbPath = undefined;
+    }
+  }
   return {
-    dbPath: c.get("dbPath") || undefined,
+    // Keep an explicit VS Code setting authoritative, but inherit the
+    // desktop app's database path when the extension setting is empty.
+    dbPath: configuredDbPath || sharedDbPath || undefined,
     dailyLimit: c.get("dailyLimit") || 200000,
     windowHours: c.get("windowHours") || 24,
     refreshMs: Math.max(10000, c.get("refreshMs") || 60000),

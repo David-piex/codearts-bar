@@ -44,6 +44,14 @@ class DashboardHost {
 
   async handleMessage(message, target) {
     if (message?.type === "ready") {
+      // Some CodeArts builds emit the initial visibility event after the
+      // webview has already loaded. In that order the sidebar can be marked
+      // hidden before `ready`, which would discard the only detail request.
+      // A ready message from a sidebar is authoritative for its first load.
+      if (target?.mode === "sidebar" && !target.visible) {
+        target.visible = true;
+        this.operations.onVisibilityChanged?.(this.hasTargets());
+      }
       this.postSnapshot(target);
       const state = message.state || {};
       if (target.visible)
@@ -55,9 +63,13 @@ class DashboardHost {
             state.range === "custom"
               ? { start: state.customStart, end: state.customEnd }
               : undefined,
-          source: state.sourceFilter,
-          model: state.modelFilter,
-          project: state.projectFilter,
+          // The compact sidebar hides source/model/project controls. Do not
+          // reuse stale dashboard filters from its persisted Webview state;
+          // the sidebar is the global overview, while the full panel owns
+          // scoped analytics.
+          source: target.mode === "sidebar" ? "all" : state.sourceFilter,
+          model: target.mode === "sidebar" ? "all" : state.modelFilter,
+          project: target.mode === "sidebar" ? "all" : state.projectFilter,
         });
       return undefined;
     }
@@ -274,12 +286,19 @@ class OverviewViewProvider {
   resolveWebviewView(view) {
     const target = this.host.attach(view.webview, "sidebar");
     this.target = target;
-    target.visible = view.visible;
-    this.host.operations.onVisibilityChanged?.(this.host.hasTargets());
     view.onDidChangeVisibility(() =>
       this.host.setVisible(target, view.visible, "sidebar-visible"),
     );
     view.onDidDispose(() => this.host.remove(target));
+    // CodeArts' VS Code fork can report `view.visible === false` or
+    // `undefined` while resolving a sidebar that is already on screen. If
+    // that value is copied directly, the webview's initial `ready` message
+    // skips detail loading and the sidebar stays on its HTML placeholders
+    // (0 tokens / 0 requests), while the full dashboard works normally.
+    // Resolving the provider is itself the visibility transition; let the
+    // normal visibility handler correct this state when the view is hidden.
+    target.visible = false;
+    this.host.setVisible(target, true, "sidebar-resolve");
   }
 }
 

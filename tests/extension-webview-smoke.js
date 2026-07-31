@@ -297,7 +297,7 @@ vm.runInNewContext(
   },
   { filename: "dashboard.js" },
 );
-const { DashboardHost } = dashboardModule.exports;
+const { DashboardHost, OverviewViewProvider } = dashboardModule.exports;
 const posted = [];
 const webview = {
   options: {},
@@ -335,6 +335,48 @@ assert.equal(posted.find((message) => message.type === "details").generation, ne
 assert.equal(posted.at(-1).type, "refreshing");
 assert.equal(posted.at(-1).value, false);
 assert.equal(posted.at(-1).generation, newRequest.generation);
+
+const sidebarDetails = [];
+const sidebarHost = new DashboardHost(
+  { extensionUri: "extension" },
+  () => null,
+  () => undefined,
+  (options) => sidebarDetails.push(options),
+  () => undefined,
+);
+const sidebarWebview = {
+  options: {},
+  html: "",
+  asWebviewUri: (value) => value,
+  onDidReceiveMessage(handler) { this.receive = handler; },
+  postMessage() {},
+};
+const sidebarView = {
+  webview: sidebarWebview,
+  visible: false,
+  onDidChangeVisibility(handler) { this.visibilityHandler = handler; },
+  onDidDispose(handler) { this.disposeHandler = handler; },
+};
+const sidebarProvider = new OverviewViewProvider(sidebarHost);
+sidebarProvider.resolveWebviewView(sidebarView);
+assert.equal(sidebarProvider.target.visible, true, "sidebar resolve must treat the resolved webview as visible");
+assert.equal(sidebarDetails.length, 1, "sidebar resolve must start the initial details load");
+assert.equal(sidebarDetails[0].reason, "sidebar-resolve");
+sidebarProvider.target.visible = false;
+sidebarProvider.target.generation += 1;
+sidebarProvider.target.webview.receive?.({
+  type: "ready",
+  state: {
+    range: "today",
+    modelFilter: ["huaweicloud-maas/ca-switch/xiaomi/mimo-v2.5"],
+  },
+});
+assert.equal(sidebarProvider.target.visible, true, "sidebar ready must recover a late visibility callback");
+assert.equal(sidebarDetails.length, 2, "sidebar ready must retry the initial details load");
+assert.equal(sidebarDetails[1].reason, "webview-ready");
+assert.equal(sidebarDetails[1].model, "all", "sidebar ready must ignore stale hidden model filters");
+assert.equal(sidebarDetails[1].source, "all");
+assert.equal(sidebarDetails[1].project, "all");
 
 const failureMessages = [];
 const failureWebview = {

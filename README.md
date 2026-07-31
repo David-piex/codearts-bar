@@ -134,7 +134,7 @@ CodeArts Bar 在本机读取 CodeArts Agent 生成的 SQLite 数据，提供 **W
 3. 选择右上角 `...` → **从 VSIX 安装...**。
 4. 安装后点击活动栏中的“码道”，或在命令面板执行 `码道：打开概览侧边栏`。
 
-扩展默认读取桌面端数据库。自定义路径可在设置中填写：
+扩展会优先使用 VS Code 设置中的 `codeartsBar.dbPath`；未配置时自动继承桌面端 CodeArts Bar 的数据库路径，最后才回退到默认数据库。自定义路径可在设置中填写：
 
 ```text
 codeartsBar.dbPath
