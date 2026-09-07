@@ -168,6 +168,10 @@ function testAggregator() {
   assert.deepEqual(mixedUsage, { total: 20, input: 12, output: 3, reasoning: 0, cacheRead: 0, cacheWrite: 5 }, 'tokens and usage aliases must share one fallback chain');
   const topLevelUsage = agg.pickToken({ input_tokens: 7, completion_tokens: 2, cached_tokens: 3, cache_creation_input_tokens: 1 });
   assert.deepEqual(topLevelUsage, { total: 13, input: 7, output: 2, reasoning: 0, cacheRead: 3, cacheWrite: 1 }, 'top-level token aliases must match nested token parsing');
+  const inferHubUsage = agg.pickToken({ tokens: { input: 23071, output: 21, total: 25680, cache: { read: 2560, write: 0 } } });
+  assert.deepEqual(inferHubUsage, { total: 25680, input: 23071, output: 21, reasoning: 0, cacheRead: 2560, cacheWrite: 0 }, 'InferHub AgentCore cache.read must remain visible');
+  const tokenSuffixUsage = agg.pickToken({ usage: { inputTokens: 10, outputTokens: 2, cacheReadTokens: 8, cacheWriteTokens: 1 } });
+  assert.deepEqual(tokenSuffixUsage, { total: 21, input: 10, output: 2, reasoning: 0, cacheRead: 8, cacheWrite: 1 }, 'cache token suffix aliases must remain supported');
   const partOnly = { id:'part-only', session_id:'s1', time_created:base + 4, time_updated:base + 4, data: JSON.stringify({ role:'assistant', modelID:'m', tokens:{ input:0, output:0 } }) };
   const partOnlyMap = agg.buildPartMap([{ id:'finish', message_id:'part-only', session_id:'s1', time_created:base + 5, data:JSON.stringify({ type:'step-finish', tokens:{ input:1, output:1 } }) }]);
   const ttft = agg.buildTtftMap([partOnly], [{ sessionId:'s1', firstTokenAt:base + 5, ttftMs:1 }], partOnlyMap);

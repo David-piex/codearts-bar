@@ -49,7 +49,7 @@ body::before,body::after { display:none; }
 .analytics-page-head .head-title h2 { color:var(--mac-text);font-size:27px;line-height:1.1;font-weight:760;letter-spacing:-.7px; }
 .analytics-page-head .head-title p { margin-top:5px;font-size:12.5px; }
 .analytics-page-head .filters,.session-filter-head .filters { gap:7px;padding:0;border:0;border-radius:0;background:transparent;box-shadow:none; }
-.analytics-page-head .filters>:where(.source-switch,.select,.date-range-control),.session-filter-head .filters>:where(.source-switch,.select) { border-color:var(--mac-line-soft);border-radius:10px;background:var(--mac-surface);box-shadow:var(--shadow-control); }
+.analytics-page-head .filters>:where(.source-switch,.select,.date-range-control),.session-filter-head .filters>:where(.source-switch,.select,.date-range-control) { border-color:var(--mac-line-soft);border-radius:10px;background:var(--mac-surface);box-shadow:var(--shadow-control); }
 .page-head:not(.session-filter-head) .source-switch,.page-head:not(.session-filter-head) .select,.page-head:not(.session-filter-head) .date-range-control { height:38px;min-height:38px; }
 .page-head:not(.session-filter-head) .source-switch-btn,.page-head:not(.session-filter-head) .icon-chip { height:30px;min-height:30px;line-height:30px; }
 .page-head:not(.session-filter-head) .date-range-trigger { height:36px;min-height:36px; }

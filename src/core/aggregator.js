@@ -34,8 +34,11 @@ function pickToken(data) {
   const input = tokenMetric(sources, ['input', 'inputTokens', 'input_tokens', 'prompt_tokens', 'promptTokens']);
   const output = tokenMetric(sources, ['output', 'outputTokens', 'output_tokens', 'completion_tokens', 'completionTokens']);
   const reasoning = tokenMetric(sources, ['reasoning', 'reasoningTokens', 'reasoning_tokens']);
-  const cacheRead = tokenMetric(sources, ['cacheRead', 'cache_read', 'cached_tokens', 'cache_read_tokens'], ['read', 'cache_read']);
-  const cacheWrite = tokenMetric(sources, ['cacheWrite', 'cache_write', 'cache_creation_input_tokens', 'cache_write_tokens'], ['write', 'cache_write']);
+  // InferHub/AgentCore has emitted both snake_case and *Tokens spellings over
+  // time. Keep the aliases in the same fallback chain so an SDK shape change
+  // does not make cache usage disappear from the dashboard.
+  const cacheRead = tokenMetric(sources, ['cacheRead', 'cache_read', 'cacheReadTokens', 'cache_read_tokens', 'cached_tokens'], ['read', 'cache_read', 'readTokens', 'cacheReadTokens']);
+  const cacheWrite = tokenMetric(sources, ['cacheWrite', 'cache_write', 'cacheWriteTokens', 'cache_creation_input_tokens', 'cache_write_tokens'], ['write', 'cache_write', 'writeTokens', 'cacheWriteTokens']);
   const total = tokenMetric(sources, ['total', 'totalTokens', 'total_tokens']) || input + output + reasoning + cacheRead + cacheWrite;
   return { total, input, output, reasoning, cacheRead, cacheWrite };
 }

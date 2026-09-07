@@ -53,7 +53,7 @@ const DASHBOARD_STATE_SNAPSHOT_KEYS = new Set([
   'analyticsAdvancedOpen', 'selectedSessionId', 'selectedSessionKeys', 'pinnedSessionKeys', 'selectedRequestKey',
   'statsRefreshEvery', 'layoutMode', 'uiZoom', 'compactPane', 'compactPinned', 'sessionPageSize',
   'requestPageSize', 'requestTablePage', 'sessionTablePage', 'perfPanelOpen', 'chartSeries',
-  'chartSeriesLeanMigrated', 'chartSeriesMinimalMigrated', 'chartSeriesTokenOnlyMigrated',
+  'chartSeriesLeanMigrated', 'chartSeriesMinimalMigrated', 'chartSeriesTokenOnlyMigrated', 'dashboardDefaultViewMigrated',
 ]);
 function loadDashboardStateSnapshot(){
   try {
@@ -88,6 +88,14 @@ function writeInitialStateValue(key, value){
   syncDashboardStateSnapshot(key, value, true);
   try { localStorage.setItem(key, String(value ?? '')); } catch {}
 }
+function migrateDefaultDashboardView(){
+  if(initialStateValue('dashboardDefaultViewMigrated') === '1') return;
+  writeInitialStateValue('workspaceMode', 'analytics');
+  writeInitialStateValue('layoutMode', 'dashboard');
+  writeInitialStateValue('statsTableTab', 'requests');
+  writeInitialStateValue('dashboardDefaultViewMigrated', '1');
+}
+migrateDefaultDashboardView();
 
 let snapshot = null;
 let copyResetTimer = null;

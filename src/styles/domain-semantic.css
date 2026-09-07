@@ -228,7 +228,7 @@ body.source-switch-pending :where(.summary-card *, .chart-card *, .table-card *,
   padding:5px;
 }
 .analytics-page-head .filters > :where(.source-switch,.select,.date-range-control),
-.session-filter-head .filters > :where(.source-switch,.select) {
+.session-filter-head .filters > :where(.source-switch,.select,.date-range-control) {
   height:var(--filter-control-height);
   min-height:var(--filter-control-height);
   margin:0;
@@ -313,12 +313,14 @@ body.source-switch-pending :where(.summary-card *, .chart-card *, .table-card *,
   grid-column:2 / 4;
   padding:0 18px 0 0;
 }
-.analytics-page-head .date-range-control {
+.analytics-page-head .date-range-control,
+.session-filter-head .date-range-control {
   width:clamp(290px,25vw,360px);
   min-width:290px;
   padding:0;
 }
-.analytics-page-head .date-range-trigger {
+.analytics-page-head .date-range-trigger,
+.session-filter-head .date-range-trigger {
   width:100%;
   height:40px;
   min-height:40px;
@@ -328,14 +330,17 @@ body.source-switch-pending :where(.summary-card *, .chart-card *, .table-card *,
   color:var(--mac-text,#101828);
   background:var(--native-control-bg,#fff);
 }
-.analytics-page-head .date-range-trigger > span { flex:0 0 auto; }
-.analytics-page-head .date-range-trigger b {
+.analytics-page-head .date-range-trigger > span,
+.session-filter-head .date-range-trigger > span { flex:0 0 auto; }
+.analytics-page-head .date-range-trigger b,
+.session-filter-head .date-range-trigger b {
   min-width:0;
   overflow:hidden;
   text-overflow:ellipsis;
   white-space:nowrap;
 }
-.analytics-page-head .date-range-trigger i { flex:0 0 auto; }
+.analytics-page-head .date-range-trigger i,
+.session-filter-head .date-range-trigger i { flex:0 0 auto; }
 
 @media (max-width:760px) {
   .analytics-page-head .select-model { width:140px; }
