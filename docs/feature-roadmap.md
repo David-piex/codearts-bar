@@ -1,8 +1,8 @@
 # CodeArts Bar 功能路线图
 
-最后更新：2026-07-27
+最后更新：2026-09-07
 
-适用版本：`1.16.43`
+适用版本：`1.16.44`
 
 分析依据：CodeArts Agent Desktop `26.6.0`、CodeArts CLI `26.6.2`、本机只读 SQLite 数据、桌面端编译产物与现有 CodeArts Bar 实现。
 

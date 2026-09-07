@@ -4,7 +4,7 @@
 
 CodeArts Bar 在本机读取 CodeArts Agent 生成的 SQLite 数据，提供 **Windows 桌面端、VS Code / CodeArts 扩展、JetBrains 插件和 CLI**。它用于查看 token 用量、缓存命中、模型与来源趋势、性能指标和最近会话；原始数据库、日志和 prompt 不会上传。
 
-当前版本：**1.16.43**。
+当前版本：**1.16.44**。
 
 [下载 Windows 版本](https://github.com/David-piex/codearts-bar/releases) · [安装 VS Code 扩展](#vs-code--codearts-扩展) · [使用 CLI](#cli) · [从源码运行](#从源码运行)
 
@@ -34,6 +34,14 @@ CodeArts Bar 在本机读取 CodeArts Agent 生成的 SQLite 数据，提供 **W
 - **导出隐私**：默认脱敏凭据、用户名和本机路径，不包含推理及工具输入输出；可在导出前调整内容范围。
 - **平滑冷启动**：先显示 Summary Skeleton 和核心指标，再在后台补趋势、模型及会话聚合。
 - **开发者工作台界面**：参考 CC Switch 的原生桌面工具感，使用冷灰画布、单一电蓝强调、紧凑分段控件和低动效信息层级；标准、窄屏、宽屏、会话与日期弹层均有视觉回归。
+
+## 1.16.44 更新
+
+- 隐藏“缓存候选”和“缓存优化机会”展示，避免将推测性优化建议与服务端实际缓存数据混淆；真实缓存读取量和命中率继续保留。
+- 兼容 InferHub / AgentCore 的多种缓存字段格式，包括 `tokens.cache.read`、`cacheReadTokens` 和 `cache.readTokens`。
+- 会话管理增加日期与时间范围筛选。
+- 首次升级后默认进入“使用分析 → 仪表盘”视图。
+- 同步发布 Windows 桌面端、VS Code / CodeArts 扩展、JetBrains 插件和 CLI 发行包。
 
 ## 1.16.43 更新
 
