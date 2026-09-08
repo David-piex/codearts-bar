@@ -176,6 +176,16 @@ function testAggregator() {
   const partOnlyMap = agg.buildPartMap([{ id:'finish', message_id:'part-only', session_id:'s1', time_created:base + 5, data:JSON.stringify({ type:'step-finish', tokens:{ input:1, output:1 } }) }]);
   const ttft = agg.buildTtftMap([partOnly], [{ sessionId:'s1', firstTokenAt:base + 5, ttftMs:1 }], partOnlyMap);
   assert.equal(ttft.get('part-only')?.ttftMs, 1, 'step-finish-only assistants must remain eligible for TTFT matching');
+  const duplicateFinishRow = { id:'duplicate-finish', session_id:'s1', time_created:base + 6, time_updated:base + 8, data: JSON.stringify({ role:'assistant', modelID:'m', tokens:{ input:0, output:0 } }) };
+  const duplicateFinishMap = agg.buildPartMap([
+    { id:'same-part', message_id:'duplicate-finish', session_id:'s1', time_created:base + 7, data:JSON.stringify({ type:'step-finish', tokens:{ input:10, output:2, total:12 } }) },
+    { id:'same-part', message_id:'duplicate-finish', session_id:'s1', time_created:base + 8, data:JSON.stringify({ type:'step-finish', tokens:{ input:10, output:2, total:12 } }) },
+    { id:'different-part', message_id:'duplicate-finish', session_id:'s1', time_created:base + 9, data:JSON.stringify({ type:'step-finish', tokens:{ input:3, output:1, total:4 } }) },
+  ]);
+  const duplicateFinishAnalysis = agg.analyzeMessage(duplicateFinishRow, duplicateFinishMap);
+  assert.equal(duplicateFinishAnalysis.token.total, 16, 'duplicate step-finish part ids must not double count');
+  assert.equal(duplicateFinishAnalysis.partTokenCount, 2, 'distinct step-finish parts must remain countable');
+  assert.equal(duplicateFinishAnalysis.tokenSource, 'step-finish');
   const sessionFilter = sourceQueries.sessionWhere({ model:'m', range:{ start:10, endExclusive:20 } });
   assert.match(sessionFilter.where, /session_message\.time_created >= \?/);
   assert.match(sessionFilter.where, /session_message\.time_created < \?/);

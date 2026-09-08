@@ -52,7 +52,7 @@ function analyzeMessage(row, partMap = new Map()) {
   if (!row || typeof row !== 'object') {
     return {
       data: {}, token: zeroToken(), meaningful: false, placeholder: false,
-      partToken: null, hasError: false, hasStepFinish: false,
+      partToken: null, partTokenCount: 0, tokenSource: 'none', hasError: false, hasStepFinish: false,
       model: 'unknown', provider: 'unknown', performance: null, error: null,
     };
   }
@@ -65,6 +65,7 @@ function analyzeMessage(row, partMap = new Map()) {
   const parts = partsForMessage(row, partMap);
   const partToken = zeroToken();
   let partTokenCount = 0;
+  let seenPartIds = new Set();
   let hasStepFinish = false;
   let firstEventMs = null;
   let firstContentMs = null;
@@ -72,6 +73,9 @@ function analyzeMessage(row, partMap = new Map()) {
     const partData = parseJsonSafe(part.data, {});
     const type = partData.type || '';
     if (type === 'step-finish') {
+      const partId = String(part.id || '');
+      if (partId && seenPartIds.has(partId)) continue;
+      if (partId) seenPartIds.add(partId);
       hasStepFinish = true;
       if (partData.tokens || partData.usage) {
         addToken(partToken, pickToken(partData));
@@ -85,6 +89,7 @@ function analyzeMessage(row, partMap = new Map()) {
     }
   }
   const token = partTokenCount ? partToken : pickToken(data);
+  const tokenSource = partTokenCount ? 'step-finish' : (Object.keys(data?.tokens || data?.usage || {}).length ? 'message' : 'none');
   const hasError = hasMessageError(data);
   const completed = hasCompletedTime(data);
   const placeholder = data.role === 'assistant'
@@ -123,6 +128,8 @@ function analyzeMessage(row, partMap = new Map()) {
     data,
     token,
     partToken: partTokenCount ? partToken : null,
+    partTokenCount,
+    tokenSource,
     meaningful,
     placeholder,
     hasError,
