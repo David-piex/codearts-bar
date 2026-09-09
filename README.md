@@ -4,7 +4,7 @@
 
 CodeArts Bar 在本机读取 CodeArts Agent 生成的 SQLite 数据，提供 **Windows 桌面端、VS Code / CodeArts 扩展、JetBrains 插件和 CLI**。它用于查看 token 用量、缓存命中、模型与来源趋势、性能指标和最近会话；原始数据库、日志和 prompt 不会上传。
 
-当前版本：**1.16.44**。
+当前版本：**1.16.46**。
 
 [下载 Windows 版本](https://github.com/David-piex/codearts-bar/releases) · [安装 VS Code 扩展](#vs-code--codearts-扩展) · [使用 CLI](#cli) · [从源码运行](#从源码运行)
 
@@ -34,6 +34,15 @@ CodeArts Bar 在本机读取 CodeArts Agent 生成的 SQLite 数据，提供 **W
 - **导出隐私**：默认脱敏凭据、用户名和本机路径，不包含推理及工具输入输出；可在导出前调整内容范围。
 - **平滑冷启动**：先显示 Summary Skeleton 和核心指标，再在后台补趋势、模型及会话聚合。
 - **开发者工作台界面**：参考 CC Switch 的原生桌面工具感，使用冷灰画布、单一电蓝强调、紧凑分段控件和低动效信息层级；标准、窄屏、宽屏、会话与日期弹层均有视觉回归。
+
+## 1.16.46 更新
+
+- 为 `step-finish` part 增加基于 `part.id` 的重复记录防护，避免同一条 part 因重复读取或拼接异常导致 Token 被重复累计。
+- 不按 Token 数值猜测重复记录；不同 `part.id` 的真实模型步骤仍会正常累加，避免误删有效用量。
+- 新增 `tokenSource` 和 `partTokenCount` 诊断字段，便于定位 Token 来源与有效步骤数量。
+- 增加重复 part、不同 part 正常累计和多轮会话 Token 聚合回归测试。
+- Token 展示口径与码道原生使用分析页面保持一致：输入包含缓存命中，输出包含推理 Token。
+- 同步发布 Windows 桌面端、CLI、VS Code / CodeArts 扩展和 JetBrains 插件，所有客户端版本统一为 `1.16.46`。
 
 ## 1.16.44 更新
 
